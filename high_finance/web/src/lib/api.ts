@@ -1,4 +1,11 @@
-import type { Company, Fundamentals, Ownership, Leadership } from "./types";
+// 1. Update your imports to include CompsResponse
+import type { 
+  Company, 
+  Fundamentals, 
+  Ownership, 
+  Leadership,
+  CompsResponse 
+} from "./types";
 
 const BASE = "/api/v1";
 
@@ -18,8 +25,15 @@ export const api = {
   company: (ticker: string) =>
     getJSON<Company>(`${BASE}/companies/${encodeURIComponent(ticker)}`),
 
+  // You can now type this correctly instead of <any>
   fundamentals: (ticker: string) =>
-    getJSON<any>(`${BASE}/fundamentals/${encodeURIComponent(ticker)}`),
+    getJSON<Fundamentals>(`${BASE}/fundamentals/${encodeURIComponent(ticker)}`),
+
+  // === NEW COMPS METHOD ===
+  // This assumes you added the route GET /api/v1/companies/{ticker}/comps in your backend
+  comps: (ticker: string) =>
+    getJSON<CompsResponse>(`${BASE}/companies/${encodeURIComponent(ticker)}/comps`),
+  // ========================
 
   ownership: (ticker: string) =>
     getJSON<any>(`${BASE}/ownership/${encodeURIComponent(ticker)}`),

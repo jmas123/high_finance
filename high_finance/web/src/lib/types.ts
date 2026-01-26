@@ -6,7 +6,6 @@ export type Company = {
   industry?: string | null;
 };
 
-export type Fundamentals = any;
 export type Ownership = any;
 export type Leadership = any;
 export type Politician = {
@@ -44,4 +43,43 @@ export type PoliticianTradeWithPolitician = {
     party?: string | null;
     bioguide_id?: string | null;
   } | null;
+};
+
+
+export type Fundamentals = {
+  // Core Identifiers
+  ticker: string;
+  name?: string | null;
+  sector?: string | null;
+  industry?: string | null;
+  
+  // Valuation Metrics
+  market_cap?: number | null;
+  pe_ratio?: number | null;       // Trailing P/E
+  forward_pe?: number | null;     // Forward P/E
+  ev_to_ebitda?: number | null;   // Critical for Comps (New)
+  
+  // Performance & Growth
+  revenue_growth?: number | null; // YoY Growth (New)
+  eps?: number | null;
+  dividend_yield?: number | null;
+  beta?: number | null;
+  
+  // Financials
+  revenue?: number | null;
+  profit_margin?: number | null;
+  
+  // Technical Levels
+  fifty_two_week_high?: number | null;
+  fifty_two_week_low?: number | null;
+  fifty_day_avg?: number | null;
+  two_hundred_day_avg?: number | null;
+};
+
+// Add this type for the new feature response
+export type CompsResponse = {
+  target: Fundamentals;
+  peers: Fundamentals[];
+  average_pe?: number | null;
+  average_ev_ebitda?: number | null;
 };

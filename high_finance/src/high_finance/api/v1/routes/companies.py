@@ -8,6 +8,9 @@ from high_finance.services.fundamentals import get_company_fundamentals
 from high_finance.api.v1.schemas.politician import PoliticianTradeOut
 from high_finance.services.politicians import get_company_politician_trades, ensure_company_trades_fresh
 
+from high_finance.api.v1.schemas.company import ComparableAnalysis
+from high_finance.api.v1.schemas.politician import PoliticianTradeOut
+
 router = APIRouter()
 
 @router.get("/{ticker}")
@@ -18,6 +21,19 @@ async def read_company(ticker: str, db: Session = Depends(get_db)):
     return company
 
 
+@router.get("/{ticker}/comps", response_model=ComparableAnalysis)
+async def read_company_comps(ticker: str, db: Session = Depends(get_db)):
+    """
+    Get comparable analysis: Target company vs. 5 peers in the same industry.
+    """
+    # We reuse the existing service, passing fetch_peers=True
+    # (Ensure you updated services/fundamentals.py as discussed previously!)
+    data = await get_company_fundamentals(ticker, db, fetch_peers=True)
+    
+    if not data:
+        raise HTTPException(status_code=404, detail="Company not found")
+        
+    return data
 
 
 

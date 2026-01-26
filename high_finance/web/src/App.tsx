@@ -4,6 +4,9 @@ import { PriceChart } from "./components/PriceChart";
 import { CompanyHeader } from "./components/CompanyHeader";
 import { FundamentalsCard } from "./components/FundamentalsCard";
 import { OwnershipTable } from "./components/OwnershipTable";
+import { CompsTable } from "./components/CompsTableCard";
+// Fix the types import
+import type { CompsResponse } from "./lib/types";
 import { LeadershipTable } from "./components/LeadershipTable";
 import { FinancialStatements } from "./components/FinancialStatements";
 import { PredictionCard } from "./components/PredictionCard";
@@ -20,6 +23,7 @@ export default function App() {
   const [company, setCompany] = useState<any>(null);
   const [fundamentals, setFundamentals] = useState<any>(null);
   const [ownership, setOwnership] = useState<any[]>([]);
+  const [comps, setComps] = useState<CompsResponse | null>(null);
   const [leadership, setLeadership] = useState<any[]>([]);
   const [prices, setPrices] = useState<any[]>([]);
   const [financials, setFinancials] = useState<any>(null);
@@ -38,14 +42,16 @@ export default function App() {
     setPrices([]);
     setFinancials(null);
 
+    setComps(null);
     try {
-      const [c, f, o, l, p, fin] = await Promise.all([
+      const [c, f, o, l, p, fin, cmp] = await Promise.all([
         api.company(t),
         api.fundamentals(t),
         api.ownership(t),
         api.leadership(t),
         api.prices(t, "1y"),
         api.financials(t),
+        api.comps(t).catch(() => null),
       ]);
 
       setCompany(c);
@@ -55,6 +61,7 @@ export default function App() {
       setPrices(p);
       setFinancials(fin);
       setSearchedTicker(t);
+      setComps(cmp);
     } catch (e: any) {
       setError(e?.message ?? "Unknown error");
     } finally {
@@ -150,6 +157,11 @@ export default function App() {
               <FundamentalsCard data={fundamentals} />
               <InstitutionalFlowCard key={`inst-${searchedTicker}`} ticker={searchedTicker} />
             </div>
+            {comps && (
+                <div style={{ marginBottom: 16 }}>
+                <CompsTable data={comps} />
+                </div>
+            )}
 
             {/* Two Column Layout: Insider + Politicians */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>

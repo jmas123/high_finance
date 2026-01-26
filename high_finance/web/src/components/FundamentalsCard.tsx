@@ -1,3 +1,5 @@
+import React from "react";
+
 interface FundamentalsProps {
   data: {
     pe_ratio?: number;
@@ -9,6 +11,10 @@ interface FundamentalsProps {
     beta?: number;
     fifty_day_avg?: number;
     two_hundred_day_avg?: number;
+    
+    // NEW FIELDS MUST BE DEFINED HERE
+    ev_to_ebitda?: number;
+    revenue_growth?: number;
   };
 }
 
@@ -31,16 +37,22 @@ function formatValue(value: number | undefined | null, type: "currency" | "perce
 }
 
 export function FundamentalsCard({ data }: FundamentalsProps) {
+  // This array controls what actually appears on the screen.
+  // I added the new fields here:
   const metrics = [
     { label: "P/E Ratio", value: formatValue(data.pe_ratio, "number"), hint: "Price to Earnings" },
     { label: "Forward P/E", value: formatValue(data.forward_pe, "number"), hint: "Expected P/E" },
+    
+    // --- NEW METRICS ADDED HERE ---
+    { label: "EV / EBITDA", value: formatValue(data.ev_to_ebitda, "number"), hint: "Enterprise Val / EBITDA" },
+    { label: "Rev Growth", value: data.revenue_growth ? formatValue(data.revenue_growth, "percent") : "—", hint: "Year over Year" },
+    // ------------------------------
+
     { label: "EPS", value: formatValue(data.eps, "currency"), hint: "Earnings Per Share" },
     { label: "Dividend Yield", value: data.dividend_yield ? formatValue(data.dividend_yield, "percent") : "No Dividend", hint: "Annual dividend %" },
     { label: "Revenue", value: formatValue(data.revenue, "large"), hint: "Total revenue" },
     { label: "Profit Margin", value: data.profit_margin ? formatValue(data.profit_margin, "percent") : "—", hint: "Net profit %" },
     { label: "Beta", value: formatValue(data.beta, "number"), hint: "Volatility vs market" },
-    { label: "50D Avg", value: formatValue(data.fifty_day_avg, "currency"), hint: "50-day moving avg" },
-    { label: "200D Avg", value: formatValue(data.two_hundred_day_avg, "currency"), hint: "200-day moving avg" },
   ];
 
   return (

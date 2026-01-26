@@ -23,3 +23,8 @@ pydantic-settings
 yfinance
 groq
 scikit-learn
+pandas
+html5lib
+lxml
+requests
+python-dotenv
