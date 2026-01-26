@@ -1,0 +1,35 @@
+
+services:
+  api:
+    build:
+      context: ..                 # repo root as build context
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - GROQ_API_KEY=REMOVED_GROQ_API_KEY
+      - QUIVER_API_KEY=REMOVED_QUIVER_API_KEY
+      - PYTHONPATH=/app/src
+      - DATABASE_URL=postgresql://user:REDACTED@db:5432/high_finance
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - db
+      - redis
+
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: REDACTED
+      POSTGRES_DB: high_finance
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:latest
+    volumes:
+      - redis_data:/data
+
+volumes:
+  db_data:
+  redis_data:

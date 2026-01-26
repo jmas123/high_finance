@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: high-finance-api
+  labels:
+    app: high-finance
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: high-finance
+  template:
+    metadata:
+      labels:
+        app: high-finance
+    spec:
+      containers:
+        - name: high-finance
+          image: your-docker-image:latest
+          ports:
+            - containerPort: 8000
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: db-secret
+                  key: database_url
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: redis-secret
+                  key: redis_url
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: high-finance-service
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 8000
+  selector:
+    app: high-finance
