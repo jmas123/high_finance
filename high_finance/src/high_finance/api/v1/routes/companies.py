@@ -43,3 +43,5 @@ def company_politician_trades(ticker: str, limit: int = 50, db: Session = Depend
     return get_company_politician_trades(db, ticker, limit=limit)
 
 
+
+

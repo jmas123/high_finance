@@ -4,9 +4,17 @@ import { PriceChart } from "./components/PriceChart";
 import { CompanyHeader } from "./components/CompanyHeader";
 import { FundamentalsCard } from "./components/FundamentalsCard";
 import { OwnershipTable } from "./components/OwnershipTable";
+import { EarningsCard } from "./components/EarningsCard";
+import { OptionsFlowCard } from "./components/OptionsFlowCard";
+import { NewsCard } from "./components/NewsCard";
+import { RiskCard } from "./components/RiskCard";
+import { DCFCard } from "./components/DCFCard";
+
+
+
 import { CompsTable } from "./components/CompsTableCard";
 // Fix the types import
-import type { CompsResponse } from "./lib/types";
+import type { CompsResponse, FinancialStatementsResponse } from "./lib/types";
 import { LeadershipTable } from "./components/LeadershipTable";
 import { FinancialStatements } from "./components/FinancialStatements";
 import { PredictionCard } from "./components/PredictionCard";
@@ -26,7 +34,7 @@ export default function App() {
   const [comps, setComps] = useState<CompsResponse | null>(null);
   const [leadership, setLeadership] = useState<any[]>([]);
   const [prices, setPrices] = useState<any[]>([]);
-  const [financials, setFinancials] = useState<any>(null);
+const [financials, setFinancials] = useState<FinancialStatementsResponse | null>(null);
 
   async function loadTicker(ticker: string) {
     const t = ticker.trim().toUpperCase();
@@ -151,6 +159,10 @@ export default function App() {
             <div style={{ marginBottom: 20 }}>
               <PredictionCard key={`pred-${searchedTicker}`} ticker={searchedTicker} />
             </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
+            <DCFCard key={`dcf-${searchedTicker}`} ticker={searchedTicker} />
+            <RiskCard key={`risk-${searchedTicker}`} ticker={searchedTicker} />
+            </div>
 
             {/* Two Column Layout: Fundamentals + Institutional Flow */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
@@ -170,6 +182,14 @@ export default function App() {
             </div>
 
             <LeadershipTable data={leadership} />
+             <div style={{ marginBottom: 20 }}>
+                <EarningsCard key={`earnings-${searchedTicker}`} ticker={searchedTicker} />
+            </div>
+            <NewsCard ticker={searchedTicker} />
+
+            <div style={{ marginBottom: 20 }}>
+                <OptionsFlowCard key={`options-${searchedTicker}`} ticker={searchedTicker} />
+            </div>
 
             {/* Financial Statements */}
             {financials && (

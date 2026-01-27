@@ -5,3 +5,4 @@ from .person import Person
 from .price import Price
 from .politician import Politician
 from .politician_trade import PoliticianTrade
+from .news_cache import NewsCache

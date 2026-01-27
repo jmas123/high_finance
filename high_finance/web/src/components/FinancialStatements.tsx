@@ -1,12 +1,9 @@
 import { useState } from "react";
 import { api } from "../lib/api";
+import type { FinancialStatementsResponse } from "../lib/types";
 
 interface FinancialStatementsProps {
-  data: {
-    income_statement: Record<string, Record<string, number>>;
-    balance_sheet: Record<string, Record<string, number>>;
-    cash_flow: Record<string, Record<string, number>>;
-  };
+  data: FinancialStatementsResponse;
   ticker: string;
 }
 
@@ -56,18 +53,31 @@ function formatValue(value: number | undefined): string {
   return `${sign}$${absValue.toFixed(2)}`;
 }
 
-function formatDate(dateStr: string): string {
-  const date = new Date(dateStr);
-  return date.toLocaleDateString("en-US", { year: "numeric", month: "short" });
+function formatDate(dateStr: string, period: "quarterly" | "annual"): string {
+  const d = new Date(dateStr);
+  const year = d.getFullYear();
+  const month = d.getMonth(); // 0-11
+
+  if (period === "annual") {
+    return d.toLocaleDateString("en-US", { year: "numeric", month: "short" });
+  }
+
+  const q = Math.floor(month / 3) + 1;
+  return `Q${q} ${year}`;
 }
+
 
 export function FinancialStatements({ data, ticker }: FinancialStatementsProps) {
   const [activeTab, setActiveTab] = useState("income_statement");
   const [analysis, setAnalysis] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [period, setPeriod] = useState<"quarterly" | "annual">("quarterly");
 
-  const statementData = data[activeTab as keyof typeof data] || {};
+  
+
+const statementData =
+  data?.[period]?.[activeTab as keyof typeof data.annual] ?? {};
   const dates = Object.keys(statementData).sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
   
   const allKeys = new Set<string>();
@@ -125,6 +135,38 @@ export function FinancialStatements({ data, ticker }: FinancialStatementsProps) 
               </button>
             ))}
           </div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button
+                onClick={() => setPeriod("quarterly")}
+                style={{
+                padding: "6px 10px",
+                fontSize: 13,
+                cursor: "pointer",
+                background: period === "quarterly" ? "#3b82f6" : "#2d2d2d",
+                color: "#fff",
+                border: "none",
+                borderRadius: 4,
+                }}
+            >
+                Quarterly
+            </button>
+
+            <button
+                onClick={() => setPeriod("annual")}
+                style={{
+                padding: "6px 10px",
+                fontSize: 13,
+                cursor: "pointer",
+                background: period === "annual" ? "#3b82f6" : "#2d2d2d",
+                color: "#fff",
+                border: "none",
+                borderRadius: 4,
+                }}
+            >
+                Yearly
+            </button>
+            </div>
+
           <button
             onClick={handleAnalyze}
             disabled={analyzing}
@@ -224,7 +266,7 @@ export function FinancialStatements({ data, ticker }: FinancialStatementsProps) 
                     minWidth: 100
                   }}
                 >
-                  {formatDate(date)}
+                  {formatDate(date, period)}
                 </th>
               ))}
             </tr>

@@ -1,6 +1,6 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import Depends, HTTPException, status
-from .db.session import get_db
+from high_finance.db.session import get_db  # <-- correct location
 
 async def get_database_session() -> AsyncSession:
     db: AsyncSession = Depends(get_db)
