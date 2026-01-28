@@ -7,20 +7,130 @@ Features:
 - Sensitivity tornado analysis
 - Bear/Base/Bull scenario ranges
 - Upside/downside vs current price
+- Smart defaults from actual financials
+- Assumption warnings/guardrails
+- Analyst consensus overlay
 """
 
 import math
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 import yfinance as yf
 
 from high_finance.services.financials import get_financial_statements
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# SECTOR BENCHMARKS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+SECTOR_BENCHMARKS = {
+    "Technology": {
+        "growth": {"p25": 0.08, "median": 0.15, "p75": 0.25, "p90": 0.35},
+        "margin": {"p25": 0.12, "median": 0.20, "p75": 0.28, "p90": 0.35},
+        "ev_revenue": 6.0,
+        "ev_ebitda": 18.0,
+        "pe": 28.0,
+    },
+    "Healthcare": {
+        "growth": {"p25": 0.04, "median": 0.10, "p75": 0.18, "p90": 0.28},
+        "margin": {"p25": 0.08, "median": 0.15, "p75": 0.22, "p90": 0.30},
+        "ev_revenue": 4.0,
+        "ev_ebitda": 14.0,
+        "pe": 22.0,
+    },
+    "Financial Services": {
+        "growth": {"p25": 0.02, "median": 0.06, "p75": 0.10, "p90": 0.15},
+        "margin": {"p25": 0.15, "median": 0.25, "p75": 0.35, "p90": 0.45},
+        "ev_revenue": 3.0,
+        "ev_ebitda": 10.0,
+        "pe": 12.0,
+    },
+    "Consumer Cyclical": {
+        "growth": {"p25": 0.02, "median": 0.07, "p75": 0.12, "p90": 0.20},
+        "margin": {"p25": 0.05, "median": 0.10, "p75": 0.15, "p90": 0.20},
+        "ev_revenue": 1.5,
+        "ev_ebitda": 10.0,
+        "pe": 18.0,
+    },
+    "Consumer Defensive": {
+        "growth": {"p25": 0.01, "median": 0.04, "p75": 0.08, "p90": 0.12},
+        "margin": {"p25": 0.08, "median": 0.12, "p75": 0.18, "p90": 0.22},
+        "ev_revenue": 2.0,
+        "ev_ebitda": 12.0,
+        "pe": 20.0,
+    },
+    "Industrials": {
+        "growth": {"p25": 0.02, "median": 0.06, "p75": 0.10, "p90": 0.15},
+        "margin": {"p25": 0.08, "median": 0.12, "p75": 0.16, "p90": 0.20},
+        "ev_revenue": 2.0,
+        "ev_ebitda": 11.0,
+        "pe": 18.0,
+    },
+    "Energy": {
+        "growth": {"p25": -0.05, "median": 0.03, "p75": 0.10, "p90": 0.20},
+        "margin": {"p25": 0.05, "median": 0.12, "p75": 0.18, "p90": 0.25},
+        "ev_revenue": 1.5,
+        "ev_ebitda": 6.0,
+        "pe": 12.0,
+    },
+    "Utilities": {
+        "growth": {"p25": 0.01, "median": 0.03, "p75": 0.05, "p90": 0.08},
+        "margin": {"p25": 0.15, "median": 0.22, "p75": 0.28, "p90": 0.35},
+        "ev_revenue": 3.0,
+        "ev_ebitda": 10.0,
+        "pe": 16.0,
+    },
+    "Real Estate": {
+        "growth": {"p25": 0.02, "median": 0.05, "p75": 0.10, "p90": 0.15},
+        "margin": {"p25": 0.25, "median": 0.35, "p75": 0.45, "p90": 0.55},
+        "ev_revenue": 8.0,
+        "ev_ebitda": 18.0,
+        "pe": 35.0,
+    },
+    "Basic Materials": {
+        "growth": {"p25": -0.02, "median": 0.04, "p75": 0.10, "p90": 0.18},
+        "margin": {"p25": 0.08, "median": 0.14, "p75": 0.20, "p90": 0.28},
+        "ev_revenue": 1.5,
+        "ev_ebitda": 7.0,
+        "pe": 14.0,
+    },
+    "Communication Services": {
+        "growth": {"p25": 0.02, "median": 0.08, "p75": 0.15, "p90": 0.25},
+        "margin": {"p25": 0.12, "median": 0.20, "p75": 0.28, "p90": 0.35},
+        "ev_revenue": 3.0,
+        "ev_ebitda": 10.0,
+        "pe": 18.0,
+    },
+}
+
+DEFAULT_BENCHMARKS = {
+    "growth": {"p25": 0.03, "median": 0.08, "p75": 0.15, "p90": 0.25},
+    "margin": {"p25": 0.08, "median": 0.15, "p75": 0.22, "p90": 0.30},
+    "ev_revenue": 3.0,
+    "ev_ebitda": 12.0,
+    "pe": 20.0,
+}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# HELPERS
+# ═══════════════════════════════════════════════════════════════════════════════
+
 def _latest_column(d: Dict[str, Dict[str, float]]) -> Optional[str]:
     if not d:
         return None
     return sorted(d.keys())[-1]
+
+
+def _get_column_by_index(d: Dict[str, Dict[str, float]], index: int) -> Optional[str]:
+    """Get column by reverse index (0 = most recent, 1 = second most recent, etc.)"""
+    if not d:
+        return None
+    cols = sorted(d.keys(), reverse=True)
+    if index < len(cols):
+        return cols[index]
+    return None
 
 
 def _get_line(table: Dict[str, Dict[str, float]], col: str, keys: list[str]) -> Optional[float]:
@@ -35,6 +145,313 @@ def _safe(v: Optional[float], default: float) -> float:
     return float(v) if v is not None and math.isfinite(v) else default
 
 
+def _compute_cagr(start_value: float, end_value: float, years: int) -> Optional[float]:
+    """Compute compound annual growth rate."""
+    if start_value <= 0 or end_value <= 0 or years <= 0:
+        return None
+    return (end_value / start_value) ** (1 / years) - 1
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SMART DEFAULTS & WARNINGS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _compute_smart_defaults(
+    annual_is: Dict[str, Dict[str, float]],
+    info: Dict[str, Any],
+    sector: str,
+) -> Dict[str, Any]:
+    """Compute suggested default values from actual financials."""
+    benchmarks = SECTOR_BENCHMARKS.get(sector, DEFAULT_BENCHMARKS)
+    
+    defaults = {
+        "growth": {
+            "suggested": benchmarks["growth"]["median"],
+            "historical_3y": None,
+            "historical_1y": None,
+            "analyst_estimate": None,
+            "sector_median": benchmarks["growth"]["median"],
+            "sector_p25": benchmarks["growth"]["p25"],
+            "sector_p75": benchmarks["growth"]["p75"],
+            "source": "sector median",
+        },
+        "margin": {
+            "suggested": benchmarks["margin"]["median"],
+            "current": None,
+            "historical_avg": None,
+            "sector_median": benchmarks["margin"]["median"],
+            "sector_p25": benchmarks["margin"]["p25"],
+            "sector_p75": benchmarks["margin"]["p75"],
+            "source": "sector median",
+        },
+        "wacc": {
+            "suggested": 0.10,
+            "beta_implied": None,
+            "beta": None,
+            "source": "default 10%",
+        },
+        "terminal_g": {
+            "suggested": 0.025,
+            "source": "long-run GDP proxy",
+        },
+        "tax": {
+            "suggested": 0.21,
+            "effective_rate": None,
+            "source": "US statutory rate",
+        },
+    }
+    
+    # Revenue growth - historical
+    revenues = []
+    for i in range(4):
+        col = _get_column_by_index(annual_is, i)
+        if col:
+            rev = _get_line(annual_is, col, ["Total Revenue", "TotalRevenue", "Revenue"])
+            if rev and rev > 0:
+                revenues.append(rev)
+    
+    if len(revenues) >= 2:
+        defaults["growth"]["historical_1y"] = (revenues[0] / revenues[1]) - 1
+        
+    if len(revenues) >= 4:
+        cagr_3y = _compute_cagr(revenues[3], revenues[0], 3)
+        if cagr_3y is not None:
+            defaults["growth"]["historical_3y"] = cagr_3y
+    
+    # Analyst estimate
+    analyst_growth = info.get("revenueGrowth")
+    if analyst_growth is not None:
+        defaults["growth"]["analyst_estimate"] = float(analyst_growth)
+    
+    # Pick best growth default
+    raw_growth = None
+    if defaults["growth"]["analyst_estimate"] is not None:
+        raw_growth = defaults["growth"]["analyst_estimate"]
+        defaults["growth"]["suggested"] = defaults["growth"]["analyst_estimate"]
+        defaults["growth"]["source"] = "analyst estimate"
+    elif defaults["growth"]["historical_3y"] is not None:
+        raw_growth = defaults["growth"]["historical_3y"]
+        defaults["growth"]["suggested"] = defaults["growth"]["historical_3y"]
+        defaults["growth"]["source"] = "3-year historical CAGR"
+    elif defaults["growth"]["historical_1y"] is not None:
+        raw_growth = defaults["growth"]["historical_1y"]
+        defaults["growth"]["suggested"] = defaults["growth"]["historical_1y"]
+        defaults["growth"]["source"] = "1-year historical"
+    
+    # Clamp growth to slider bounds (-10% to 50%) but keep raw value
+    defaults["growth"]["raw_value"] = raw_growth
+    defaults["growth"]["was_clamped"] = raw_growth is not None and (raw_growth > 0.50 or raw_growth < -0.10)
+    defaults["growth"]["suggested"] = max(-0.10, min(0.50, defaults["growth"]["suggested"]))
+    
+    # Operating margin
+    col = _latest_column(annual_is)
+    if col:
+        revenue = _get_line(annual_is, col, ["Total Revenue", "TotalRevenue", "Revenue"])
+        op_income = _get_line(annual_is, col, ["Operating Income", "OperatingIncome", "EBIT"])
+        ebitda = _get_line(annual_is, col, ["EBITDA", "Ebitda"])
+        
+        if revenue and revenue > 0:
+            if op_income is not None:
+                defaults["margin"]["current"] = op_income / revenue
+                defaults["margin"]["suggested"] = op_income / revenue
+                defaults["margin"]["source"] = "current operating margin"
+            elif ebitda is not None:
+                defaults["margin"]["current"] = ebitda / revenue
+                defaults["margin"]["suggested"] = ebitda / revenue
+                defaults["margin"]["source"] = "current EBITDA margin"
+    
+    # Historical average margin
+    margins = []
+    for i in range(4):
+        col = _get_column_by_index(annual_is, i)
+        if col:
+            rev = _get_line(annual_is, col, ["Total Revenue", "TotalRevenue", "Revenue"])
+            op = _get_line(annual_is, col, ["Operating Income", "OperatingIncome", "EBIT"])
+            if rev and rev > 0 and op is not None:
+                margins.append(op / rev)
+    
+    if margins:
+        defaults["margin"]["historical_avg"] = sum(margins) / len(margins)
+    
+    # Clamp margin to slider bounds (-10% to 50%)
+    defaults["margin"]["suggested"] = max(-0.10, min(0.50, defaults["margin"]["suggested"]))
+    
+    # WACC from beta
+    beta = info.get("beta")
+    if beta is not None and beta > 0:
+        cost_of_equity = 0.045 + float(beta) * 0.055
+        wacc_est = 0.70 * cost_of_equity + 0.30 * 0.06 * (1 - 0.21)
+        defaults["wacc"]["beta_implied"] = wacc_est
+        defaults["wacc"]["beta"] = float(beta)
+        defaults["wacc"]["suggested"] = wacc_est
+        defaults["wacc"]["source"] = f"CAPM (β={beta:.2f})"
+    
+    # Clamp WACC to slider bounds (5% to 20%)
+    defaults["wacc"]["suggested"] = max(0.05, min(0.20, defaults["wacc"]["suggested"]))
+    
+    # Effective tax rate
+    col = _latest_column(annual_is)
+    if col:
+        pretax = _get_line(annual_is, col, ["Pretax Income", "Income Before Tax", "EBT"])
+        tax_expense = _get_line(annual_is, col, ["Tax Provision", "Income Tax Expense", "Tax Expense"])
+        if pretax and pretax > 0 and tax_expense is not None:
+            effective_rate = tax_expense / pretax
+            if 0 < effective_rate < 0.50:
+                defaults["tax"]["effective_rate"] = effective_rate
+                defaults["tax"]["suggested"] = effective_rate
+                defaults["tax"]["source"] = "effective tax rate"
+    
+    # Clamp tax to slider bounds (10% to 35%)
+    defaults["tax"]["suggested"] = max(0.10, min(0.35, defaults["tax"]["suggested"]))
+    
+    return defaults
+
+
+def _generate_warnings(
+    inputs: Dict[str, float],
+    defaults: Dict[str, Any],
+    sector: str,
+) -> List[Dict[str, Any]]:
+    """Generate warnings when assumptions look aggressive or conservative."""
+    warnings = []
+    benchmarks = SECTOR_BENCHMARKS.get(sector, DEFAULT_BENCHMARKS)
+    
+    # Check if growth was clamped from a much higher value
+    raw_growth = defaults["growth"].get("raw_value")
+    if raw_growth is not None and raw_growth > 0.50:
+        warnings.append({
+            "param": "growth",
+            "level": "clamped",
+            "severity": "info",
+            "message": f"Historical growth was {raw_growth*100:.0f}% - clamped to 50% max for modeling",
+            "suggestion": "Extremely high growth rates rarely persist. Consider if this is sustainable.",
+        })
+    
+    growth = inputs["growth"]
+    if growth > benchmarks["growth"]["p90"]:
+        warnings.append({
+            "param": "growth",
+            "level": "high",
+            "severity": "warning",
+            "message": f"Growth {growth*100:.0f}% exceeds 90th percentile for {sector} ({benchmarks['growth']['p90']*100:.0f}%)",
+            "suggestion": f"Sector median is {benchmarks['growth']['median']*100:.0f}%",
+        })
+    elif growth > benchmarks["growth"]["p75"]:
+        warnings.append({
+            "param": "growth",
+            "level": "elevated",
+            "severity": "info",
+            "message": f"Growth {growth*100:.0f}% is above 75th percentile for {sector}",
+            "suggestion": None,
+        })
+    elif growth > 0.30:
+        warnings.append({
+            "param": "growth",
+            "level": "high",
+            "severity": "warning",
+            "message": f"Growth {growth*100:.0f}% is very aggressive - only ~5% of S&P 500 sustains this",
+            "suggestion": "Consider if competitive moat justifies this",
+        })
+    
+    if growth < 0 and defaults["growth"]["historical_3y"] and defaults["growth"]["historical_3y"] > 0.05:
+        warnings.append({
+            "param": "growth",
+            "level": "low",
+            "severity": "info",
+            "message": f"Assuming negative growth, but historical 3Y CAGR was {defaults['growth']['historical_3y']*100:.0f}%",
+            "suggestion": None,
+        })
+    
+    margin = inputs["margin"]
+    if margin > benchmarks["margin"]["p90"]:
+        warnings.append({
+            "param": "margin",
+            "level": "high",
+            "severity": "warning",
+            "message": f"Margin {margin*100:.0f}% exceeds 90th percentile for {sector} ({benchmarks['margin']['p90']*100:.0f}%)",
+            "suggestion": "Assumes best-in-class profitability",
+        })
+    elif margin > benchmarks["margin"]["p75"]:
+        warnings.append({
+            "param": "margin",
+            "level": "elevated",
+            "severity": "info",
+            "message": f"Margin {margin*100:.0f}% is above 75th percentile for {sector}",
+            "suggestion": None,
+        })
+    
+    current_margin = defaults["margin"].get("current")
+    if current_margin and margin > current_margin + 0.10:
+        warnings.append({
+            "param": "margin",
+            "level": "expansion",
+            "severity": "warning",
+            "message": f"Assuming {(margin - current_margin)*100:.0f}pp margin expansion from current {current_margin*100:.0f}%",
+            "suggestion": "Significant margin expansion is rare without structural change",
+        })
+    
+    wacc = inputs["wacc"]
+    if wacc < 0.06:
+        warnings.append({
+            "param": "wacc",
+            "level": "low",
+            "severity": "warning",
+            "message": f"WACC {wacc*100:.1f}% is below investment-grade bond yields",
+            "suggestion": "Even Apple's WACC is ~9%",
+        })
+    elif wacc < 0.08:
+        warnings.append({
+            "param": "wacc",
+            "level": "low",
+            "severity": "info",
+            "message": f"WACC {wacc*100:.1f}% implies very low risk - appropriate for stable utilities/staples",
+            "suggestion": None,
+        })
+    elif wacc > 0.15:
+        warnings.append({
+            "param": "wacc",
+            "level": "high",
+            "severity": "info",
+            "message": f"WACC {wacc*100:.1f}% implies high risk / emerging market exposure",
+            "suggestion": None,
+        })
+    
+    beta_wacc = defaults["wacc"].get("beta_implied")
+    if beta_wacc and abs(wacc - beta_wacc) > 0.02:
+        warnings.append({
+            "param": "wacc",
+            "level": "deviation",
+            "severity": "info",
+            "message": f"Your WACC differs from CAPM estimate ({beta_wacc*100:.1f}%) by {abs(wacc - beta_wacc)*100:.1f}pp",
+            "suggestion": None,
+        })
+    
+    terminal_g = inputs["terminal_g"]
+    if terminal_g > 0.035:
+        warnings.append({
+            "param": "terminal_g",
+            "level": "high",
+            "severity": "warning",
+            "message": f"Terminal growth {terminal_g*100:.1f}% exceeds long-run nominal GDP (~3%)",
+            "suggestion": "Company would eventually exceed entire economy",
+        })
+    
+    if terminal_g >= wacc - 0.02:
+        warnings.append({
+            "param": "terminal_g",
+            "level": "critical",
+            "severity": "error",
+            "message": f"Terminal growth ({terminal_g*100:.1f}%) too close to WACC ({wacc*100:.1f}%)",
+            "suggestion": "Creates unstable/infinite terminal value",
+        })
+    
+    return warnings
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# DCF CORE
+# ═══════════════════════════════════════════════════════════════════════════════
+
 def _dcf(
     revenue0: float,
     margin: float,
@@ -44,7 +461,6 @@ def _dcf(
     terminal_g: float,
     years: int = 5,
 ) -> Dict[str, Any]:
-    """Simple unlevered FCFF proxy DCF model."""
     fcf = []
     rev = revenue0
     for _ in range(years):
@@ -53,12 +469,10 @@ def _dcf(
         fcff = ebit * (1.0 - tax)
         fcf.append(fcff)
 
-    # PV of explicit period
     pv = 0.0
     for t, cf in enumerate(fcf, start=1):
         pv += cf / ((1.0 + wacc) ** t)
 
-    # Terminal value using Gordon growth
     tv = (fcf[-1] * (1.0 + terminal_g)) / max(1e-9, (wacc - terminal_g))
     pv_tv = tv / ((1.0 + wacc) ** years)
 
@@ -80,46 +494,31 @@ def _sensitivity_analysis(
     base_inputs: Dict[str, float],
     years: int = 5,
 ) -> Dict[str, Any]:
-    """
-    Calculate sensitivity of fair value to each input parameter.
-    Returns tornado chart data showing impact of ±20% change in each input.
-    """
     if not shares or shares <= 0:
         return {"error": "Cannot compute sensitivity without shares outstanding"}
 
-    base_dcf = _dcf(
-        revenue0=revenue0,
-        margin=base_inputs["margin"],
-        growth=base_inputs["growth"],
-        tax=base_inputs["tax"],
-        wacc=base_inputs["wacc"],
-        terminal_g=base_inputs["terminal_g"],
-        years=years,
-    )
+    base_dcf = _dcf(revenue0=revenue0, years=years, **base_inputs)
     base_ev = base_dcf["enterprise_value"]
     base_equity = base_ev - net_debt
     base_fv = base_equity / shares
 
     sensitivities = []
 
-    # Define perturbation ranges for each input
     perturbations = {
         "growth": {"low": -0.03, "high": 0.03, "label": "Revenue Growth"},
         "margin": {"low": -0.03, "high": 0.03, "label": "Operating Margin"},
-        "wacc": {"low": 0.015, "high": -0.015, "label": "WACC"},  # inverted: lower WACC = higher value
+        "wacc": {"low": 0.015, "high": -0.015, "label": "WACC"},
         "terminal_g": {"low": -0.01, "high": 0.01, "label": "Terminal Growth"},
-        "tax": {"low": 0.03, "high": -0.03, "label": "Tax Rate"},  # inverted
+        "tax": {"low": 0.03, "high": -0.03, "label": "Tax Rate"},
     }
 
     for param, config in perturbations.items():
         inputs_low = base_inputs.copy()
         inputs_high = base_inputs.copy()
 
-        # Clamp to reasonable bounds
         inputs_low[param] = max(0.001 if param == "wacc" else -0.5, base_inputs[param] + config["low"])
         inputs_high[param] = min(0.99 if param == "margin" else 1.0, base_inputs[param] + config["high"])
 
-        # Ensure wacc > terminal_g
         if param == "wacc":
             inputs_low[param] = max(inputs_low[param], base_inputs["terminal_g"] + 0.01)
         if param == "terminal_g":
@@ -145,7 +544,6 @@ def _sensitivity_analysis(
             "impact_range": float(abs(fv_high - fv_low)),
         })
 
-    # Sort by impact range (largest first for tornado)
     sensitivities.sort(key=lambda x: x["impact_range"], reverse=True)
 
     return {
@@ -162,10 +560,8 @@ def _multiples_valuation(
     net_income: Optional[float],
     net_debt: float,
     shares: Optional[float],
+    sector: str,
 ) -> Dict[str, Any]:
-    """
-    Valuation using trading multiples and peer comparisons.
-    """
     result = {
         "ev_revenue": None,
         "ev_ebitda": None,
@@ -176,81 +572,54 @@ def _multiples_valuation(
     if not shares or shares <= 0:
         return result
 
-    # Get current market data
-    market_cap = info.get("marketCap")
-    current_price = info.get("currentPrice") or info.get("regularMarketPrice")
-    
-    # Sector/industry multiples (simplified - in production you'd pull peer comps)
-    sector = info.get("sector", "")
-    industry = info.get("industry", "")
+    benchmarks = SECTOR_BENCHMARKS.get(sector, DEFAULT_BENCHMARKS)
 
-    # Default multiples by sector (rough approximations)
-    sector_multiples = {
-        "Technology": {"ev_revenue": 6.0, "ev_ebitda": 18.0, "pe": 28.0},
-        "Healthcare": {"ev_revenue": 4.0, "ev_ebitda": 14.0, "pe": 22.0},
-        "Financial Services": {"ev_revenue": 3.0, "ev_ebitda": 10.0, "pe": 12.0},
-        "Consumer Cyclical": {"ev_revenue": 1.5, "ev_ebitda": 10.0, "pe": 18.0},
-        "Consumer Defensive": {"ev_revenue": 2.0, "ev_ebitda": 12.0, "pe": 20.0},
-        "Industrials": {"ev_revenue": 2.0, "ev_ebitda": 11.0, "pe": 18.0},
-        "Energy": {"ev_revenue": 1.5, "ev_ebitda": 6.0, "pe": 12.0},
-        "Utilities": {"ev_revenue": 3.0, "ev_ebitda": 10.0, "pe": 16.0},
-        "Real Estate": {"ev_revenue": 8.0, "ev_ebitda": 18.0, "pe": 35.0},
-        "Basic Materials": {"ev_revenue": 1.5, "ev_ebitda": 7.0, "pe": 14.0},
-        "Communication Services": {"ev_revenue": 3.0, "ev_ebitda": 10.0, "pe": 18.0},
-    }
-
-    multiples = sector_multiples.get(sector, {"ev_revenue": 3.0, "ev_ebitda": 12.0, "pe": 20.0})
-
-    # EV/Revenue based valuation
     if revenue > 0:
-        implied_ev = revenue * multiples["ev_revenue"]
+        implied_ev = revenue * benchmarks["ev_revenue"]
         implied_equity = implied_ev - net_debt
         implied_fv = implied_equity / shares
         result["ev_revenue"] = {
-            "multiple_used": multiples["ev_revenue"],
+            "multiple_used": benchmarks["ev_revenue"],
             "implied_ev": float(implied_ev),
             "implied_equity": float(implied_equity),
             "implied_fv_per_share": float(implied_fv),
         }
         result["implied_values"].append({
             "method": "EV/Revenue",
-            "multiple": multiples["ev_revenue"],
+            "multiple": benchmarks["ev_revenue"],
             "fair_value": float(implied_fv),
         })
 
-    # EV/EBITDA based valuation
     if ebitda and ebitda > 0:
-        implied_ev = ebitda * multiples["ev_ebitda"]
+        implied_ev = ebitda * benchmarks["ev_ebitda"]
         implied_equity = implied_ev - net_debt
         implied_fv = implied_equity / shares
         result["ev_ebitda"] = {
-            "multiple_used": multiples["ev_ebitda"],
+            "multiple_used": benchmarks["ev_ebitda"],
             "implied_ev": float(implied_ev),
             "implied_equity": float(implied_equity),
             "implied_fv_per_share": float(implied_fv),
         }
         result["implied_values"].append({
             "method": "EV/EBITDA",
-            "multiple": multiples["ev_ebitda"],
+            "multiple": benchmarks["ev_ebitda"],
             "fair_value": float(implied_fv),
         })
 
-    # P/E based valuation
     if net_income and net_income > 0:
         eps = net_income / shares
-        implied_fv = eps * multiples["pe"]
+        implied_fv = eps * benchmarks["pe"]
         result["pe_based"] = {
-            "multiple_used": multiples["pe"],
+            "multiple_used": benchmarks["pe"],
             "eps": float(eps),
             "implied_fv_per_share": float(implied_fv),
         }
         result["implied_values"].append({
             "method": "P/E",
-            "multiple": multiples["pe"],
+            "multiple": benchmarks["pe"],
             "fair_value": float(implied_fv),
         })
 
-    # Summary stats
     if result["implied_values"]:
         fvs = [v["fair_value"] for v in result["implied_values"]]
         result["multiples_summary"] = {
@@ -258,7 +627,7 @@ def _multiples_valuation(
             "max": float(max(fvs)),
             "avg": float(sum(fvs) / len(fvs)),
             "sector": sector,
-            "industry": industry,
+            "industry": info.get("industry", ""),
         }
 
     return result
@@ -271,15 +640,11 @@ def _scenario_analysis(
     base_inputs: Dict[str, float],
     years: int = 5,
 ) -> Dict[str, Any]:
-    """
-    Generate bear/base/bull scenario valuations.
-    """
     if not shares or shares <= 0:
         return {"error": "Cannot compute scenarios without shares outstanding"}
 
     scenarios = {}
 
-    # Define scenario adjustments
     scenario_defs = {
         "bear": {
             "growth": base_inputs["growth"] - 0.05,
@@ -299,7 +664,6 @@ def _scenario_analysis(
     }
 
     for scenario_name, inputs in scenario_defs.items():
-        # Clamp values
         inputs["growth"] = max(-0.2, min(0.5, inputs["growth"]))
         inputs["margin"] = max(-0.1, min(0.6, inputs["margin"]))
         inputs["wacc"] = max(0.04, min(0.25, inputs["wacc"]))
@@ -319,17 +683,31 @@ def _scenario_analysis(
     return scenarios
 
 
+def _get_analyst_consensus(info: Dict[str, Any]) -> Dict[str, Any]:
+    """Extract analyst consensus data from yfinance info."""
+    return {
+        "target_mean": info.get("targetMeanPrice"),
+        "target_low": info.get("targetLowPrice"),
+        "target_high": info.get("targetHighPrice"),
+        "target_median": info.get("targetMedianPrice"),
+        "num_analysts": info.get("numberOfAnalystOpinions"),
+        "recommendation": info.get("recommendationKey"),
+        "recommendation_mean": info.get("recommendationMean"),
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MAIN BUNDLE
+# ═══════════════════════════════════════════════════════════════════════════════
+
 async def get_valuation_bundle(
     ticker: str,
-    growth: float = 0.10,
-    margin: float = 0.20,
-    tax: float = 0.21,
-    wacc: float = 0.10,
-    terminal_g: float = 0.03,
+    growth: Optional[float] = None,
+    margin: Optional[float] = None,
+    tax: Optional[float] = None,
+    wacc: Optional[float] = None,
+    terminal_g: Optional[float] = None,
 ) -> Dict[str, Any]:
-    """
-    Comprehensive valuation bundle with DCF, multiples, sensitivity, and scenarios.
-    """
     stock = yf.Ticker(ticker)
     info = stock.info or {}
 
@@ -342,25 +720,49 @@ async def get_valuation_bundle(
     if not col:
         return {"ticker": ticker, "error": "No annual income statement available"}
 
-    # Revenue
     revenue = _get_line(annual_is, col, ["Total Revenue", "TotalRevenue", "Revenue", "Total revenue"])
     revenue0 = _safe(revenue, 0.0)
     if revenue0 <= 0:
         return {"ticker": ticker, "error": "Could not read revenue from financials"}
 
-    # EBITDA (for multiples)
+    sector = info.get("sector", "")
+
+    # Compute smart defaults
+    smart_defaults = _compute_smart_defaults(annual_is, info, sector)
+
+    # Use provided values or smart defaults
+    final_growth = growth if growth is not None else smart_defaults["growth"]["suggested"]
+    final_margin = margin if margin is not None else smart_defaults["margin"]["suggested"]
+    final_tax = tax if tax is not None else smart_defaults["tax"]["suggested"]
+    final_wacc = wacc if wacc is not None else smart_defaults["wacc"]["suggested"]
+    final_terminal_g = terminal_g if terminal_g is not None else smart_defaults["terminal_g"]["suggested"]
+
+    # Final safety clamp to ensure values are within valid ranges
+    final_growth = max(-0.10, min(0.50, final_growth))
+    final_margin = max(-0.10, min(0.50, final_margin))
+    final_tax = max(0.10, min(0.35, final_tax))
+    final_wacc = max(0.05, min(0.20, final_wacc))
+    final_terminal_g = max(0.00, min(0.04, final_terminal_g))
+
+    base_inputs = {
+        "growth": final_growth,
+        "margin": final_margin,
+        "tax": final_tax,
+        "wacc": final_wacc,
+        "terminal_g": final_terminal_g,
+    }
+
+    warnings = _generate_warnings(base_inputs, smart_defaults, sector)
+
     ebitda = _get_line(annual_is, col, ["EBITDA", "Ebitda", "Normalized EBITDA"])
     if not ebitda:
-        # Try to compute: Operating Income + D&A
         op_income = _get_line(annual_is, col, ["Operating Income", "OperatingIncome", "EBIT"])
         da = _get_line(annual_is, col, ["Depreciation And Amortization", "DepreciationAndAmortization"])
         if op_income and da:
             ebitda = op_income + da
 
-    # Net Income (for P/E)
     net_income = _get_line(annual_is, col, ["Net Income", "NetIncome", "Net Income Common Stockholders"])
 
-    # Net debt
     bs_col = _latest_column(annual_bs)
     net_debt = 0.0
     if bs_col:
@@ -376,38 +778,25 @@ async def get_valuation_bundle(
 
         net_debt = debt_total - cash_total
 
-    # Shares outstanding
     shares = info.get("sharesOutstanding")
     shares = float(shares) if shares else None
 
-    # Current price for upside/downside
     current_price = info.get("currentPrice") or info.get("regularMarketPrice")
     current_price = float(current_price) if current_price else None
 
-    # Base inputs dict
-    base_inputs = {
-        "growth": growth,
-        "margin": margin,
-        "tax": tax,
-        "wacc": wacc,
-        "terminal_g": terminal_g,
-    }
-
-    # Run DCF
     dcf = _dcf(
         revenue0=revenue0,
-        margin=margin,
-        growth=growth,
-        tax=tax,
-        wacc=wacc,
-        terminal_g=terminal_g,
+        margin=final_margin,
+        growth=final_growth,
+        tax=final_tax,
+        wacc=final_wacc,
+        terminal_g=final_terminal_g,
         years=5,
     )
 
     equity_value = dcf["enterprise_value"] - net_debt
     fair_value_per_share = (equity_value / shares) if shares and shares > 0 else None
 
-    # Calculate upside/downside
     upside_downside = None
     if fair_value_per_share and current_price and current_price > 0:
         upside_downside = {
@@ -417,7 +806,6 @@ async def get_valuation_bundle(
             "absolute_diff": float(fair_value_per_share - current_price),
         }
 
-    # Sensitivity analysis
     sensitivity = _sensitivity_analysis(
         revenue0=revenue0,
         net_debt=net_debt,
@@ -426,7 +814,6 @@ async def get_valuation_bundle(
         years=5,
     )
 
-    # Multiples valuation
     multiples = _multiples_valuation(
         ticker=ticker,
         info=info,
@@ -435,9 +822,9 @@ async def get_valuation_bundle(
         net_income=net_income,
         net_debt=net_debt,
         shares=shares,
+        sector=sector,
     )
 
-    # Scenario analysis
     scenarios = _scenario_analysis(
         revenue0=revenue0,
         net_debt=net_debt,
@@ -446,12 +833,13 @@ async def get_valuation_bundle(
         years=5,
     )
 
-    # Blended fair value range
     fair_value_range = None
     if scenarios and "bear" in scenarios and "bull" in scenarios:
-        all_fvs = [scenarios["bear"]["fair_value_per_share"], scenarios["base"]["fair_value_per_share"], scenarios["bull"]["fair_value_per_share"]]
-        
-        # Add multiples if available
+        all_fvs = [
+            scenarios["bear"]["fair_value_per_share"],
+            scenarios["base"]["fair_value_per_share"],
+            scenarios["bull"]["fair_value_per_share"],
+        ]
         if multiples.get("implied_values"):
             all_fvs.extend([v["fair_value"] for v in multiples["implied_values"]])
 
@@ -462,9 +850,21 @@ async def get_valuation_bundle(
             "dcf_base": float(fair_value_per_share) if fair_value_per_share else None,
         }
 
+    analyst_consensus = _get_analyst_consensus(info)
+
+    benchmarks = SECTOR_BENCHMARKS.get(sector, DEFAULT_BENCHMARKS)
+
     return {
         "ticker": ticker,
         "inputs": base_inputs,
+        "smart_defaults": smart_defaults,
+        "warnings": warnings,
+        "benchmarks": {
+            "sector": sector,
+            "industry": info.get("industry"),
+            "growth": benchmarks["growth"],
+            "margin": benchmarks["margin"],
+        },
         "facts": {
             "revenue0": revenue0,
             "ebitda": ebitda,
@@ -472,7 +872,7 @@ async def get_valuation_bundle(
             "net_debt_est": net_debt,
             "shares_outstanding": shares,
             "current_price": current_price,
-            "sector": info.get("sector"),
+            "sector": sector,
             "industry": info.get("industry"),
         },
         "dcf": dcf,
@@ -483,4 +883,5 @@ async def get_valuation_bundle(
         "multiples": multiples,
         "scenarios": scenarios,
         "fair_value_range": fair_value_range,
+        "analyst_consensus": analyst_consensus,
     }

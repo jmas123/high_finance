@@ -240,6 +240,52 @@ export type RiskBundle = {
 // Enhanced Valuation Types
 // Merge into your existing types.ts
 
+
+
+
+
+
+
+
+export type ScenarioResult = {
+  inputs: {
+    growth: number;
+    margin: number;
+    tax: number;
+    wacc: number;
+    terminal_g: number;
+  };
+  enterprise_value: number;
+  equity_value: number;
+  fair_value_per_share: number;
+};
+
+
+
+
+
+// In valuation_types.ts - add this separately
+export type ValuationScenario = {
+  inputs: {
+    growth: number;
+    margin: number;
+    tax: number;
+    wacc: number;
+    terminal_g: number;
+  };
+  enterprise_value: number;
+  equity_value: number;
+  fair_value_per_share: number;
+};
+
+
+
+
+
+// check 
+// Enhanced Valuation Types
+// Replace your existing valuation types in types.ts
+
 export type DCFResult = {
   years: number;
   fcff_projection: number[];
@@ -304,20 +350,27 @@ export type MultiplesValuation = {
   };
 };
 
-export type ScenarioResult = {
-  inputs: {
-    growth: number;
-    margin: number;
-    tax: number;
-    wacc: number;
-    terminal_g: number;
-  };
+export type ValuationScenarioInputs = {
+  growth: number;
+  margin: number;
+  tax: number;
+  wacc: number;
+  terminal_g: number;
+};
+
+export type ValuationScenarioResult = {
+  inputs: ValuationScenarioInputs;
   enterprise_value: number;
   equity_value: number;
   fair_value_per_share: number;
 };
 
-
+export type ValuationScenarios = {
+  bear: ValuationScenarioResult;
+  base: ValuationScenarioResult;
+  bull: ValuationScenarioResult;
+  error?: string;
+};
 
 export type FairValueRange = {
   low: number;
@@ -332,36 +385,100 @@ export type UpsideDownside = {
   upside_pct: number;
   absolute_diff: number;
 };
-// In valuation_types.ts - add this separately
-export type ValuationScenario = {
-  inputs: {
-    growth: number;
-    margin: number;
-    tax: number;
-    wacc: number;
-    terminal_g: number;
+
+// Smart defaults with source info
+export type SmartDefaultsGrowth = {
+  suggested: number;
+  historical_3y: number | null;
+  historical_1y: number | null;
+  analyst_estimate: number | null;
+  sector_median: number;
+  sector_p25: number;
+  sector_p75: number;
+  source: string;
+};
+
+export type SmartDefaultsMargin = {
+  suggested: number;
+  current: number | null;
+  historical_avg: number | null;
+  sector_median: number;
+  sector_p25: number;
+  sector_p75: number;
+  source: string;
+};
+
+export type SmartDefaultsWACC = {
+  suggested: number;
+  beta_implied: number | null;
+  beta: number | null;
+  source: string;
+};
+
+export type SmartDefaultsTax = {
+  suggested: number;
+  effective_rate: number | null;
+  source: string;
+};
+
+export type SmartDefaultsTerminalG = {
+  suggested: number;
+  source: string;
+};
+
+export type SmartDefaults = {
+  growth: SmartDefaultsGrowth;
+  margin: SmartDefaultsMargin;
+  wacc: SmartDefaultsWACC;
+  tax: SmartDefaultsTax;
+  terminal_g: SmartDefaultsTerminalG;
+};
+
+// Assumption warnings
+export type ValuationWarning = {
+  param: string;
+  level: string;
+  severity: "info" | "warning" | "error";
+  message: string;
+  suggestion: string | null;
+};
+
+// Sector benchmarks
+export type SectorBenchmarks = {
+  sector: string;
+  industry: string | null;
+  growth: {
+    p25: number;
+    median: number;
+    p75: number;
+    p90: number;
   };
-  enterprise_value: number;
-  equity_value: number;
-  fair_value_per_share: number;
+  margin: {
+    p25: number;
+    median: number;
+    p75: number;
+    p90: number;
+  };
 };
 
-export type ValuationScenarios = {
-  bear: ValuationScenario;
-  base: ValuationScenario;
-  bull: ValuationScenario;
+// Analyst consensus
+export type AnalystConsensus = {
+  target_mean: number | null;
+  target_low: number | null;
+  target_high: number | null;
+  target_median: number | null;
+  num_analysts: number | null;
+  recommendation: string | null;
+  recommendation_mean: number | null;
 };
 
-// Replace your existing ValuationBundle with this enhanced version
+// Complete enhanced ValuationBundle
 export type ValuationBundle = {
   ticker: string;
-  inputs: {
-    growth: number;
-    margin: number;
-    tax: number;
-    wacc: number;
-    terminal_g: number;
-  };
+  inputs: ValuationScenarioInputs;
+  smart_defaults: SmartDefaults;
+  warnings: ValuationWarning[];
+  benchmarks: SectorBenchmarks;
   facts: {
     revenue0: number;
     ebitda: number | null;
@@ -378,7 +495,20 @@ export type ValuationBundle = {
   upside_downside: UpsideDownside | null;
   sensitivity: SensitivityAnalysis;
   multiples: MultiplesValuation;
-    scenarios: ValuationScenarios;
+  scenarios: ValuationScenarios;
   fair_value_range: FairValueRange | null;
+  analyst_consensus: AnalystConsensus;
   error?: string;
+};
+
+// src/styles/tooltip.ts
+export const TOOLTIP_STYLE = {
+  background: "#0a0a0a",
+  border: "2px solid #3b82f6",
+  borderRadius: 8,
+  padding: "10px 12px",
+  fontSize: 11,
+  lineHeight: 1.5,
+  color: "#ffffff",
+  boxShadow: "0 8px 32px rgba(0,0,0,0.9)",
 };
