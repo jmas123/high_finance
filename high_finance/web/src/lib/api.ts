@@ -8,8 +8,15 @@ import type {
   FinancialStatementsResponse,
   NewsBundle,
   RiskBundle,
-  ValuationBundle
+  ValuationBundle,
+  PoliticianTradeWithContext,
+  PoliticianPerformance,
+  OptionDecaySimulation,
+  IVContext,
+  ContractIVResponse
+
 } from "./types";
+// import type { OptionDecaySimulation, IVContext, ContractIVResponse } from "./types";
 
 const BASE = "/api/v1";
 
@@ -64,9 +71,6 @@ export const api = {
       `${BASE}/search?q=${encodeURIComponent(query)}`
     ),
 
-  politicianTrades: (ticker: string, limit: number = 50) =>
-    getJSON<any[]>(`${BASE}/companies/${encodeURIComponent(ticker)}/politician-trades?limit=${limit}`),
-
   insiderTrades: (ticker: string, limit: number = 50) =>
     getJSON<any[]>(`${BASE}/insider/${encodeURIComponent(ticker)}?limit=${limit}`),
 
@@ -114,5 +118,109 @@ valuation: (ticker: string, params?: Partial<{growth:number;margin:number;tax:nu
   const qs = q.toString();
   return getJSON<ValuationBundle>(`${BASE}/valuation/${encodeURIComponent(ticker)}${qs ? `?${qs}` : ""}`);
 },
+
+
+  congressTradeNotifications: (minAmount: number = 50000, days: number = 7, limit: number = 100) => {
+    const q = new URLSearchParams();
+    q.set("min_amount", String(minAmount));
+    q.set("days", String(days));
+    q.set("limit", String(limit));
+    return getJSON<any[]>(`${BASE}/notifications/congress-trades?${q.toString()}`);
+  },
+
+  politicianTrades: (ticker: string, limit: number = 50) =>
+  getJSON<PoliticianTradeWithContext[]>(
+    `${BASE}/politicians/${encodeURIComponent(ticker)}/politician-trades?limit=${limit}`
+  ),
+
+  politicianPerformance: (politicianId: number, windowDays: number = 30, n: number = 10) => {
+  const q = new URLSearchParams();
+  q.set("window_days", String(windowDays));
+  q.set("n", String(n));
+  return getJSON<PoliticianPerformance>(
+    `${BASE}/politicians/${encodeURIComponent(String(politicianId))}/performance?${q.toString()}`
+  );
+},
+
+
+
+    // jj
+    /**
+ * OPTION DECAY SIMULATOR API METHODS - V2 with IV Context
+ * Add these to lib/api.ts
+ */
+
+// Add to imports at top of api.ts:
+
+  /**
+   * Get IV context for a ticker - helps users understand what IV to use
+   * Returns ATM IV, IV percentile, HV, and suggested IV
+   */
+  ivContext: (ticker: string) =>
+    getJSON<IVContext>(`${BASE}/options/${encodeURIComponent(ticker)}/iv-context`),
+
+  /**
+   * Get IV for a specific option contract
+   * Auto-populates when user selects a strike
+   */
+  contractIV: (
+    ticker: string,
+    expiry: string,
+    strike: number,
+    optionType: "call" | "put" = "call"
+  ) =>
+    getJSON<ContractIVResponse>(
+      `${BASE}/options/${encodeURIComponent(ticker)}/contract-iv/${encodeURIComponent(expiry)}/${strike}?option_type=${optionType}`
+    ),
+
+  /**
+   * Run flat-price option decay simulation
+   * Shows how theta erodes option value over time when stock doesn't move
+   */
+  optionDecaySimulation: (
+    ticker: string,
+    params: {
+      stock_price: number;
+      strike: number;
+      days_to_expiry: number;
+      implied_volatility: number; // decimal, e.g., 0.30 for 30%
+      option_type: "call" | "put";
+      risk_free_rate?: number;
+    }
+  ) => {
+    const q = new URLSearchParams();
+    q.set("stock_price", String(params.stock_price));
+    q.set("strike", String(params.strike));
+    q.set("days_to_expiry", String(params.days_to_expiry));
+    q.set("implied_volatility", String(params.implied_volatility));
+    q.set("option_type", params.option_type);
+    if (params.risk_free_rate != null) {
+      q.set("risk_free_rate", String(params.risk_free_rate));
+    }
+    
+    return fetch(
+      `${BASE}/options/${encodeURIComponent(ticker)}/decay-simulation?${q.toString()}`,
+      { method: "POST" }
+    ).then(res => {
+      if (!res.ok) throw new Error("Simulation failed");
+      return res.json() as Promise<OptionDecaySimulation>;
+    });
+  },
+
+  /**
+   * Get decay simulation for a specific contract (auto-fetches price/IV)
+   */
+  optionDecayForContract: (
+    ticker: string,
+    expiry: string,
+    strike: number,
+    optionType: "call" | "put" = "call"
+  ) =>
+    getJSON<OptionDecaySimulation>(
+      `${BASE}/options/${encodeURIComponent(ticker)}/decay-simulation/${encodeURIComponent(expiry)}/${strike}?option_type=${optionType}`
+    ),
+
+
+    
 
 };

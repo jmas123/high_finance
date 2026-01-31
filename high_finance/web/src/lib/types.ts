@@ -50,28 +50,6 @@ export type CompTemplate = {
   metrics: string[];
 };
 
-export type Fundamentals = {
-  ticker: string;
-  name?: string | null;
-  sector?: string | null;
-  industry?: string | null;
-
-  market_cap?: number | null;
-  pe_ratio?: number | null;
-  forward_pe?: number | null;
-
-  ev_to_ebitda?: number | null;
-  ev_to_sales?: number | null;
-  pb_ratio?: number | null;
-  roe?: number | null;
-
-  revenue_growth?: number | null;
-  gross_margins?: number | null;
-
-  dividend_yield?: number | null;
-
-  comp_template?: CompTemplate | null;
-};
 
 export type CompsResponse = {
   target: Fundamentals;
@@ -512,3 +490,380 @@ export const TOOLTIP_STYLE = {
   color: "#ffffff",
   boxShadow: "0 8px 32px rgba(0,0,0,0.9)",
 };
+
+export type SliderReference = {
+  value: number;
+  label: string;
+  color: string;
+};
+export type Warning = {
+  param: string;
+  level: string;
+  severity: "info" | "warning" | "error";
+  message: string;
+  suggestion: string | null;
+};
+
+export type TradeContextReason = { type: string; title: string; detail: string };
+export type TradeContext = { relevance_score: number; relevance_label: string; reasons: TradeContextReason[] };
+
+
+
+export type PoliticianTradeWithContext = {
+  trade: PoliticianTrade;
+  politician: Politician;
+  context: TradeContext;
+};
+
+export type PoliticianPerformance = {
+  window_days: number;
+  n: number;
+  num_used: number;
+  avg_return_pct: number | null;
+  hit_rate: number | null;
+};
+
+/**
+ * OPTION DECAY SIMULATOR TYPES
+ * Add these to lib/types.ts
+ */
+
+
+
+
+// hello
+/**
+ * OPTION DECAY SIMULATOR TYPES - V2 with IV Context
+ * Add these to lib/types.ts
+ */
+
+// ===== IV CONTEXT TYPES =====
+
+export type IVByExpiry = {
+  expiry: string;
+  days: number;
+  atm_iv: number;
+  atm_iv_pct: number;
+  atm_strike: number;
+};
+
+export type IVContext = {
+  atm_iv: number | null;
+  iv_percentile: number | null;
+  iv_high_52w: number | null;
+  iv_low_52w: number | null;
+  hv_20: number | null;
+  hv_60: number | null;
+  suggested_iv: number;
+  iv_by_expiry: IVByExpiry[];
+};
+
+export type ContractIVResponse = {
+  strike: number;
+  iv: number | null;
+  iv_pct: number | null;
+  bid: number;
+  ask: number;
+  last_price: number;
+  volume: number;
+  open_interest: number;
+  error?: string;
+};
+
+// ===== DECAY SIMULATION TYPES =====
+
+export type DecayCurvePoint = {
+  day: number;
+  days_remaining: number;
+  price: number;
+  theta: number;
+  delta: number;
+  decay_from_start: number;
+  decay_pct: number;
+  extrinsic_remaining: number;
+};
+
+export type OptionGreeks = {
+  delta: number;
+  gamma: number;
+  theta: number;
+  vega: number;
+  rho: number;
+};
+
+export type DecaySimulationInputs = {
+  stock_price: number;
+  strike: number;
+  days_to_expiry: number;
+  implied_volatility_pct: number;
+  option_type: "call" | "put";
+  risk_free_rate_pct: number;
+};
+
+export type CurrentOptionValues = {
+  option_price: number;
+  intrinsic_value: number;
+  extrinsic_value: number;
+  moneyness: "ITM" | "ATM" | "OTM";
+};
+
+export type DecaySummary = {
+  initial_price: number;
+  final_price: number;
+  total_decay_dollars: number;
+  total_decay_pct: number;
+  extrinsic_decay_pct: number;
+  avg_daily_decay: number;
+  current_daily_theta: number;
+};
+
+export type DecayMilestone = {
+  days_remaining: number;
+  price: number;
+  decay_pct: number;
+};
+
+export type DecayInterpretation = {
+  favors: "buyers" | "sellers" | "neutral";
+  favors_explanation: string;
+  strategy_hint: string;
+  time_decay_intensity: "very_short" | "short" | "medium" | "long";
+  time_description: string;
+  iv_environment: "very_high" | "high" | "normal" | "low";
+  iv_description: string;
+  total_decay_pct: number;
+  key_insight: string;
+};
+
+export type OptionDecaySimulation = {
+  ticker: string;
+  inputs: DecaySimulationInputs;
+  current_values: CurrentOptionValues;
+  greeks: OptionGreeks;
+  decay_summary: DecaySummary;
+  milestones: {
+    at_25pct_time_elapsed: DecayMilestone;
+    at_50pct_time_elapsed: DecayMilestone;
+    at_75pct_time_elapsed: DecayMilestone;
+  };
+  decay_curve: DecayCurvePoint[];
+  interpretation: DecayInterpretation;
+};
+
+export type DecaySimulationParams = {
+  stock_price: number;
+  strike: number;
+  days_to_expiry: number;
+  implied_volatility: number;
+  option_type: "call" | "put";
+  risk_free_rate?: number;
+};
+/**
+ * ETF & Asset Type Detection - Add to lib/types.ts
+ */
+
+// Update your existing Fundamentals type to include these fields:
+export type Fundamentals = {
+  ticker: string;
+  name?: string | null;
+  sector?: string | null;
+  industry?: string | null;
+  current_price?: number | null;
+
+  // Asset type detection
+  quote_type?: string | null;  // "ETF" | "EQUITY" | "MUTUALFUND" | "INDEX"
+  is_etf?: boolean;
+  is_mutual_fund?: boolean;
+  is_index?: boolean;
+
+  // Stock metrics
+  market_cap?: number | null;
+  pe_ratio?: number | null;
+  forward_pe?: number | null;
+  ev_to_ebitda?: number | null;
+  ev_to_sales?: number | null;
+  pb_ratio?: number | null;
+  roe?: number | null;
+  revenue_growth?: number | null;
+  gross_margins?: number | null;
+  dividend_yield?: number | null;
+  eps?: number | null;
+  profit_margin?: number | null;
+  beta?: number | null;
+  revenue?: number | null;
+  fifty_two_week_high?: number | null;
+  fifty_two_week_low?: number | null;
+  fifty_day_avg?: number | null;
+  two_hundred_day_avg?: number | null;
+  comp_template?: CompTemplate | null;
+
+  // ETF-specific metrics
+  total_assets?: number | null;      // AUM
+  nav_price?: number | null;
+  expense_ratio?: number | null;     // e.g., 0.0003 = 0.03%
+  yield?: number | null;             // Distribution yield
+  ytd_return?: number | null;
+  three_year_return?: number | null;
+  five_year_return?: number | null;
+  category?: string | null;          // e.g., "Large Blend"
+  fund_family?: string | null;       // e.g., "Vanguard"
+  holdings_count?: number | null;
+};
+
+
+// Market Context Types
+
+export interface MacroIndicator {
+  name: string;
+  value: number;
+  previous_value: number;
+  change: number;
+  change_pct: number;
+  unit: string;
+  last_updated: string;
+  trend: 'up' | 'down' | 'stable';
+  impact_description: string;
+}
+
+export interface MacroSummary {
+  rate_environment: 'restrictive' | 'accommodative' | 'neutral';
+  inflation_trend: 'cooling' | 'heating' | 'stable';
+  yield_curve: 'inverted' | 'normal' | 'flat';
+  market_volatility: 'low' | 'elevated' | 'high';
+}
+
+export interface MacroResponse {
+  indicators: MacroIndicator[];
+  summary: MacroSummary;
+}
+
+export interface TopMover {
+  symbol: string;
+  change: number;
+}
+
+export interface SectorPerformance {
+  sector: string;
+  ticker: string;
+  performance_1d: number;
+  performance_1w: number;
+  performance_1m: number;
+  performance_ytd: number;
+  volume_vs_avg: number;
+  market_cap_billions: number;
+  top_movers: TopMover[];
+}
+
+export interface SectorBreadth {
+  positive: number;
+  negative: number;
+  unchanged: number;
+}
+
+export interface SectorResponse {
+  sectors: SectorPerformance[];
+  market_leader: string | null;
+  market_laggard: string | null;
+  breadth: SectorBreadth;
+}
+
+export interface RateImpactAnalysis {
+  sector: string;
+  sensitivity: 'high' | 'medium' | 'low';
+  correlation_to_rates: number;
+  impact_direction: 'positive' | 'negative' | 'neutral';
+  explanation: string;
+  historical_performance_rising_rates: number;
+  historical_performance_falling_rates: number;
+}
+
+export interface RateImpactBySensitivity {
+  high: string[];
+  medium: string[];
+  low: string[];
+}
+
+export interface RateImpactResponse {
+  analyses: RateImpactAnalysis[];
+  by_sensitivity: RateImpactBySensitivity;
+  rate_beneficiaries: string[];
+  rate_sensitive: string[];
+}
+
+export interface MarketBreadth {
+  advancing: number;
+  declining: number;
+  unchanged: number;
+  new_highs: number;
+  new_lows: number;
+  above_200dma_pct: number;
+  above_50dma_pct: number;
+  mcclellan_oscillator: number;
+  fear_greed_index: number;
+  breadth_score: number;
+  breadth_signal: 'bullish' | 'bearish' | 'neutral';
+  advance_decline_ratio: number;
+}
+
+export interface StockMarketContext {
+  ticker: string;
+  sector: string | null;
+  sector_performance: SectorPerformance | null;
+  rate_sensitivity: RateImpactAnalysis | null;
+  market_breadth: {
+    advance_decline_ratio: number;
+    above_200dma_pct: number;
+    fear_greed_index: number;
+  };
+  key_macro_indicators: Record<
+    string,
+    {
+      value: number;
+      trend: string;
+      impact: string;
+    }
+  >;
+  contextual_insight: string;
+}
+
+// API Functions
+const API_BASE = '/api/v1/market';
+
+export async function fetchMacroIndicators(): Promise<MacroResponse> {
+  const response = await fetch(`${API_BASE}/macro-indicators`);
+  if (!response.ok) throw new Error('Failed to fetch macro indicators');
+  return response.json();
+}
+
+export async function fetchSectorPerformance(): Promise<SectorResponse> {
+  const response = await fetch(`${API_BASE}/sectors`);
+  if (!response.ok) throw new Error('Failed to fetch sector performance');
+  return response.json();
+}
+
+export async function fetchRateImpact(sector?: string): Promise<RateImpactResponse> {
+  const url = sector
+    ? `${API_BASE}/rate-impact?sector=${encodeURIComponent(sector)}`
+    : `${API_BASE}/rate-impact`;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error('Failed to fetch rate impact');
+  return response.json();
+}
+
+export async function fetchStockRateImpact(ticker: string): Promise<RateImpactAnalysis> {
+  const response = await fetch(`${API_BASE}/rate-impact/${ticker}`);
+  if (!response.ok) throw new Error(`Failed to fetch rate impact for ${ticker}`);
+  return response.json();
+}
+
+export async function fetchMarketBreadth(): Promise<MarketBreadth> {
+  const response = await fetch(`${API_BASE}/breadth`);
+  if (!response.ok) throw new Error('Failed to fetch market breadth');
+  return response.json();
+}
+
+export async function fetchStockMarketContext(ticker: string): Promise<StockMarketContext> {
+  const response = await fetch(`${API_BASE}/context/${ticker}`);
+  if (!response.ok) throw new Error(`Failed to fetch market context for ${ticker}`);
+  return response.json();
+}
