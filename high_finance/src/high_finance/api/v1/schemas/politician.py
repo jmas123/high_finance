@@ -1,6 +1,9 @@
 from pydantic import BaseModel
-from typing import Optional
 from datetime import date
+
+from typing import List, Optional, Literal
+
+
 
 class PoliticianOut(BaseModel):
     id: int
@@ -36,3 +39,42 @@ class PoliticianTradeWithPoliticianOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+
+
+
+
+class TradeContextReasonOut(BaseModel):
+    type: str
+    title: str
+    detail: str
+
+class TradeContextOut(BaseModel):
+    relevance_score: float
+    relevance_label: str
+    reasons: List[TradeContextReasonOut] = []
+
+class CongressTradeNotificationOut(BaseModel):
+    trade: PoliticianTradeOut
+    politician: PoliticianOut
+    context: TradeContextOut
+
+    class Config:
+        from_attributes = True
+
+class PoliticianTradeWithContextOut(BaseModel):
+    trade: PoliticianTradeOut
+    politician: PoliticianOut
+    context: TradeContextOut
+
+    class Config:
+        from_attributes = True
+
+
+class PoliticianPerformanceOut(BaseModel):
+    window_days: int
+    n: int
+    num_used: int
+    avg_return_pct: Optional[float] = None
+    hit_rate: Optional[float] = None

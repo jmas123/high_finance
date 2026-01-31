@@ -15,6 +15,21 @@ def clamp(val, lo=None, hi=None):
         return None
     return v
 
+
+def normalize_return(val):
+    if val is None:
+        return None
+    try:
+        v = float(val)
+    except:
+        return None
+
+    # If value looks like "17.8" instead of "0.178", normalize
+    if abs(v) > 1:
+        return v / 100
+
+    return v
+
 def pick_comp_template(sector: str | None, industry: str | None, is_profitable: bool | None):
     s = (sector or "").lower()
     i = (industry or "").lower()
@@ -72,10 +87,40 @@ def pick_comp_template(sector: str | None, industry: str | None, is_profitable: 
         "metrics": ["market_cap", "ev_to_ebitda", "pe_ratio", "revenue_growth"]
     }
 
+
+def get_etf_fundamentals(info: dict) -> dict:
+    """Extract ETF-specific metrics from yfinance info."""
+    return {
+        # Basic ETF info
+        "total_assets": info.get("totalAssets"),  # AUM
+        "nav_price": info.get("navPrice"),
+        "expense_ratio": info.get("annualReportExpenseRatio"),  # e.g., 0.0003 = 0.03%
+        "yield": info.get("yield"),  # Distribution yield
+        "ytd_return":normalize_return(info.get("ytdReturn")),
+        "three_year_return": info.get("threeYearAverageReturn"),
+        "five_year_return": info.get("fiveYearAverageReturn"),
+        
+        # Category info
+        "category": info.get("category"),  # e.g., "Large Blend"
+        "fund_family": info.get("fundFamily"),  # e.g., "Vanguard"
+        
+        # Holdings info (if available)
+        "holdings_count": info.get("holdingsCount"),
+    }
+
+
 async def get_company_fundamentals(ticker: str, db, fetch_peers: bool = False):
     stock = yf.Ticker(ticker)
     info = stock.info or {}
 
+    # ==========================================
+    # ASSET TYPE DETECTION
+    # ==========================================
+    quote_type = info.get("quoteType", "EQUITY")
+    is_etf = quote_type == "ETF"
+    is_mutual_fund = quote_type == "MUTUALFUND"
+    is_index = quote_type == "INDEX"
+    
     sector = info.get("sector")
     industry = info.get("industry")
 
@@ -87,12 +132,69 @@ async def get_company_fundamentals(ticker: str, db, fetch_peers: bool = False):
     price = info.get("currentPrice") or info.get("regularMarketPrice")
     price = clamp(price, lo=0.01)
 
+    # ==========================================
+    # ETF-SPECIFIC HANDLING
+    # ==========================================
+    if is_etf or is_mutual_fund:
+        etf_data = get_etf_fundamentals(info)
+        
+        return {
+            "ticker": ticker,
+            "name": info.get("longName") or info.get("shortName"),
+            "sector": sector,
+            "industry": industry,
+            "market_cap": market_cap,
+            "current_price": price,
+            
+            # Asset type flags
+            "quote_type": quote_type,
+            "is_etf": is_etf,
+            "is_mutual_fund": is_mutual_fund,
+            "is_index": is_index,
+            
+            # ETF-specific fields
+            "total_assets": etf_data["total_assets"],
+            "nav_price": etf_data["nav_price"],
+            "expense_ratio": etf_data["expense_ratio"],
+            "yield": etf_data["yield"],
+            "ytd_return": etf_data["ytd_return"],
+            "three_year_return": etf_data["three_year_return"],
+            "five_year_return": etf_data["five_year_return"],
+            "category": etf_data["category"],
+            "fund_family": etf_data["fund_family"],
+            "holdings_count": etf_data["holdings_count"],
+            
+            # These will be None for ETFs but included for type consistency
+            "pe_ratio": None,
+            "pb_ratio": None,
+            "roe": None,
+            "ev_to_ebitda": None,
+            "ev_to_sales": None,
+            "dividend_yield": etf_data["yield"],  # Use ETF yield
+            "revenue_growth": None,
+            "gross_margins": None,
+            "comp_template": None,
+            "forward_pe": None,
+            "eps": None,
+            "profit_margin": None,
+            "beta": clamp(info.get("beta"), lo=-5, hi=5),
+            "revenue": None,
+            "fifty_two_week_high": clamp(info.get("fiftyTwoWeekHigh"), lo=0.01),
+            "fifty_two_week_low": clamp(info.get("fiftyTwoWeekLow"), lo=0.01),
+            "fifty_day_avg": clamp(info.get("fiftyDayAverage"), lo=0.01),
+            "two_hundred_day_avg": clamp(info.get("twoHundredDayAverage"), lo=0.01),
+        }
+
+    # ==========================================
+    # REGULAR STOCK HANDLING (existing code)
+    # ==========================================
+    
     # EPS TTM (yfinance: trailingEps is usually TTM EPS)
     eps_ttm = clamp(info.get("trailingEps"), lo=0.000001)
 
     # Manual P/E (reliable)
     pe_ratio = (price / eps_ttm) if (price and eps_ttm) else None
-    pe_ratio = clamp(pe_ratio, lo=2, hi=80)
+    pe_ratio = clamp(pe_ratio, lo=2, hi=200)
 
     # Forward PE fallback if we couldn't compute
     if pe_ratio is None:
@@ -141,6 +243,26 @@ async def get_company_fundamentals(ticker: str, db, fetch_peers: bool = False):
     if ev_to_sales is None and ev and total_revenue:
         ev_to_sales = clamp(ev / total_revenue, lo=0.1, hi=80)
 
+    forward_pe = clamp(info.get("forwardPE"), lo=0.1, hi=200)
+
+    # EPS: keep your eps_ttm, but consider allowing negative EPS for display
+    eps = info.get("trailingEps")
+    try:
+        eps = float(eps) if eps is not None else None
+    except:
+        eps = None
+
+    profit_margin = clamp(info.get("profitMargins"), lo=-1, hi=1)  # fraction
+    beta = clamp(info.get("beta"), lo=-5, hi=5)
+
+    fifty_two_week_high = clamp(info.get("fiftyTwoWeekHigh"), lo=0.01)
+    fifty_two_week_low = clamp(info.get("fiftyTwoWeekLow"), lo=0.01)
+
+    fifty_day_avg = clamp(info.get("fiftyDayAverage"), lo=0.01)
+    two_hundred_day_avg = clamp(info.get("twoHundredDayAverage"), lo=0.01)
+
+    revenue = clamp(info.get("totalRevenue"), lo=1)
+
     # Choose template
     comp_template = pick_comp_template(sector, industry, is_profitable)
 
@@ -172,6 +294,15 @@ async def get_company_fundamentals(ticker: str, db, fetch_peers: bool = False):
         "sector": sector,
         "industry": industry,
         "market_cap": market_cap,
+        "current_price": price,
+        
+        # Asset type flags
+        "quote_type": quote_type,
+        "is_etf": False,
+        "is_mutual_fund": False,
+        "is_index": False,
+        
+        # Stock-specific fields
         "pe_ratio": pe_ratio,
         "pb_ratio": pb_ratio,
         "roe": roe,
@@ -181,6 +312,27 @@ async def get_company_fundamentals(ticker: str, db, fetch_peers: bool = False):
         "revenue_growth": revenue_growth,
         "gross_margins": gross_margins,
         "comp_template": comp_template,
+        "forward_pe": forward_pe,
+        "eps": eps,
+        "profit_margin": profit_margin,
+        "beta": beta,
+        "revenue": revenue,
+        "fifty_two_week_high": fifty_two_week_high,
+        "fifty_two_week_low": fifty_two_week_low,
+        "fifty_day_avg": fifty_day_avg,
+        "two_hundred_day_avg": two_hundred_day_avg,
+        
+        # ETF fields (null for stocks)
+        "total_assets": None,
+        "nav_price": None,
+        "expense_ratio": None,
+        "yield": None,
+        "ytd_return": None,
+        "three_year_return": None,
+        "five_year_return": None,
+        "category": None,
+        "fund_family": None,
+        "holdings_count": None,
     }
 
     if not fetch_peers:

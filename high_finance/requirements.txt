@@ -29,4 +29,7 @@ lxml
 requests
 python-dotenv
 feedparser
+pyyaml
+scipy
 vaderSentiment
+fredapi

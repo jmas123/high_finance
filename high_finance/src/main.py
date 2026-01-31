@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from high_finance.api.v1.routes import (
     companies, fundamentals, ownership, leadership, 
     prices, financials, predictions, search, politicians,
-    insider, institutional, earnings, options, news, risk, valuation
+    insider, institutional, earnings, options, news, risk, valuation, notifications, market
 )
 
 app = FastAPI()
@@ -32,6 +32,9 @@ app.include_router(options.router, prefix="/api/v1/options", tags=["options"])
 app.include_router(news.router, prefix="/api/v1/news", tags=["news"])
 app.include_router(risk.router, prefix="/api/v1/risk", tags=["risk"])
 app.include_router(valuation.router, prefix="/api/v1/valuation", tags=["valuation"])
+app.include_router(notifications.router, prefix="/api/v1/notifications", tags=["notifications"])
+app.include_router(market.router, prefix="/api/v1/market", tags=["market"])
+
 
 
 

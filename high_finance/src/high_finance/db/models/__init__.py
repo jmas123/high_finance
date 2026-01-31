@@ -6,3 +6,6 @@ from .price import Price
 from .politician import Politician
 from .politician_trade import PoliticianTrade
 from .news_cache import NewsCache
+from .committee import Committee
+from .subcommittee import Subcommittee
+from .committee_membership import CommitteeMembership
