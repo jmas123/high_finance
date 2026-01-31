@@ -1,0 +1,42 @@
+####################
+# OS
+####################
+.DS_Store
+**/.DS_Store
+
+
+####################
+# Environment
+####################
+.env
+.env.*
+!.env.example
+!/infra/.env.example
+
+####################
+# Node / Frontend
+####################
+**/node_modules/
+**/dist/
+**/build/
+**/.next/
+**/.turbo/
+**/.cache/
+**/.vite/
+**/coverage/
+
+####################
+# Python / Backend
+####################
+**/.venv/
+**/venv/
+**/__pycache__/
+**/*.pyc
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+
+####################
+# Logs
+####################
+**/*.log
