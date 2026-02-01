@@ -120,7 +120,8 @@ async def get_company_fundamentals(ticker: str, db, fetch_peers: bool = False):
     is_etf = quote_type == "ETF"
     is_mutual_fund = quote_type == "MUTUALFUND"
     is_index = quote_type == "INDEX"
-    
+    print(f"DEBUG: {ticker} quoteType = {info.get('quoteType')}")
+
     sector = info.get("sector")
     industry = info.get("industry")
 

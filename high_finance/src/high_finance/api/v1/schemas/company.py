@@ -1,5 +1,5 @@
-from pydantic import BaseModel
-from typing import Optional, List, Dict
+from pydantic import BaseModel, Field
+from typing import Optional, List, Dict, Any
 
 class CompTemplate(BaseModel):
     label: str
@@ -11,6 +11,13 @@ class CompanyFundamentals(BaseModel):
     sector: Optional[str] = None
     industry: Optional[str] = None
     market_cap: Optional[float] = None
+    current_price: Optional[float] = None  # ✅ you return this
+
+    # ✅ asset type flags (needed for ETF detection in UI)
+    quote_type: Optional[str] = None
+    is_etf: Optional[bool] = None
+    is_mutual_fund: Optional[bool] = None
+    is_index: Optional[bool] = None
 
     # valuation
     pe_ratio: Optional[float] = None
@@ -35,20 +42,34 @@ class CompanyFundamentals(BaseModel):
     profit_margin: Optional[float] = None
     beta: Optional[float] = None
 
+    # ✅ ETF-specific fields (all optional; filled only for ETFs/funds)
+    total_assets: Optional[float] = None
+    nav_price: Optional[float] = None
+    expense_ratio: Optional[float] = None
+
+    # "yield" is a python keyword; keep JSON key as "yield" with alias
+    yield_: Optional[float] = Field(default=None, alias="yield")
+
+    ytd_return: Optional[float] = None
+    three_year_return: Optional[float] = None
+    five_year_return: Optional[float] = None
+    category: Optional[str] = None
+    fund_family: Optional[str] = None
+    holdings_count: Optional[int] = None
+
     # optional: you currently return this per-company
     comp_template: Optional[CompTemplate] = None
 
     class Config:
         from_attributes = True
+        populate_by_name = True  # ✅ allows yield_ <-> "yield" alias to work
 
 class ComparableAnalysis(BaseModel):
     target: CompanyFundamentals
     peers: List[CompanyFundamentals]
 
-    # ✅ new fields that your service returns
     template: CompTemplate
     averages: Dict[str, Optional[float]]
 
-    # ✅ keep legacy fields OPTIONAL so nothing else breaks
     average_pe: Optional[float] = None
     average_ev_ebitda: Optional[float] = None

@@ -21,6 +21,16 @@ import { InsiderTradingCard } from "./components/InsiderTradingCard";
 import { InstitutionalFlowCard } from "./components/InstitutionalFlowCard";
 import BroaderMarketContext from "./components/market_context/BroaderMarketContextCard";
 
+// ── Personalization ──────────────────────────────────────────────────────────
+import { HomeDashboard } from "./components/personalization/HomeDashBoard";
+import {
+  addToWatchlist,
+  removeFromWatchlist,
+  isInWatchlist,
+  addPosition,
+  addRecentTicker,
+} from "./lib/storage";
+
 export default function App() {
   const [searchedTicker, setSearchedTicker] = useState("");
   const [loading, setLoading] = useState(false);
@@ -35,19 +45,17 @@ export default function App() {
   const [financials, setFinancials] = useState<FinancialStatementsResponse | null>(null);
   const [view, setView] = useState<"ticker" | "notifications">("ticker");
 
+  // ── Personalization state ──────────────────────────────────────────────────
+  const [watchlistRefresh, setWatchlistRefresh] = useState(0);
+  const [portfolioRefresh, setPortfolioRefresh] = useState(0);
+  const [inWatchlist, setInWatchlist] = useState(false);
+  const [showAddPosition, setShowAddPosition] = useState(false);
+
   // Determine if current ticker is an ETF
-   const isETF = fundamentals?.is_etf === true;
-   const sector = fundamentals?.sector
+  const isETF = fundamentals?.is_etf === true;
+  const sector = fundamentals?.sector;
   const isMutualFund = fundamentals?.is_mutual_fund === true;
   const isStock = fundamentals && !isETF && !isMutualFund;
- console.log("fundamentals", fundamentals);
-console.log("flags", {
-  ticker: fundamentals?.ticker,
-  is_etf: fundamentals?.is_etf,
-  is_mutual_fund: fundamentals?.is_mutual_fund,
-  quote_type: fundamentals?.quote_type,
-});
- 
 
   async function loadTicker(ticker: string) {
     const t = ticker.trim().toUpperCase();
@@ -55,7 +63,8 @@ console.log("flags", {
 
     setLoading(true);
     setError(null);
-    
+    setShowAddPosition(false);
+
     setCompany(null);
     setFundamentals(null);
     setOwnership([]);
@@ -63,6 +72,9 @@ console.log("flags", {
     setPrices([]);
     setFinancials(null);
     setComps(null);
+
+    // Make sure we're on the ticker view when loading a ticker
+    setView("ticker");
 
     try {
       // Always load these (work for both stocks and ETFs)
@@ -77,9 +89,13 @@ console.log("flags", {
       setPrices(p);
       setSearchedTicker(t);
 
+      // ── Personalization tracking ───────────────────────────────────────────
+      addRecentTicker(t);
+      setInWatchlist(isInWatchlist(t));
+
       // Only load stock-specific data if NOT an ETF
       const isEtfOrFund = f?.is_etf || f?.is_mutual_fund;
-      
+
       if (!isEtfOrFund) {
         // Load stock-specific data
         const [o, l, fin, cmp] = await Promise.all([
@@ -111,39 +127,83 @@ console.log("flags", {
     }
   }
 
+  // ── Personalization handlers ─────────────────────────────────────────────
+  function toggleWatchlist() {
+    if (!searchedTicker || !company) return;
+    if (inWatchlist) {
+      removeFromWatchlist(searchedTicker);
+      setInWatchlist(false);
+    } else {
+      addToWatchlist(searchedTicker, company.name || company.short_name || searchedTicker);
+      setInWatchlist(true);
+    }
+    setWatchlistRefresh((n) => n + 1);
+  }
+
+  function handleAddPosition(shares: number, avgCost: number) {
+    if (!searchedTicker || !company) return;
+    addPosition(searchedTicker, company.name || company.short_name || searchedTicker, shares, avgCost);
+    setPortfolioRefresh((n) => n + 1);
+    setShowAddPosition(false);
+  }
+
+  function goToDashboard() {
+    setSearchedTicker("");
+    setCompany(null);
+    setFundamentals(null);
+    setOwnership([]);
+    setLeadership([]);
+    setPrices([]);
+    setFinancials(null);
+    setComps(null);
+    setShowAddPosition(false);
+  }
+
   return (
-    <div style={{ 
-      width: "100%",
-      minHeight: "100vh", 
-      background: "#111", 
-      color: "#fff",
-      fontFamily: "system-ui, -apple-system, sans-serif", 
-    }}>
-      <div style={{
-        maxWidth: 1200,
-        margin: "0 auto",
-        padding: 24,
-      }}>
+    <div
+      style={{
+        width: "100%",
+        minHeight: "100vh",
+        background: "#111",
+        color: "#fff",
+        fontFamily: "system-ui, -apple-system, sans-serif",
+      }}
+    >
+      <div
+        style={{
+          maxWidth: 1200,
+          margin: "0 auto",
+          padding: 24,
+        }}
+      >
         {/* Search Bar */}
         <div style={{ marginBottom: 24 }}>
           <SearchBar onSelect={loadTicker} loading={loading} />
         </div>
 
         {error && (
-          <div style={{ 
-            marginBottom: 20, 
-            padding: 12, 
-            background: "#3b1818", 
-            border: "1px solid #7f1d1d", 
-            borderRadius: 8 
-          }}>
+          <div
+            style={{
+              marginBottom: 20,
+              padding: 12,
+              background: "#3b1818",
+              border: "1px solid #7f1d1d",
+              borderRadius: 8,
+            }}
+          >
             <b>Error:</b> {error}
           </div>
         )}
 
+        {/* Navigation Tabs */}
         <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
           <button
-            onClick={() => setView("ticker")}
+            onClick={() => {
+              if (!company) {
+                goToDashboard();
+              }
+              setView("ticker");
+            }}
             style={{
               padding: "8px 12px",
               borderRadius: 8,
@@ -153,7 +213,7 @@ console.log("flags", {
               cursor: "pointer",
             }}
           >
-            Ticker
+            {company ? "Ticker" : "Dashboard"}
           </button>
 
           <button
@@ -173,11 +233,13 @@ console.log("flags", {
 
         {/* Loading State */}
         {loading && (
-          <div style={{ 
-            textAlign: "center", 
-            padding: 80, 
-            opacity: 0.6 
-          }}>
+          <div
+            style={{
+              textAlign: "center",
+              padding: 80,
+              opacity: 0.6,
+            }}
+          >
             <div style={{ fontSize: 48, marginBottom: 20 }}>⏳</div>
             <div style={{ fontSize: 18 }}>Loading data...</div>
           </div>
@@ -189,44 +251,113 @@ console.log("flags", {
           </div>
         )}
 
-        {/* Show data only when loaded */}
+        {/* ======================================================== */}
+        {/* HOME DASHBOARD — shown when no ticker loaded              */}
+        {/* ======================================================== */}
+        {view === "ticker" && !company && !loading && (
+          <HomeDashboard
+            onSelect={loadTicker}
+            watchlistRefreshKey={watchlistRefresh}
+            portfolioRefreshKey={portfolioRefresh}
+          />
+        )}
+
+        {/* ======================================================== */}
+        {/* TICKER VIEW — shown when a stock/etf is loaded            */}
+        {/* ======================================================== */}
         {view === "ticker" && company && fundamentals && !loading && (
           <>
             {/* ETF Badge */}
             {isETF && (
-              <div style={{
-                display: "inline-block",
-                padding: "4px 12px",
-                background: "#3b82f6",
-                borderRadius: 999,
-                fontSize: 12,
-                fontWeight: 600,
-                marginBottom: 12,
-              }}>
+              <div
+                style={{
+                  display: "inline-block",
+                  padding: "4px 12px",
+                  background: "#3b82f6",
+                  borderRadius: 999,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  marginBottom: 12,
+                }}
+              >
                 📊 ETF
               </div>
             )}
 
-            <CompanyHeader 
-              company={company} 
-              fundamentals={fundamentals} 
-              prices={prices} 
-            />
+            <CompanyHeader company={company} fundamentals={fundamentals} prices={prices} />
+
+            {/* ── Action Buttons (Watch / Portfolio / Back) ──────────── */}
+            <div style={{ display: "flex", gap: 8, marginBottom: 16, marginTop: 12 }}>
+              <button
+                onClick={toggleWatchlist}
+                style={{
+                  background: inWatchlist ? "#22c55e20" : "#222",
+                  border: `1px solid ${inWatchlist ? "#22c55e40" : "#444"}`,
+                  borderRadius: 8,
+                  color: inWatchlist ? "#22c55e" : "#aaa",
+                  fontSize: 13,
+                  padding: "6px 14px",
+                  cursor: "pointer",
+                  transition: "all 0.15s",
+                }}
+              >
+                {inWatchlist ? "★ Watching" : "☆ Watch"}
+              </button>
+
+              <button
+                onClick={() => setShowAddPosition(!showAddPosition)}
+                style={{
+                  background: showAddPosition ? "#8b5cf620" : "#222",
+                  border: `1px solid ${showAddPosition ? "#8b5cf640" : "#444"}`,
+                  borderRadius: 8,
+                  color: showAddPosition ? "#8b5cf6" : "#aaa",
+                  fontSize: 13,
+                  padding: "6px 14px",
+                  cursor: "pointer",
+                  transition: "all 0.15s",
+                }}
+              >
+                💼 Add to Portfolio
+              </button>
+
+              <button
+                onClick={goToDashboard}
+                style={{
+                  background: "#222",
+                  border: "1px solid #444",
+                  borderRadius: 8,
+                  color: "#888",
+                  fontSize: 13,
+                  padding: "6px 14px",
+                  cursor: "pointer",
+                  marginLeft: "auto",
+                }}
+              >
+                ← Dashboard
+              </button>
+            </div>
+
+            {/* ── Inline Add Position Form ────────────────────────────── */}
+            {showAddPosition && (
+              <AddPositionInline
+                ticker={searchedTicker}
+                onAdd={handleAddPosition}
+                onCancel={() => setShowAddPosition(false)}
+              />
+            )}
 
             {/* Price Chart - Always show */}
             {prices.length > 0 && (
-              <div style={{ 
-                marginBottom: 20,
-                background: "#1a1a1a",
-                border: "1px solid #333",
-                borderRadius: 10,
-                padding: 16
-              }}>
-                <PriceChart 
-                  data={prices} 
-                  ticker={searchedTicker} 
-                  onPeriodChange={loadPrices} 
-                />
+              <div
+                style={{
+                  marginBottom: 20,
+                  background: "#1a1a1a",
+                  border: "1px solid #333",
+                  borderRadius: 10,
+                  padding: 16,
+                }}
+              >
+                <PriceChart data={prices} ticker={searchedTicker} onPeriodChange={loadPrices} />
               </div>
             )}
 
@@ -241,13 +372,27 @@ console.log("flags", {
                 </div>
 
                 {/* DCF + Risk (side by side) */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: 16,
+                    marginBottom: 16,
+                  }}
+                >
                   <DCFCard key={`dcf-${searchedTicker}`} ticker={searchedTicker} />
                   <RiskCard key={`risk-${searchedTicker}`} ticker={searchedTicker} />
                 </div>
 
                 {/* Fundamentals + Institutional Flow */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: 16,
+                    marginBottom: 16,
+                  }}
+                >
                   <FundamentalsCard data={fundamentals} />
                   <InstitutionalFlowCard key={`inst-${searchedTicker}`} ticker={searchedTicker} />
                 </div>
@@ -258,34 +403,40 @@ console.log("flags", {
                     <CompsTable data={comps} />
                   </div>
                 )}
-                <div style={{ 
+
+                <div
+                  style={{
                     marginBottom: 20,
-                    background: "#1a1a1a", // Matches your PriceChart/Cards
+                    background: "#1a1a1a",
                     border: "1px solid #333",
                     borderRadius: 10,
-                    padding: 20 
-                    }}>
-                    <BroaderMarketContext
-                        ticker={searchedTicker}
-                        sector={sector}
-                        showMacro={true}
-                        showSectors={true}
-                        showRateImpact={true}
-                    />
-                    </div>
+                    padding: 20,
+                  }}
+                >
+                  <BroaderMarketContext
+                    ticker={searchedTicker}
+                    sector={sector}
+                    showMacro={true}
+                    showSectors={true}
+                    showRateImpact={true}
+                  />
+                </div>
 
                 {/* Insider + Politicians */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: 16,
+                    marginBottom: 16,
+                  }}
+                >
                   <InsiderTradingCard key={`insider-${searchedTicker}`} ticker={searchedTicker} />
                   <PoliticianTradesCard key={`pol-${searchedTicker}`} ticker={searchedTicker} />
                 </div>
 
-
-
                 {/* Leadership */}
-                {leadership.length > 0 && (
-                  <LeadershipTable data={leadership} />
-                )}
+                {leadership.length > 0 && <LeadershipTable data={leadership} />}
 
                 {/* Earnings */}
                 <div style={{ marginBottom: 20 }}>
@@ -302,7 +453,6 @@ console.log("flags", {
                 {/* ETF Fundamentals Card */}
                 <div style={{ marginBottom: 20 }}>
                   <ETFFundamentalsCard data={fundamentals} />
-                  
                 </div>
 
                 {/* Risk Card - Works for ETFs too */}
@@ -315,7 +465,7 @@ console.log("flags", {
             {/* ==================== */}
             {/* SHARED SECTIONS */}
             {/* ==================== */}
-            
+
             {/* News - Works for both */}
             <NewsCard ticker={searchedTicker} />
 
@@ -332,29 +482,117 @@ console.log("flags", {
             {/* Financial Statements - Stock only */}
             {isStock && financials && (
               <div style={{ marginTop: 16 }}>
-                <FinancialStatements key={`fin-${searchedTicker}`} data={financials} ticker={searchedTicker} />
+                <FinancialStatements
+                  key={`fin-${searchedTicker}`}
+                  data={financials}
+                  ticker={searchedTicker}
+                />
               </div>
             )}
           </>
-        )}
-
-        {/* Empty State */}
-        {view === "ticker" && !company && !loading && (
-          <div style={{ 
-            textAlign: "center", 
-            padding: 80, 
-            opacity: 0.6 
-          }}>
-            <div style={{ fontSize: 64, marginBottom: 20 }}>📈</div>
-            <div style={{ fontSize: 20, marginBottom: 8 }}>Enter a ticker symbol to get started</div>
-            <div style={{ fontSize: 14 }}>Try AAPL, MSFT, GOOGL, VOO, SPY...</div>
-          </div>
         )}
       </div>
     </div>
   );
 }
 
+// ==========================================
+// ADD POSITION INLINE FORM
+// ==========================================
+function AddPositionInline({
+  ticker,
+  onAdd,
+  onCancel,
+}: {
+  ticker: string;
+  onAdd: (shares: number, cost: number) => void;
+  onCancel: () => void;
+}) {
+  const [shares, setShares] = useState("");
+  const [cost, setCost] = useState("");
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        gap: 8,
+        alignItems: "center",
+        marginBottom: 16,
+        padding: 12,
+        background: "#151515",
+        border: "1px solid #333",
+        borderRadius: 8,
+      }}
+    >
+      <span style={{ fontSize: 12, color: "#888" }}>
+        Add <b style={{ color: "#fff" }}>{ticker}</b>:
+      </span>
+      <input
+        placeholder="Shares"
+        type="number"
+        step="any"
+        value={shares}
+        onChange={(e) => setShares(e.target.value)}
+        style={{
+          background: "#222",
+          border: "1px solid #444",
+          borderRadius: 4,
+          color: "#fff",
+          padding: "5px 8px",
+          fontSize: 12,
+          width: 80,
+          outline: "none",
+        }}
+      />
+      <input
+        placeholder="Avg Cost ($)"
+        type="number"
+        step="any"
+        value={cost}
+        onChange={(e) => setCost(e.target.value)}
+        style={{
+          background: "#222",
+          border: "1px solid #444",
+          borderRadius: 4,
+          color: "#fff",
+          padding: "5px 8px",
+          fontSize: 12,
+          width: 100,
+          outline: "none",
+        }}
+      />
+      <button
+        onClick={() => {
+          if (shares && cost) onAdd(parseFloat(shares), parseFloat(cost));
+        }}
+        style={{
+          background: "#22c55e20",
+          border: "1px solid #22c55e40",
+          borderRadius: 4,
+          color: "#22c55e",
+          fontSize: 12,
+          padding: "5px 12px",
+          cursor: "pointer",
+          whiteSpace: "nowrap",
+        }}
+      >
+        Add
+      </button>
+      <button
+        onClick={onCancel}
+        style={{
+          background: "none",
+          border: "none",
+          color: "#666",
+          cursor: "pointer",
+          fontSize: 14,
+        }}
+      >
+        ✕
+      </button>
+    </div>
+  );
+}
 
 // ==========================================
 // ETF FUNDAMENTALS CARD COMPONENT
@@ -376,23 +614,25 @@ function ETFFundamentalsCard({ data }: { data: any }) {
   };
 
   return (
-    <div style={{
-      background: "#1a1a1a",
-      border: "1px solid #333",
-      borderRadius: 10,
-      padding: 16,
-    }}>
-      <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 16 }}>
-        📊 ETF Overview
-      </div>
+    <div
+      style={{
+        background: "#1a1a1a",
+        border: "1px solid #333",
+        borderRadius: 10,
+        padding: 16,
+      }}
+    >
+      <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 16 }}>📊 ETF Overview</div>
 
       {/* Fund Info */}
-      <div style={{ 
-        display: "grid", 
-        gridTemplateColumns: "1fr 1fr", 
-        gap: 12,
-        marginBottom: 16 
-      }}>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: 12,
+          marginBottom: 16,
+        }}
+      >
         {data.fund_family && (
           <div>
             <div style={{ fontSize: 11, opacity: 0.6 }}>Fund Family</div>
@@ -408,98 +648,132 @@ function ETFFundamentalsCard({ data }: { data: any }) {
       </div>
 
       {/* Key Metrics */}
-      <div style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
-        gap: 12,
-        padding: 12,
-        background: "rgba(59, 130, 246, 0.05)",
-        borderRadius: 8,
-        border: "1px solid rgba(59, 130, 246, 0.1)",
-      }}>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
+          gap: 12,
+          padding: 12,
+          background: "rgba(59, 130, 246, 0.05)",
+          borderRadius: 8,
+          border: "1px solid rgba(59, 130, 246, 0.1)",
+        }}
+      >
         <div>
           <div style={{ fontSize: 11, opacity: 0.6 }}>Total Assets (AUM)</div>
-          <div style={{ fontSize: 18, fontWeight: 600 }}>
-            {formatMoney(data.total_assets)}
-          </div>
+          <div style={{ fontSize: 18, fontWeight: 600 }}>{formatMoney(data.total_assets)}</div>
         </div>
 
         <div>
           <div style={{ fontSize: 11, opacity: 0.6 }}>Expense Ratio</div>
-          <div style={{ fontSize: 18, fontWeight: 600, color: data.expense_ratio && data.expense_ratio < 0.002 ? "#22c55e" : "#fff" }}>
+          <div
+            style={{
+              fontSize: 18,
+              fontWeight: 600,
+              color: data.expense_ratio && data.expense_ratio < 0.002 ? "#22c55e" : "#fff",
+            }}
+          >
             {data.expense_ratio !== null ? `${(data.expense_ratio * 100).toFixed(2)}%` : "—"}
           </div>
         </div>
 
         <div>
           <div style={{ fontSize: 11, opacity: 0.6 }}>Dividend Yield</div>
-          <div style={{ fontSize: 18, fontWeight: 600 }}>
-            {formatPercent(data.yield)}
-          </div>
+          <div style={{ fontSize: 18, fontWeight: 600 }}>{formatPercent(data.yield)}</div>
         </div>
 
         <div>
           <div style={{ fontSize: 11, opacity: 0.6 }}>Holdings</div>
-          <div style={{ fontSize: 18, fontWeight: 600 }}>
-            {data.holdings_count ?? "—"}
-          </div>
+          <div style={{ fontSize: 18, fontWeight: 600 }}>{data.holdings_count ?? "—"}</div>
         </div>
       </div>
 
       {/* Performance */}
       <div style={{ marginTop: 16 }}>
-        <div style={{ fontSize: 12, opacity: 0.6, marginBottom: 8, textTransform: "uppercase" }}>
+        <div
+          style={{
+            fontSize: 12,
+            opacity: 0.6,
+            marginBottom: 8,
+            textTransform: "uppercase",
+          }}
+        >
           Performance
         </div>
-        <div style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(3, 1fr)",
-          gap: 12,
-        }}>
-          <div style={{
-            padding: 12,
-            background: "rgba(255,255,255,0.02)",
-            borderRadius: 8,
-            textAlign: "center",
-          }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(3, 1fr)",
+            gap: 12,
+          }}
+        >
+          <div
+            style={{
+              padding: 12,
+              background: "rgba(255,255,255,0.02)",
+              borderRadius: 8,
+              textAlign: "center",
+            }}
+          >
             <div style={{ fontSize: 11, opacity: 0.6 }}>YTD Return</div>
-            <div style={{ 
-              fontSize: 16, 
-              fontWeight: 600,
-              color: data.ytd_return > 0 ? "#22c55e" : data.ytd_return < 0 ? "#ef4444" : "#fff"
-            }}>
+            <div
+              style={{
+                fontSize: 16,
+                fontWeight: 600,
+                color:
+                  data.ytd_return > 0 ? "#22c55e" : data.ytd_return < 0 ? "#ef4444" : "#fff",
+              }}
+            >
               {formatPercent(data.ytd_return)}
             </div>
           </div>
 
-          <div style={{
-            padding: 12,
-            background: "rgba(255,255,255,0.02)",
-            borderRadius: 8,
-            textAlign: "center",
-          }}>
+          <div
+            style={{
+              padding: 12,
+              background: "rgba(255,255,255,0.02)",
+              borderRadius: 8,
+              textAlign: "center",
+            }}
+          >
             <div style={{ fontSize: 11, opacity: 0.6 }}>3-Year Avg</div>
-            <div style={{ 
-              fontSize: 16, 
-              fontWeight: 600,
-              color: data.three_year_return > 0 ? "#22c55e" : data.three_year_return < 0 ? "#ef4444" : "#fff"
-            }}>
+            <div
+              style={{
+                fontSize: 16,
+                fontWeight: 600,
+                color:
+                  data.three_year_return > 0
+                    ? "#22c55e"
+                    : data.three_year_return < 0
+                    ? "#ef4444"
+                    : "#fff",
+              }}
+            >
               {formatPercent(data.three_year_return)}
             </div>
           </div>
 
-          <div style={{
-            padding: 12,
-            background: "rgba(255,255,255,0.02)",
-            borderRadius: 8,
-            textAlign: "center",
-          }}>
+          <div
+            style={{
+              padding: 12,
+              background: "rgba(255,255,255,0.02)",
+              borderRadius: 8,
+              textAlign: "center",
+            }}
+          >
             <div style={{ fontSize: 11, opacity: 0.6 }}>5-Year Avg</div>
-            <div style={{ 
-              fontSize: 16, 
-              fontWeight: 600,
-              color: data.five_year_return > 0 ? "#22c55e" : data.five_year_return < 0 ? "#ef4444" : "#fff"
-            }}>
+            <div
+              style={{
+                fontSize: 16,
+                fontWeight: 600,
+                color:
+                  data.five_year_return > 0
+                    ? "#22c55e"
+                    : data.five_year_return < 0
+                    ? "#ef4444"
+                    : "#fff",
+              }}
+            >
               {formatPercent(data.five_year_return)}
             </div>
           </div>
@@ -508,12 +782,14 @@ function ETFFundamentalsCard({ data }: { data: any }) {
 
       {/* Beta */}
       {data.beta && (
-        <div style={{ 
-          marginTop: 12, 
-          fontSize: 12, 
-          opacity: 0.6,
-          textAlign: "center" 
-        }}>
+        <div
+          style={{
+            marginTop: 12,
+            fontSize: 12,
+            opacity: 0.6,
+            textAlign: "center",
+          }}
+        >
           Beta: <span style={{ color: "#fff", fontWeight: 500 }}>{data.beta.toFixed(2)}</span>
           {data.beta < 1 ? " (Less volatile than market)" : " (More volatile than market)"}
         </div>

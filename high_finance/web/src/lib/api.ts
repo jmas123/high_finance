@@ -219,8 +219,16 @@ valuation: (ticker: string, params?: Partial<{growth:number;margin:number;tax:nu
     getJSON<OptionDecaySimulation>(
       `${BASE}/options/${encodeURIComponent(ticker)}/decay-simulation/${encodeURIComponent(expiry)}/${strike}?option_type=${optionType}`
     ),
+    
+
+
 
 
     
 
 };
+async function fetchJSON(url: string) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
