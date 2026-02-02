@@ -1,8 +1,8 @@
 import type { Politician, PoliticianTrade, TradeContext } from "../../lib/types";
 
-type NotificationSection = "politicians" | "watchlist" | "portfolio";
+export type NotificationSection = "politicians" | "watchlist" | "portfolio";
 
-type BaseNotification = {
+export type BaseNotification = {
   id: string;                 // stable unique id
   section: NotificationSection;
   created_at: string;         // for sorting
@@ -12,14 +12,14 @@ type BaseNotification = {
   url?: string;
 };
 
-type PoliticianNotification = BaseNotification & {
+export type PoliticianNotification = BaseNotification & {
   section: "politicians";
   trade: PoliticianTrade;
   politician: Politician;
   context?: TradeContext;
 };
 
-type CompanyAnnouncement = {
+export type CompanyAnnouncement = {
   ticker: string;
   company_name?: string;
   event_type: string;         // "EARNINGS", "8-K", "GUIDANCE", "NEWS", ...
@@ -27,10 +27,10 @@ type CompanyAnnouncement = {
   summary?: string;
 };
 
-type CompanyNotification = BaseNotification & {
+export type CompanyNotification = BaseNotification & {
   section: "watchlist" | "portfolio";
   announcement: CompanyAnnouncement;
   context?: TradeContext;     // optional, reuse your “why it matters” box
 };
 
-type NotificationItem = PoliticianNotification | CompanyNotification;
+export type NotificationItem = PoliticianNotification | CompanyNotification;

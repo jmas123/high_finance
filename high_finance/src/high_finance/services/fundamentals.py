@@ -2,6 +2,19 @@ import yfinance as yf
 from sqlalchemy import func
 from high_finance.db.models import Company
 
+# ── Extreme-value thresholds ────────────────────────────────────────────────
+# Values above these are legitimate but unusual — the frontend can dim / warn.
+# The hard upper bounds in clamp() are now set much higher to only reject
+# genuinely broken data from yfinance.
+EXTREME_THRESHOLDS = {
+    "pe_ratio": 100,
+    "forward_pe": 100,
+    "ev_to_ebitda": 50,
+    "ev_to_sales": 30,
+    "pb_ratio": 15,
+}
+
+
 def clamp(val, lo=None, hi=None):
     if val is None:
         return None
@@ -14,6 +27,16 @@ def clamp(val, lo=None, hi=None):
     if hi is not None and v > hi:
         return None
     return v
+
+
+def is_extreme(val, metric: str) -> bool:
+    """Return True if val exceeds the 'unusual but real' threshold for metric."""
+    if val is None:
+        return False
+    threshold = EXTREME_THRESHOLDS.get(metric)
+    if threshold is None:
+        return False
+    return val > threshold
 
 
 def normalize_return(val):
@@ -132,6 +155,22 @@ async def get_company_fundamentals(ticker: str, db, fetch_peers: bool = False):
     # Price (needed for manual P/E)
     price = info.get("currentPrice") or info.get("regularMarketPrice")
     price = clamp(price, lo=0.01)
+    previous_close = clamp(info.get("regularMarketPreviousClose") or info.get("previousClose"), lo=0.01)
+    price_change = None
+    price_change_pct = None
+    if price and previous_close:
+        price_change = round(price - previous_close, 4)
+        price_change_pct = round((price_change / previous_close) * 100, 4)
+
+    print({
+  "ticker": ticker,
+  "regularMarketPrice": info.get("regularMarketPrice"),
+  "currentPrice": info.get("currentPrice"),
+  "regularMarketPreviousClose": info.get("regularMarketPreviousClose"),
+  "previousClose": info.get("previousClose"),
+  "regularMarketChangePercent": info.get("regularMarketChangePercent"),
+})
+
 
     # ==========================================
     # ETF-SPECIFIC HANDLING
@@ -146,6 +185,8 @@ async def get_company_fundamentals(ticker: str, db, fetch_peers: bool = False):
             "industry": industry,
             "market_cap": market_cap,
             "current_price": price,
+            "price_change": price_change,
+            "price_change_pct": price_change_pct,
             
             # Asset type flags
             "quote_type": quote_type,
@@ -184,6 +225,13 @@ async def get_company_fundamentals(ticker: str, db, fetch_peers: bool = False):
             "fifty_two_week_low": clamp(info.get("fiftyTwoWeekLow"), lo=0.01),
             "fifty_day_avg": clamp(info.get("fiftyDayAverage"), lo=0.01),
             "two_hundred_day_avg": clamp(info.get("twoHundredDayAverage"), lo=0.01),
+
+            # Extreme flags (all False for ETFs)
+            "pe_extreme": False,
+            "forward_pe_extreme": False,
+            "ev_to_ebitda_extreme": False,
+            "ev_to_sales_extreme": False,
+            "pb_extreme": False,
         }
 
     # ==========================================
@@ -193,21 +241,21 @@ async def get_company_fundamentals(ticker: str, db, fetch_peers: bool = False):
     # EPS TTM (yfinance: trailingEps is usually TTM EPS)
     eps_ttm = clamp(info.get("trailingEps"), lo=0.000001)
 
-    # Manual P/E (reliable)
+    # Manual P/E (reliable) — hi raised to 2000 as garbage filter only
     pe_ratio = (price / eps_ttm) if (price and eps_ttm) else None
-    pe_ratio = clamp(pe_ratio, lo=2, hi=200)
+    pe_ratio = clamp(pe_ratio, lo=2, hi=2000)
 
     # Forward PE fallback if we couldn't compute
     if pe_ratio is None:
-        pe_ratio = clamp(info.get("forwardPE"), lo=2, hi=80)
+        pe_ratio = clamp(info.get("forwardPE"), lo=2, hi=2000)
 
     # Profitability signal
     is_profitable = None
     if eps_ttm is not None:
         is_profitable = eps_ttm > 0
 
-    # P/B (important for Financials + RE)
-    pb_ratio = clamp(info.get("priceToBook"), lo=0.1, hi=20)
+    # P/B (important for Financials + RE) — hi raised to 200
+    pb_ratio = clamp(info.get("priceToBook"), lo=0.1, hi=200)
 
     # ROE (Financials)
     roe = clamp(info.get("returnOnEquity"), lo=-1, hi=2)  # roe is often a fraction (0.15 = 15%)
@@ -230,21 +278,21 @@ async def get_company_fundamentals(ticker: str, db, fetch_peers: bool = False):
     i_lower = (industry or "").lower()
     is_financial = ("financial" in s_lower) or ("bank" in i_lower) or ("insurance" in i_lower) or ("capital markets" in i_lower)
 
-    # EV/EBITDA: skip financials
+    # EV/EBITDA: skip financials — hi raised to 1000
     ev_to_ebitda = None
     if not is_financial:
         ev_to_ebitda = info.get("enterpriseToEbitda")
-        ev_to_ebitda = clamp(ev_to_ebitda, lo=1, hi=80)
+        ev_to_ebitda = clamp(ev_to_ebitda, lo=1, hi=1000)
         if ev_to_ebitda is None and ev and ebitda:
-            ev_to_ebitda = clamp(ev / ebitda, lo=1, hi=80)
+            ev_to_ebitda = clamp(ev / ebitda, lo=1, hi=1000)
 
-    # EV/Sales: useful for Tech/Comm/HC or loss-makers
+    # EV/Sales: useful for Tech/Comm/HC or loss-makers — hi raised to 500
     ev_to_sales = info.get("enterpriseToRevenue")
-    ev_to_sales = clamp(ev_to_sales, lo=0.1, hi=80)
+    ev_to_sales = clamp(ev_to_sales, lo=0.1, hi=500)
     if ev_to_sales is None and ev and total_revenue:
-        ev_to_sales = clamp(ev / total_revenue, lo=0.1, hi=80)
+        ev_to_sales = clamp(ev / total_revenue, lo=0.1, hi=500)
 
-    forward_pe = clamp(info.get("forwardPE"), lo=0.1, hi=200)
+    forward_pe = clamp(info.get("forwardPE"), lo=0.1, hi=2000)
 
     # EPS: keep your eps_ttm, but consider allowing negative EPS for display
     eps = info.get("trailingEps")
@@ -296,6 +344,8 @@ async def get_company_fundamentals(ticker: str, db, fetch_peers: bool = False):
         "industry": industry,
         "market_cap": market_cap,
         "current_price": price,
+        "price_change": price_change,
+        "price_change_pct": price_change_pct,
         
         # Asset type flags
         "quote_type": quote_type,
@@ -323,6 +373,13 @@ async def get_company_fundamentals(ticker: str, db, fetch_peers: bool = False):
         "fifty_day_avg": fifty_day_avg,
         "two_hundred_day_avg": two_hundred_day_avg,
         
+        # Extreme-value flags
+        "pe_extreme": is_extreme(pe_ratio, "pe_ratio"),
+        "forward_pe_extreme": is_extreme(forward_pe, "forward_pe"),
+        "ev_to_ebitda_extreme": is_extreme(ev_to_ebitda, "ev_to_ebitda"),
+        "ev_to_sales_extreme": is_extreme(ev_to_sales, "ev_to_sales"),
+        "pb_extreme": is_extreme(pb_ratio, "pb_ratio"),
+
         # ETF fields (null for stocks)
         "total_assets": None,
         "nav_price": None,

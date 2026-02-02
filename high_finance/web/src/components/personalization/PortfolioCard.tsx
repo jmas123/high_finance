@@ -6,7 +6,7 @@ import {
   removePosition,
   updatePosition,
   type PortfolioPosition,
-} from "../../lib/storage";
+} from "./storage";
 
 interface LivePosition extends PortfolioPosition {
   currentPrice: number;

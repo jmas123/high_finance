@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api } from "./lib/api";
+import { projectsApi } from "./components/project/api";
 import { PriceChart } from "./components/PriceChart";
 import { CompanyHeader } from "./components/CompanyHeader";
 import { FundamentalsCard } from "./components/FundamentalsCard";
@@ -9,7 +10,7 @@ import { RiskCard } from "./components/risk/RiskCard";
 import { OptionsFlowCard } from "./components/options/OptionsFlowCard";
 import { OptionDecaySimulator } from "./components/options/OptionsDecaySimulator";
 import { DCFCard } from "./components/valuation/DCFCard";
-import { NotificationsCard } from "./components/politicians/NotificationsCard";
+import { NotificationsCard } from "./components/notifications/NotificationsCard";
 import { CompsTable } from "./components/CompsTableCard";
 import type { CompsResponse, FinancialStatementsResponse } from "./lib/types";
 import { LeadershipTable } from "./components/LeadershipTable";
@@ -29,7 +30,23 @@ import {
   isInWatchlist,
   addPosition,
   addRecentTicker,
-} from "./lib/storage";
+} from "./components/personalization/storage";
+
+// ── Research Projects ────────────────────────────────────────────────────────
+import { ProjectListCard } from "./components/project/ProjectListCard";
+import { ProjectWorkspace } from "./components/project/ProjectWorkSpace";
+
+// ── DCF state shape for snapshot wiring ──────────────────────────────────────
+type DCFState = {
+  growth: number;
+  margin: number;
+  tax: number;
+  wacc: number;
+  terminal_g: number;
+  fair_value_per_share: number | null;
+  enterprise_value: number | null;
+  current_price: number | null;
+} | null;
 
 export default function App() {
   const [searchedTicker, setSearchedTicker] = useState("");
@@ -43,13 +60,21 @@ export default function App() {
   const [leadership, setLeadership] = useState<any[]>([]);
   const [prices, setPrices] = useState<any[]>([]);
   const [financials, setFinancials] = useState<FinancialStatementsResponse | null>(null);
-  const [view, setView] = useState<"ticker" | "notifications">("ticker");
+
+  // ── View state (extended with projects) ────────────────────────────────────
+  const [view, setView] = useState<"ticker" | "notifications" | "projects" | "project">("ticker");
 
   // ── Personalization state ──────────────────────────────────────────────────
   const [watchlistRefresh, setWatchlistRefresh] = useState(0);
   const [portfolioRefresh, setPortfolioRefresh] = useState(0);
   const [inWatchlist, setInWatchlist] = useState(false);
   const [showAddPosition, setShowAddPosition] = useState(false);
+
+  // ── Research Projects state ────────────────────────────────────────────────
+  const [activeProjectId, setActiveProjectId] = useState<number | null>(null);
+  const [projectRefresh, setProjectRefresh] = useState(0);
+  const [currentDCFState, setCurrentDCFState] = useState<DCFState>(null);
+  const [returnToProject, setReturnToProject] = useState<number | null>(null);
 
   // Determine if current ticker is an ETF
   const isETF = fundamentals?.is_etf === true;
@@ -72,6 +97,7 @@ export default function App() {
     setPrices([]);
     setFinancials(null);
     setComps(null);
+    setCurrentDCFState(null);
 
     // Make sure we're on the ticker view when loading a ticker
     setView("ticker");
@@ -157,6 +183,56 @@ export default function App() {
     setFinancials(null);
     setComps(null);
     setShowAddPosition(false);
+    setCurrentDCFState(null);
+    setReturnToProject(null);
+    setView("ticker");
+  }
+
+  // ── Research Projects handlers ───────────────────────────────────────────
+  function openProject(projectId: number) {
+    setActiveProjectId(projectId);
+    setReturnToProject(null);
+    setView("project");
+  }
+
+  function goToProjectList() {
+    setActiveProjectId(null);
+    setReturnToProject(null);
+    setView("projects");
+  }
+
+  /** Navigate to DCF model from a project – remembers which project to return to */
+  function openDCFFromProject(ticker: string) {
+    if (activeProjectId) {
+      setReturnToProject(activeProjectId);
+    }
+    loadTicker(ticker);
+  }
+
+  /** Return from ticker view back to the originating project */
+  function returnFromDCFToProject() {
+    if (!returnToProject) return;
+    setActiveProjectId(returnToProject);
+    setReturnToProject(null);
+    setView("project");
+    // Note: currentDCFState is preserved — DCFCard has been updating it via onStateChange
+  }
+
+  async function createProjectFromTicker() {
+    if (!searchedTicker || !company) return;
+    const title = prompt("Project title:", `${searchedTicker} – Research Project`);
+    if (!title) return;
+    try {
+      const p = await projectsApi.createProject({
+        ticker: searchedTicker,
+        title,
+      });
+      setActiveProjectId(p.id);
+      setProjectRefresh((n) => n + 1);
+      setView("project");
+    } catch (e: any) {
+      setError(e?.message ?? "Failed to create project");
+    }
   }
 
   return (
@@ -195,7 +271,7 @@ export default function App() {
           </div>
         )}
 
-        {/* Navigation Tabs */}
+        {/* ── Navigation Tabs ───────────────────────────────────────────── */}
         <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
           <button
             onClick={() => {
@@ -217,6 +293,20 @@ export default function App() {
           </button>
 
           <button
+            onClick={() => setView("projects")}
+            style={{
+              padding: "8px 12px",
+              borderRadius: 8,
+              border: "1px solid #444",
+              background: view === "projects" || view === "project" ? "#222" : "#111",
+              color: "#fff",
+              cursor: "pointer",
+            }}
+          >
+            Projects
+          </button>
+
+          <button
             onClick={() => setView("notifications")}
             style={{
               padding: "8px 12px",
@@ -231,7 +321,7 @@ export default function App() {
           </button>
         </div>
 
-        {/* Loading State */}
+        {/* ── Loading State ─────────────────────────────────────────────── */}
         {loading && (
           <div
             style={{
@@ -245,15 +335,54 @@ export default function App() {
           </div>
         )}
 
+        {/* ── Notifications View ────────────────────────────────────────── */}
         {view === "notifications" && !loading && (
           <div style={{ marginBottom: 20 }}>
             <NotificationsCard />
           </div>
         )}
 
-        {/* ======================================================== */}
-        {/* HOME DASHBOARD — shown when no ticker loaded              */}
-        {/* ======================================================== */}
+        {/* ============================================================== */}
+        {/* PROJECT LIST VIEW                                               */}
+        {/* ============================================================== */}
+        {view === "projects" && !loading && (
+          <ProjectListCard
+            onOpenProject={openProject}
+            onCreateProject={(ticker?: string) => {
+              const t = ticker || prompt("Ticker for new project:");
+              if (!t) return;
+              const title = prompt("Project title:", `${t.toUpperCase()} – Research Project`);
+              if (!title) return;
+              projectsApi
+                .createProject({ ticker: t.toUpperCase(), title })
+                .then((p) => {
+                  setActiveProjectId(p.id);
+                  setProjectRefresh((n) => n + 1);
+                  setView("project");
+                })
+                .catch((e: any) => setError(e?.message ?? "Failed to create project"));
+            }}
+            refreshKey={projectRefresh}
+          />
+        )}
+
+        {/* ============================================================== */}
+        {/* SINGLE PROJECT WORKSPACE                                        */}
+        {/* ============================================================== */}
+        {view === "project" && activeProjectId && !loading && (
+          <ProjectWorkspace
+            projectId={activeProjectId}
+            onBack={goToProjectList}
+            onOpenTicker={(ticker) => loadTicker(ticker)}
+            onOpenDCF={openDCFFromProject}
+            currentDCF={currentDCFState}
+            onDCFImported={() => setCurrentDCFState(null)}
+          />
+        )}
+
+        {/* ============================================================== */}
+        {/* HOME DASHBOARD — shown when no ticker loaded                    */}
+        {/* ============================================================== */}
         {view === "ticker" && !company && !loading && (
           <HomeDashboard
             onSelect={loadTicker}
@@ -262,9 +391,9 @@ export default function App() {
           />
         )}
 
-        {/* ======================================================== */}
-        {/* TICKER VIEW — shown when a stock/etf is loaded            */}
-        {/* ======================================================== */}
+        {/* ============================================================== */}
+        {/* TICKER VIEW — shown when a stock/etf is loaded                  */}
+        {/* ============================================================== */}
         {view === "ticker" && company && fundamentals && !loading && (
           <>
             {/* ETF Badge */}
@@ -286,7 +415,7 @@ export default function App() {
 
             <CompanyHeader company={company} fundamentals={fundamentals} prices={prices} />
 
-            {/* ── Action Buttons (Watch / Portfolio / Back) ──────────── */}
+            {/* ── Action Buttons (Watch / Portfolio / Project / Back) ──── */}
             <div style={{ display: "flex", gap: 8, marginBottom: 16, marginTop: 12 }}>
               <button
                 onClick={toggleWatchlist}
@@ -320,6 +449,46 @@ export default function App() {
                 💼 Add to Portfolio
               </button>
 
+              {/* ── NEW: Start Project button ──────────────────────────── */}
+              {isStock && (
+                <button
+                  onClick={createProjectFromTicker}
+                  style={{
+                    background: "#3b82f620",
+                    border: "1px solid #3b82f640",
+                    borderRadius: 8,
+                    color: "#3b82f6",
+                    fontSize: 13,
+                    padding: "6px 14px",
+                    cursor: "pointer",
+                    transition: "all 0.15s",
+                  }}
+                >
+                  📋 Start Project
+                </button>
+              )}
+
+              {/* ── Return to Project button (shown when came from project DCF flow) ── */}
+              {returnToProject && (
+                <button
+                  onClick={returnFromDCFToProject}
+                  style={{
+                    background: "#a855f720",
+                    border: "1px solid #a855f740",
+                    borderRadius: 8,
+                    color: "#a855f7",
+                    fontSize: 13,
+                    fontWeight: 600,
+                    padding: "6px 14px",
+                    cursor: "pointer",
+                    transition: "all 0.15s",
+                    marginLeft: "auto",
+                  }}
+                >
+                  ← Import to Project
+                </button>
+              )}
+
               <button
                 onClick={goToDashboard}
                 style={{
@@ -330,7 +499,7 @@ export default function App() {
                   fontSize: 13,
                   padding: "6px 14px",
                   cursor: "pointer",
-                  marginLeft: "auto",
+                  marginLeft: returnToProject ? undefined : "auto",
                 }}
               >
                 ← Dashboard
@@ -380,7 +549,11 @@ export default function App() {
                     marginBottom: 16,
                   }}
                 >
-                  <DCFCard key={`dcf-${searchedTicker}`} ticker={searchedTicker} />
+                  <DCFCard
+                    key={`dcf-${searchedTicker}`}
+                    ticker={searchedTicker}
+                    onStateChange={setCurrentDCFState}
+                  />
                   <RiskCard key={`risk-${searchedTicker}`} ticker={searchedTicker} />
                 </div>
 

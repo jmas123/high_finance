@@ -12,6 +12,9 @@ class CompanyFundamentals(BaseModel):
     industry: Optional[str] = None
     market_cap: Optional[float] = None
     current_price: Optional[float] = None  # ✅ you return this
+    previous_close: Optional[float] = None
+    price_change: Optional[float] = None
+    price_change_pct: Optional[float] = None  # decide units below
 
     # ✅ asset type flags (needed for ETF detection in UI)
     quote_type: Optional[str] = None

@@ -9,3 +9,12 @@ from .news_cache import NewsCache
 from .committee import Committee
 from .subcommittee import Subcommittee
 from .committee_membership import CommitteeMembership
+from .project import (
+    Project,
+    ProjectThesisBullet,
+    ProjectCatalyst,
+    ProjectRisk,
+    ProjectPeer,
+    ProjectDCFSnapshot,
+    ProjectSource,
+)

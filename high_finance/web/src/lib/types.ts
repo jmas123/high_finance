@@ -669,6 +669,8 @@ export type Fundamentals = {
   sector?: string | null;
   industry?: string | null;
   current_price?: number | null;
+   price_change?: number | null;
+  price_change_pct?: number | null; // percent, e.g. 1.23 means 1.23%
 
   // Asset type detection
   quote_type?: string | null;  // "ETF" | "EQUITY" | "MUTUALFUND" | "INDEX"

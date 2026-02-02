@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { PortfolioCard } from "./PortfolioCard";
 import { WatchlistCard } from "./WatchlistCard";
-import { getRecentTickers, exportAllData, importAllData, clearAllData } from "../../lib/storage";
+import { getRecentTickers, exportAllData, importAllData, clearAllData } from "./storage";
 
 interface HomeDashboardProps {
   onSelect: (ticker: string) => void;

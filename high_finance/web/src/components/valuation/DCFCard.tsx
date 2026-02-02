@@ -9,7 +9,25 @@ import { ScenarioCard } from "./ScenarioCard";
 import { WarningBadge } from "./Warnings";
 import { fmtMoney, fmtPct, fmtPctSigned, fmtPx } from "../Functions";
 
-export function DCFCard({ ticker }: { ticker: string }) {
+// ── NEW: callback shape for project DCF snapshot wiring ──────────────────────
+type DCFStateReport = {
+  growth: number;
+  margin: number;
+  tax: number;
+  wacc: number;
+  terminal_g: number;
+  fair_value_per_share: number | null;
+  enterprise_value: number | null;
+  current_price: number | null;
+};
+
+interface DCFCardProps {
+  ticker: string;
+  /** Optional callback – reports current DCF state to parent (for Research Projects snapshot) */
+  onStateChange?: (state: DCFStateReport | null) => void;
+}
+
+export function DCFCard({ ticker, onStateChange }: DCFCardProps) {
   const [growth, setGrowth] = useState<number | null>(null);
   const [margin, setMargin] = useState<number | null>(null);
   const [tax, setTax] = useState<number | null>(null);
@@ -22,6 +40,25 @@ export function DCFCard({ ticker }: { ticker: string }) {
   const [initialized, setInitialized] = useState(false);
 
   const [activeTab, setActiveTab] = useState<"dcf" | "multiples" | "sensitivity">("dcf");
+
+  // ── Report state to parent when data or inputs change ──────────────────────
+  useEffect(() => {
+    if (!onStateChange) return;
+    if (!data || !initialized || growth === null) {
+      onStateChange(null);
+      return;
+    }
+    onStateChange({
+      growth: growth!,
+      margin: margin!,
+      tax: tax!,
+      wacc: wacc!,
+      terminal_g: terminalG!,
+      fair_value_per_share: data.fair_value_per_share_est ?? null,
+      enterprise_value: data.dcf?.enterprise_value ?? null,
+      current_price: data.facts?.current_price ?? null,
+    });
+  }, [data, growth, margin, tax, wacc, terminalG, initialized]);
 
   // Initial load - let backend compute smart defaults
   useEffect(() => {

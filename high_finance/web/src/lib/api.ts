@@ -227,8 +227,4 @@ valuation: (ticker: string, params?: Partial<{growth:number;margin:number;tax:nu
     
 
 };
-async function fetchJSON(url: string) {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
-}
+

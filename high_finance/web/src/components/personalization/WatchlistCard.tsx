@@ -4,7 +4,7 @@ import {
   getWatchlist,
   removeFromWatchlist,
   type WatchlistItem,
-} from "../../lib/storage";
+} from "./storage";
 
 interface Quote {
   ticker: string;
@@ -31,6 +31,7 @@ export function WatchlistCard({ onSelect, refreshKey }: WatchlistCardProps) {
 
   useEffect(() => {
     reload();
+    api.fundamentals("AAPL").then(console.log);
   }, [reload, refreshKey]);
 
   // Fetch quotes for all watchlist tickers
@@ -45,12 +46,19 @@ export function WatchlistCard({ onSelect, refreshKey }: WatchlistCardProps) {
       // Batch fetch — use the batch endpoint if available, otherwise parallel single calls
       const results = await Promise.allSettled(
         items.map((item) =>
-          api.fundamentals(item.ticker).then((f: any) => ({
-            ticker: item.ticker,
-            price: f?.current_price ?? f?.market_price ?? 0,
-            change: f?.price_change ?? 0,
-            changePct: f?.price_change_pct ?? 0,
-          }))
+          api.fundamentals(item.ticker).then((f: any) => {
+  const base = f?.target ?? f; // ✅ handles both shapes
+
+
+  return {
+    ticker: item.ticker,
+    price: base?.current_price ?? base?.market_price ?? 0,
+    change: base?.price_change ?? 0,
+    changePct: base?.price_change_pct ?? 0,
+  };
+  
+})
+
         )
       );
 
