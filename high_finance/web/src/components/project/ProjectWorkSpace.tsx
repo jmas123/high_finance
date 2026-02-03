@@ -27,6 +27,12 @@ export function ProjectWorkspace({
   const [project, setProject] = useState<ProjectDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [lastSaved, setLastSaved] = useState<Date | null>(null);
+
+  // Export state
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   // Editing states
   const [editingTitle, setEditingTitle] = useState(false);
@@ -51,42 +57,101 @@ export function ProjectWorkspace({
     reload();
   }, [reload]);
 
-  // Project-level mutations
+  // Project-level mutations with save indicator
   async function saveTitle() {
     if (!project || !editTitle.trim()) return;
-    const updated = await projectsApi.updateProject(project.id, { title: editTitle.trim() });
-    setProject(updated);
-    setEditingTitle(false);
+    setSaving(true);
+    try {
+      const updated = await projectsApi.updateProject(project.id, { title: editTitle.trim() });
+      setProject(updated);
+      setEditingTitle(false);
+      setLastSaved(new Date());
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function saveSummary() {
     if (!project) return;
-    const updated = await projectsApi.updateProject(project.id, { summary: editSummary });
-    setProject(updated);
-    setEditingSummary(false);
+    setSaving(true);
+    try {
+      const updated = await projectsApi.updateProject(project.id, { summary: editSummary });
+      setProject(updated);
+      setEditingSummary(false);
+      setLastSaved(new Date());
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function toggleStatus() {
     if (!project) return;
-    const next = project.status === "active" ? "archived" : "active";
-    const updated = await projectsApi.updateProject(project.id, { status: next });
-    setProject(updated);
+    setSaving(true);
+    try {
+      const next = project.status === "active" ? "archived" : "active";
+      const updated = await projectsApi.updateProject(project.id, { status: next });
+      setProject(updated);
+      setLastSaved(new Date());
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function setConviction(value: string) {
     if (!project) return;
-    const updated = await projectsApi.updateProject(project.id, {
-      conviction: value || undefined,
-    });
-    setProject(updated);
+    setSaving(true);
+    try {
+      const updated = await projectsApi.updateProject(project.id, {
+        conviction: value || undefined,
+      });
+      setProject(updated);
+      setLastSaved(new Date());
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function setPosition(value: string) {
     if (!project) return;
-    const updated = await projectsApi.updateProject(project.id, {
-      position_type: value || undefined,
-    });
-    setProject(updated);
+    setSaving(true);
+    try {
+      const updated = await projectsApi.updateProject(project.id, {
+        position_type: value || undefined,
+      });
+      setProject(updated);
+      setLastSaved(new Date());
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // Export to Excel handler
+  async function handleExportToExcel() {
+    if (!project) return;
+
+    setExporting(true);
+    setExportError(null);
+
+    try {
+      const blob = await projectsApi.exportProjectToExcel(project.id);
+
+      // Trigger download
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = ""; // Browser uses Content-Disposition filename
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      const msg = err.message || "Export failed";
+      setExportError(msg);
+      // Clear error after 5 seconds
+      setTimeout(() => setExportError(null), 5000);
+    } finally {
+      setExporting(false);
+    }
   }
 
   // Render
@@ -152,7 +217,22 @@ export function ProjectWorkspace({
                 cursor: "pointer",
               }}
             >
-              📊 Full Ticker View
+              Full Ticker View
+            </button>
+            <button
+              onClick={handleExportToExcel}
+              disabled={exporting}
+              style={{
+                background: exporting ? "#1a1a1a" : "#22c55e15",
+                border: `1px solid ${exporting ? "#333" : "#22c55e40"}`,
+                borderRadius: 6,
+                color: exporting ? "#666" : "#22c55e",
+                fontSize: 11,
+                padding: "4px 10px",
+                cursor: exporting ? "not-allowed" : "pointer",
+              }}
+            >
+              {exporting ? "Exporting..." : "Export Excel"}
             </button>
             <button
               onClick={toggleStatus}
@@ -236,8 +316,46 @@ export function ProjectWorkspace({
             <option value="high">High Conviction</option>
           </select>
 
-          <span style={{ fontSize: 11, color: "#555", marginLeft: "auto" }}>Updated {lastUpdated}</span>
+          {/* Save Status Indicator */}
+          <span style={{ fontSize: 11, marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
+            {saving ? (
+              <span style={{
+                color: "#f59e0b",
+                background: "rgba(245, 158, 11, 0.1)",
+                padding: "2px 8px",
+                borderRadius: 4,
+              }}>
+                ⏳ Saving...
+              </span>
+            ) : lastSaved ? (
+              <span style={{
+                color: "#22c55e",
+                background: "rgba(34, 197, 94, 0.1)",
+                padding: "2px 8px",
+                borderRadius: 4,
+              }}>
+                ✓ Saved {lastSaved.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+              </span>
+            ) : (
+              <span style={{ color: "#555" }}>Updated {lastUpdated}</span>
+            )}
+          </span>
         </div>
+
+        {/* Export Error */}
+        {exportError && (
+          <div style={{
+            marginTop: 12,
+            padding: "8px 12px",
+            borderRadius: 8,
+            border: "1px solid rgba(245, 158, 11, 0.3)",
+            background: "rgba(245, 158, 11, 0.1)",
+            fontSize: 12,
+            color: "#f59e0b",
+          }}>
+            <b>Export failed:</b> {exportError}
+          </div>
+        )}
 
         {/* Summary */}
         <div style={{ marginTop: 12 }}>

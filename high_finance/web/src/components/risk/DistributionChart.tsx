@@ -11,7 +11,10 @@ export function DistributionChart({
 }) {
   if (!distribution?.length) return null;
 
-  const maxProb = Math.max(...distribution.map((d) => d.probability));
+  // Guard against empty probability array
+  const probabilities = distribution.map((d) => d.probability);
+  const maxProb = probabilities.length > 0 ? Math.max(...probabilities) : 1;
+
   const width = 900;
   const height = 140;
   const pad = { left: 40, right: 20, top: 15, bottom: 25 };
@@ -19,6 +22,15 @@ export function DistributionChart({
   const chartH = height - pad.top - pad.bottom;
 
   const barWidth = chartW / distribution.length - 2;
+
+  // Find the bin containing 0% return (current price position)
+  const zeroReturnBinIdx = distribution.findIndex(
+    (bin) => bin.return_min <= 0 && bin.return_max >= 0
+  );
+  const zeroReturnX =
+    zeroReturnBinIdx >= 0
+      ? pad.left + zeroReturnBinIdx * (chartW / distribution.length) + barWidth / 2
+      : null;
 
   return (
     <svg
@@ -46,7 +58,7 @@ export function DistributionChart({
       {/* Bars */}
       {distribution.map((bin, i) => {
         const x = pad.left + i * (chartW / distribution.length) + 1;
-        const barH = (bin.probability / maxProb) * chartH;
+        const barH = maxProb > 0 ? (bin.probability / maxProb) * chartH : 0;
         const midReturn = (bin.return_min + bin.return_max) / 2;
         const isNegative = midReturn < 0;
 
@@ -63,10 +75,36 @@ export function DistributionChart({
         );
       })}
 
+      {/* Current price marker (0% return line) */}
+      {zeroReturnX !== null && (
+        <>
+          <line
+            x1={zeroReturnX}
+            y1={pad.top}
+            x2={zeroReturnX}
+            y2={height - pad.bottom}
+            stroke="#fff"
+            strokeWidth="2"
+            strokeDasharray="4,3"
+            opacity="0.7"
+          />
+          <text
+            x={zeroReturnX}
+            y={pad.top - 4}
+            fill="#fff"
+            fontSize="8"
+            textAnchor="middle"
+            fontWeight="600"
+          >
+            NOW
+          </text>
+        </>
+      )}
+
       {/* X-axis labels */}
       {distribution
         .filter((_, i) => i % 5 === 0 || i === distribution.length - 1)
-        .map((bin, idx, arr) => {
+        .map((bin, idx) => {
           const originalIdx = distribution.indexOf(bin);
           const x = pad.left + originalIdx * (chartW / distribution.length) + barWidth / 2;
           return (

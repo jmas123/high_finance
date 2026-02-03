@@ -121,8 +121,32 @@ export function InstitutionalFlowCard({ ticker }: { ticker: string }) {
           borderRadius: 8,
           fontSize: 13,
           marginBottom: 12,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
         }}>
-          <b>Error:</b> {error}
+          <span><b>Error:</b> {error}</span>
+          <button
+            onClick={() => {
+              setError(null);
+              setLoading(true);
+              api.institutionalFlow(ticker)
+                .then(setData)
+                .catch((e) => setError(e?.message ?? "Failed"))
+                .finally(() => setLoading(false));
+            }}
+            style={{
+              padding: "4px 10px",
+              fontSize: 11,
+              background: "#7f1d1d",
+              border: "none",
+              borderRadius: 4,
+              color: "#fff",
+              cursor: "pointer",
+            }}
+          >
+            Retry
+          </button>
         </div>
       )}
 
@@ -212,8 +236,8 @@ export function InstitutionalFlowCard({ ticker }: { ticker: string }) {
                   </tr>
                 ) : (
                   getHoldersList().map((holder, i) => (
-                    <tr 
-                      key={i} 
+                    <tr
+                      key={`${holder.holder}-${i}`}
                       style={{ 
                         borderBottom: "1px solid #222",
                         background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.02)"

@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { api } from "../../lib/api";
+import { useAuth } from "../../lib/auth";
 import type { ScreenerFilters, ScreenerResponse, SavedScreen } from "../../lib/types";
 import { ScreenerFiltersPanel } from "./ScreenerFiltersPanel";
 import { ScreenerResultsTable } from "./ScreenerResultsTable";
 import { SavedScreensPanel } from "./SavedScreensPanel";
 
-const OWNER_ID = "default-user"; // In production, this would come from auth
 const STORAGE_KEY = "hf_screener_filters";
 
 // Load filters from localStorage
@@ -39,6 +39,7 @@ type Props = {
 };
 
 export function ScreenerCard({ onSelectTicker }: Props) {
+  const { user, isAuthenticated } = useAuth();
   const [filters, setFilters] = useState<ScreenerFilters>(loadFilters);
   const [results, setResults] = useState<ScreenerResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -57,10 +58,14 @@ export function ScreenerCard({ onSelectTicker }: Props) {
     saveFilters(filters);
   }, [filters]);
 
-  // Load saved screens
+  // Load saved screens (only when authenticated)
   useEffect(() => {
-    api.listSavedScreens(OWNER_ID).then(setSavedScreens).catch(console.error);
-  }, []);
+    if (isAuthenticated && user?.id) {
+      api.listSavedScreens(user.id).then(setSavedScreens).catch(console.error);
+    } else {
+      setSavedScreens([]);
+    }
+  }, [isAuthenticated, user?.id]);
 
   const runScreen = useCallback(async (f: ScreenerFilters = filters) => {
     setLoading(true);
@@ -99,8 +104,12 @@ export function ScreenerCard({ onSelectTicker }: Props) {
   };
 
   const handleSaveScreen = async (name: string) => {
+    if (!user?.id) {
+      setError("Please sign in to save screens");
+      return;
+    }
     try {
-      const saved = await api.createSavedScreen(OWNER_ID, { name, filters });
+      const saved = await api.createSavedScreen(user.id, { name, filters });
       setSavedScreens([...savedScreens, saved]);
     } catch (e: any) {
       setError(e?.message ?? "Failed to save screen");
@@ -114,8 +123,12 @@ export function ScreenerCard({ onSelectTicker }: Props) {
   };
 
   const handleDeleteScreen = async (screenId: number) => {
+    if (!user?.id) {
+      setError("Please sign in to delete screens");
+      return;
+    }
     try {
-      await api.deleteSavedScreen(OWNER_ID, screenId);
+      await api.deleteSavedScreen(user.id, screenId);
       setSavedScreens(savedScreens.filter(s => s.id !== screenId));
     } catch (e: any) {
       setError(e?.message ?? "Failed to delete screen");

@@ -40,7 +40,10 @@ async def verify_ownership(db: Session, project_id: int, owner_id: Optional[str]
     project = await svc.get_project(db, project_id)
     if not project:
         raise HTTPException(404, "Project not found")
-    if project.owner_id and owner_id and project.owner_id != owner_id:
+    # Reject if project has an owner but requester is unauthenticated
+    if project.owner_id and not owner_id:
+        raise HTTPException(401, "Authentication required")
+    if project.owner_id and owner_id != project.owner_id:
         raise HTTPException(403, "You don't have permission to access this project")
 
 

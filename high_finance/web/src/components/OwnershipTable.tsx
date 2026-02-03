@@ -48,8 +48,8 @@ export function OwnershipTable({ data }: OwnershipTableProps) {
         </thead>
         <tbody>
           {data.slice(0, 10).map((holder, i) => (
-            <tr 
-              key={i} 
+            <tr
+              key={`${holder.holder ?? 'unknown'}-${i}`}
               style={{ 
                 background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.02)",
                 transition: "background 0.15s ease"

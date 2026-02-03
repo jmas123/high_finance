@@ -38,6 +38,15 @@ function partyColor(party: string | null | undefined) {
   return "#666";
 }
 
+function hitRateColor(hitRate: number | null | undefined): string {
+  if (hitRate == null) return "#666";
+  if (hitRate >= 0.7) return "#22c55e";  // Green - great
+  if (hitRate >= 0.55) return "#a3e635"; // Light green - good
+  if (hitRate >= 0.45) return "#facc15"; // Yellow - neutral
+  if (hitRate >= 0.3) return "#f97316";  // Orange - poor
+  return "#ef4444";                       // Red - bad
+}
+
 export function PoliticianTradesCard({ ticker }: { ticker: string }) {
   const [limit, setLimit] = useState(50);
   const [loading, setLoading] = useState(false);
@@ -158,6 +167,9 @@ export function PoliticianTradesCard({ ticker }: { ticker: string }) {
             <thead>
               <tr style={{ textAlign: "left", borderBottom: "1px solid #333" }}>
                 <th style={{ padding: "10px 8px" }}>Politician</th>
+                <th style={{ padding: "10px 8px" }} title="Percentage of recent trades that generated positive returns within 30 days of disclosure">
+                  Win Rate <span style={{ opacity: 0.5, fontSize: 10 }}>ⓘ</span>
+                </th>
                 <th style={{ padding: "10px 8px" }}>Action</th>
                 <th style={{ padding: "10px 8px" }}>Disclosure</th>
                 <th style={{ padding: "10px 8px" }}>Trade Date</th>
@@ -204,6 +216,21 @@ export function PoliticianTradesCard({ ticker }: { ticker: string }) {
                     </td>
 
                     <td style={{ padding: "10px 8px" }}>
+                      {politician?.hit_rate != null ? (
+                        <span style={{
+                          color: hitRateColor(politician.hit_rate),
+                          fontWeight: 600,
+                          fontFamily: "monospace",
+                          fontSize: 13,
+                        }}>
+                          {Math.round(politician.hit_rate * 100)}%
+                        </span>
+                      ) : (
+                        <span style={{ opacity: 0.4, fontSize: 12 }}>—</span>
+                      )}
+                    </td>
+
+                    <td style={{ padding: "10px 8px" }}>
                       <span style={pillStyle(isBuy ? "#14532d" : isSell ? "#7f1d1d" : "#374151")}>
                         {action}
                       </span>
@@ -234,7 +261,7 @@ export function PoliticianTradesCard({ ticker }: { ticker: string }) {
           </table>
 
           <div style={{ marginTop: 10, fontSize: 12, opacity: 0.6 }}>
-            Note: Disclosure dates can lag transaction dates.
+            Note: Disclosure dates can lag transaction dates. Win rate reflects the percentage of recent trades with positive returns within 30 days.
           </div>
         </div>
       )}

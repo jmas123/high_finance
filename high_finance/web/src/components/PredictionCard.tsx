@@ -361,8 +361,8 @@ export function PredictionCard({ ticker }: PredictionCardProps) {
             {/* Top Features */}
             <div style={{ background: "rgba(255,255,255,0.02)", borderRadius: 8, padding: 12 }}>
               <SectionHeader title="Top Features (Importance)" term="feature_importance" />
-              {prediction.top_features.map((f: any) => (
-                <div key={f.feature} style={{ marginBottom: 8 }}>
+              {prediction.top_features.map((f: any, i: number) => (
+                <div key={`${f.feature}-${i}`} style={{ marginBottom: 8 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 2 }}>
                     <span style={{ opacity: 0.8 }}>{f.feature}</span>
                     <span style={{ fontFamily: "monospace" }}>{f.importance}%</span>
@@ -501,11 +501,18 @@ function CumulativeReturnsChart({ data }: { data: Array<{ date: string; strategy
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
 
-  const minVal = Math.min(...data.map(d => Math.min(d.strategy, d.buyHold))) * 0.99;
-  const maxVal = Math.max(...data.map(d => Math.max(d.strategy, d.buyHold))) * 1.01;
+  // Guard against empty data array
+  if (!data || data.length === 0) {
+    return <svg width="100%" height={height}><text x="50%" y="50%" fill="#666" textAnchor="middle">No data</text></svg>;
+  }
 
-  const xScale = (i: number) => padding.left + (i / (data.length - 1)) * chartWidth;
-  const yScale = (val: number) => padding.top + chartHeight - ((val - minVal) / (maxVal - minVal)) * chartHeight;
+  const allValues = data.flatMap(d => [d.strategy, d.buyHold]);
+  const minVal = (allValues.length > 0 ? Math.min(...allValues) : 0) * 0.99;
+  const maxVal = (allValues.length > 0 ? Math.max(...allValues) : 1) * 1.01;
+  const yRange = maxVal - minVal || 1; // Prevent division by zero
+
+  const xScale = (i: number) => padding.left + (data.length > 1 ? (i / (data.length - 1)) * chartWidth : chartWidth / 2);
+  const yScale = (val: number) => padding.top + chartHeight - ((val - minVal) / yRange) * chartHeight;
 
   const strategyPath = data.map((d, i) => `${i === 0 ? 'M' : 'L'} ${xScale(i)} ${yScale(d.strategy)}`).join(' ');
   const buyHoldPath = data.map((d, i) => `${i === 0 ? 'M' : 'L'} ${xScale(i)} ${yScale(d.buyHold)}`).join(' ');

@@ -18,6 +18,8 @@ type Politician = {
   state: string | null;
   district: string | null;
   party: string | null;
+  hit_rate?: number | null;
+  avg_return_pct?: number | null;
 };
 
 type PoliticianTrade = {
@@ -47,6 +49,15 @@ function fmtMoneyRange(min?: number | null, max?: number | null) {
   if (max != null) return `≤ ${f(max)}`;
   if (min != null) return `≥ ${f(min)}`;
   return "—";
+}
+
+function hitRateColor(hitRate: number | null | undefined): string {
+  if (hitRate == null) return "#666";
+  if (hitRate >= 0.7) return "#22c55e";  // Green - great
+  if (hitRate >= 0.55) return "#a3e635"; // Light green - good
+  if (hitRate >= 0.45) return "#facc15"; // Yellow - neutral
+  if (hitRate >= 0.3) return "#f97316";  // Orange - poor
+  return "#ef4444";                       // Red - bad
 }
 
 function Section({
@@ -80,7 +91,7 @@ function Section({
 
 function CompanyNotifList({ items }: { items: CompanyNotification[] }) {
   if (!items || items.length === 0) {
-    return <div style={{ padding: 14, opacity: 0.7 }}>Nothing new.</div>;
+    return <div style={{ padding: 14, opacity: 0.7 }}>No new alerts for your holdings in the last 7 days.</div>;
   }
 
   return (
@@ -131,19 +142,45 @@ export function NotificationsCard() {
   const [minAmount, setMinAmount] = useState(50000);
   const [limit, setLimit] = useState(100);
 
+  // New filters for politicians
+  const [tradeType, setTradeType] = useState<"all" | "buy" | "sell">("all");
+  const [party, setParty] = useState<"all" | "D" | "R">("all");
+  const [chamber, setChamber] = useState<"all" | "senate" | "house">("all");
+
   const [watchlistNotifs, setWatchlistNotifs] = useState<CompanyNotification[]>([]);
   const [portfolioNotifs, setPortfolioNotifs] = useState<CompanyNotification[]>([]);
   type Tab = "watchlist" | "portfolio" | "politicians";
-  const [tab, setTab] = useState<Tab>("watchlist"); // default tab
-
+  const [tab, setTab] = useState<Tab>("politicians"); // default to politicians for signals
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [items, setItems] = useState<CongressTradeNotification[]>([]);
-  const rows = useMemo<CongressTradeNotification[]>(
-  () => items ?? [],
-  [items]
-);
+
+  // Filter items client-side based on trade type, party, chamber
+  const rows = useMemo<CongressTradeNotification[]>(() => {
+    if (!items) return [];
+    return items.filter((x) => {
+      // Trade type filter
+      if (tradeType !== "all") {
+        const typ = (x.trade?.transaction_type ?? "").toLowerCase();
+        if (tradeType === "buy" && !typ.includes("purchase")) return false;
+        if (tradeType === "sell" && !typ.includes("sale")) return false;
+      }
+      // Party filter
+      if (party !== "all") {
+        const p = x.politician?.party;
+        if (party === "D" && p !== "Democrat") return false;
+        if (party === "R" && p !== "Republican") return false;
+      }
+      // Chamber filter
+      if (chamber !== "all") {
+        const c = (x.politician?.chamber ?? "").toLowerCase();
+        if (chamber === "senate" && !c.includes("senate")) return false;
+        if (chamber === "house" && !c.includes("house") && !c.includes("rep")) return false;
+      }
+      return true;
+    });
+  }, [items, tradeType, party, chamber]);
 
 
   async function loadPoliticians() {
@@ -246,71 +283,198 @@ async function loadPortfolio() {
       </div>
 
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
-  {/* Days applies to all tabs */}
-  <label style={{ fontSize: 12, opacity: 0.8 }}>
-    Days{" "}
-    <input
-      type="number"
-      min={1}
-      max={60}
-      value={days}
-      onChange={(e) => setDays(Number(e.target.value))}
-      style={{
-        width: 70,
-        marginLeft: 6,
-        padding: 6,
-        borderRadius: 6,
-        border: "1px solid #444",
-        background: "#111",
-        color: "#fff",
-      }}
-    />
-  </label>
+        {/* Days applies to all tabs */}
+        <label style={{ fontSize: 12, opacity: 0.8 }}>
+          Days{" "}
+          <input
+            type="number"
+            min={1}
+            max={60}
+            value={days}
+            onChange={(e) => setDays(Number(e.target.value))}
+            style={{
+              width: 70,
+              marginLeft: 6,
+              padding: 6,
+              borderRadius: 6,
+              border: "1px solid #444",
+              background: "#111",
+              color: "#fff",
+            }}
+          />
+        </label>
 
-  {/* Min $ only applies to Politicians */}
-  {tab === "politicians" && (
-    <label style={{ fontSize: 12, opacity: 0.8 }}>
-      Min ${" "}
-      <input
-        type="number"
-        min={0}
-        step={1000}
-        value={minAmount}
-        onChange={(e) => setMinAmount(Number(e.target.value))}
-        style={{
-          width: 110,
-          marginLeft: 6,
-          padding: 6,
-          borderRadius: 6,
-          border: "1px solid #444",
-          background: "#111",
-          color: "#fff",
-        }}
-      />
-    </label>
-  )}
+        {/* Limit applies to all tabs */}
+        <label style={{ fontSize: 12, opacity: 0.8 }}>
+          Limit{" "}
+          <input
+            type="number"
+            min={10}
+            max={500}
+            value={limit}
+            onChange={(e) => setLimit(Number(e.target.value))}
+            style={{
+              width: 80,
+              marginLeft: 6,
+              padding: 6,
+              borderRadius: 6,
+              border: "1px solid #444",
+              background: "#111",
+              color: "#fff",
+            }}
+          />
+        </label>
+      </div>
 
-  {/* Limit applies to all tabs */}
-  <label style={{ fontSize: 12, opacity: 0.8 }}>
-    Limit{" "}
-    <input
-      type="number"
-      min={10}
-      max={500}
-      value={limit}
-      onChange={(e) => setLimit(Number(e.target.value))}
-      style={{
-        width: 80,
-        marginLeft: 6,
-        padding: 6,
-        borderRadius: 6,
-        border: "1px solid #444",
-        background: "#111",
-        color: "#fff",
-      }}
-    />
-  </label>
-</div>
+      {/* Politicians-specific filters */}
+      {tab === "politicians" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 12 }}>
+          {/* Amount presets - click again to reset to $0 */}
+          <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+            <span style={{ fontSize: 11, opacity: 0.6, marginRight: 4 }}>Min $:</span>
+            {[
+              { label: "$50k", value: 50000 },
+              { label: "$100k", value: 100000 },
+              { label: "$250k", value: 250000 },
+              { label: "$500k", value: 500000 },
+              { label: "$1M", value: 1000000 },
+            ].map((preset) => (
+              <button
+                key={preset.value}
+                onClick={() => setMinAmount(minAmount === preset.value ? 0 : preset.value)}
+                style={{
+                  padding: "4px 8px",
+                  borderRadius: 4,
+                  border: "1px solid #333",
+                  background: minAmount === preset.value ? "#3b82f6" : "#1a1a1a",
+                  color: minAmount === preset.value ? "#fff" : "#888",
+                  fontSize: 11,
+                  cursor: "pointer",
+                  fontWeight: minAmount === preset.value ? 600 : 400,
+                }}
+              >
+                {preset.label}
+              </button>
+            ))}
+            {minAmount > 0 && (
+              <span style={{ fontSize: 10, color: "#888", marginLeft: 4 }}>
+                (click again to clear)
+              </span>
+            )}
+          </div>
+
+          {/* Trade type + Party + Chamber filters */}
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+            {/* Trade Type - click again to toggle off */}
+            <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+              <span style={{ fontSize: 11, opacity: 0.6, marginRight: 4 }}>Type:</span>
+              {([
+                { label: "Buys", value: "buy" },
+                { label: "Sells", value: "sell" },
+              ] as const).map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => setTradeType(tradeType === opt.value ? "all" : opt.value)}
+                  style={{
+                    padding: "4px 8px",
+                    borderRadius: 4,
+                    border: "1px solid #333",
+                    background: tradeType === opt.value ? (opt.value === "buy" ? "#22c55e" : "#ef4444") : "#1a1a1a",
+                    color: tradeType === opt.value ? "#fff" : "#888",
+                    fontSize: 11,
+                    cursor: "pointer",
+                    fontWeight: tradeType === opt.value ? 600 : 400,
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Party - click again to toggle off */}
+            <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+              <span style={{ fontSize: 11, opacity: 0.6, marginRight: 4 }}>Party:</span>
+              {([
+                { label: "Dem", value: "D", color: "#3b82f6" },
+                { label: "Rep", value: "R", color: "#ef4444" },
+              ] as const).map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => setParty(party === opt.value ? "all" : opt.value)}
+                  style={{
+                    padding: "4px 8px",
+                    borderRadius: 4,
+                    border: "1px solid #333",
+                    background: party === opt.value ? opt.color : "#1a1a1a",
+                    color: party === opt.value ? "#fff" : "#888",
+                    fontSize: 11,
+                    cursor: "pointer",
+                    fontWeight: party === opt.value ? 600 : 400,
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Chamber - click again to toggle off */}
+            <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+              <span style={{ fontSize: 11, opacity: 0.6, marginRight: 4 }}>Chamber:</span>
+              {([
+                { label: "Senate", value: "senate" },
+                { label: "House", value: "house" },
+              ] as const).map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => setChamber(chamber === opt.value ? "all" : opt.value)}
+                  style={{
+                    padding: "4px 8px",
+                    borderRadius: 4,
+                    border: "1px solid #333",
+                    background: chamber === opt.value ? "#8b5cf6" : "#1a1a1a",
+                    color: chamber === opt.value ? "#fff" : "#888",
+                    fontSize: 11,
+                    cursor: "pointer",
+                    fontWeight: chamber === opt.value ? 600 : 400,
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Active filters summary */}
+          {(tradeType !== "all" || party !== "all" || chamber !== "all") && (
+            <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+              <span style={{ fontSize: 11, opacity: 0.6 }}>Showing:</span>
+              <span style={{ fontSize: 11, color: "#22c55e" }}>{rows.length}</span>
+              <span style={{ fontSize: 11, opacity: 0.6 }}>of</span>
+              <span style={{ fontSize: 11, color: "#888" }}>{items.length}</span>
+              <span style={{ fontSize: 11, opacity: 0.6 }}>trades</span>
+              <button
+                onClick={() => {
+                  setTradeType("all");
+                  setParty("all");
+                  setChamber("all");
+                }}
+                style={{
+                  marginLeft: 8,
+                  padding: "2px 6px",
+                  borderRadius: 4,
+                  border: "1px solid #333",
+                  background: "transparent",
+                  color: "#888",
+                  fontSize: 10,
+                  cursor: "pointer",
+                }}
+              >
+                Clear filters
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
   {([
@@ -412,8 +576,63 @@ async function loadPortfolio() {
                   }}
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-                    <div style={{ fontWeight: 700 }}>
-                      {who} · {typ || "TRADE"} · {ticker}
+                    <div style={{ fontWeight: 700, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <span>{who}</span>
+                      {/* Party badge */}
+                      {p?.party && (
+                        <span
+                          style={{
+                            fontSize: 10,
+                            fontWeight: 600,
+                            padding: "2px 5px",
+                            borderRadius: 3,
+                            background: p.party === "Democrat" ? "rgba(59, 130, 246, 0.2)" : p.party === "Republican" ? "rgba(239, 68, 68, 0.2)" : "rgba(136, 136, 136, 0.2)",
+                            color: p.party === "Democrat" ? "#60a5fa" : p.party === "Republican" ? "#f87171" : "#888",
+                          }}
+                        >
+                          {p.party === "Democrat" ? "D" : p.party === "Republican" ? "R" : p.party.charAt(0)}
+                        </span>
+                      )}
+                      {/* Chamber badge */}
+                      {p?.chamber && (
+                        <span
+                          style={{
+                            fontSize: 10,
+                            fontWeight: 500,
+                            padding: "2px 5px",
+                            borderRadius: 3,
+                            background: "rgba(136, 136, 136, 0.15)",
+                            color: "#888",
+                          }}
+                        >
+                          {p.chamber.toLowerCase().includes("senate") ? "Senate" : "House"}
+                        </span>
+                      )}
+                      {p?.hit_rate != null && (
+                        <span
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 600,
+                            color: hitRateColor(p.hit_rate),
+                            background: "#1a1a1a",
+                            padding: "2px 6px",
+                            borderRadius: 4,
+                          }}
+                          title="Win rate: % of recent trades with positive 30-day returns"
+                        >
+                          {Math.round(p.hit_rate * 100)}%
+                        </span>
+                      )}
+                      <span style={{ opacity: 0.7 }}>·</span>
+                      {/* Trade type with color */}
+                      <span style={{
+                        color: typ.includes("PURCHASE") ? "#22c55e" : typ.includes("SALE") ? "#ef4444" : "#888",
+                        fontWeight: 600,
+                      }}>
+                        {typ || "TRADE"}
+                      </span>
+                      <span style={{ opacity: 0.7 }}>·</span>
+                      <span style={{ fontFamily: "monospace" }}>{ticker}</span>
                     </div>
                     <div style={{ fontSize: 12, opacity: 0.7 }}>{disclosed}</div>
                   </div>

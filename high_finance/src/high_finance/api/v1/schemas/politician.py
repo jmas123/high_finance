@@ -12,6 +12,8 @@ class PoliticianOut(BaseModel):
     state: Optional[str] = None
     district: Optional[str] = None
     party: Optional[str] = None
+    hit_rate: Optional[float] = None  # Win rate as decimal (0-1), e.g. 0.65 = 65%
+    avg_return_pct: Optional[float] = None  # Average return percentage
 
     class Config:
         from_attributes = True

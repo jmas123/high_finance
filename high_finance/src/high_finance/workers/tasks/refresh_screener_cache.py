@@ -287,6 +287,38 @@ def refresh_single_ticker_job(ticker: str) -> dict:
     return refresh_screener_cache_job(tickers=[ticker], batch_size=1, delay=0)
 
 
+def refresh_screener_cache_market_job(
+    batch_size: int = 50,
+    delay: float = 1.0,
+) -> dict:
+    """
+    RQ job wrapper for market-hours-only screener cache refresh.
+
+    This job checks if it's a trading day before running. If called on a
+    non-trading day (weekend, holiday), it returns early without processing.
+
+    Args:
+        batch_size: Number of tickers per batch
+        delay: Seconds between batches
+    """
+    import logging
+    from high_finance.utils.market_hours import is_trading_day
+
+    logger = logging.getLogger(__name__)
+
+    # Check if it's a trading day
+    if not is_trading_day():
+        logger.info("Skipping screener cache refresh - not a trading day")
+        return {
+            "status": "ok",
+            "skipped": True,
+            "reason": "not_trading_day",
+        }
+
+    # Run the actual refresh
+    return refresh_screener_cache_job(batch_size=batch_size, delay=delay)
+
+
 if __name__ == "__main__":
     # Allow running directly for testing
     import sys

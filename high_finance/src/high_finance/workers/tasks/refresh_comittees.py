@@ -105,3 +105,28 @@ def refresh_committees(db: Session) -> int:
 
     db.commit()
     return inserted
+
+
+def refresh_committees_job() -> dict:
+    """
+    RQ job wrapper - creates its own DB session.
+    """
+    import logging
+    from high_finance.db.session import SessionLocal
+
+    logger = logging.getLogger(__name__)
+
+    db: Session = SessionLocal()
+    try:
+        inserted = refresh_committees(db)
+        logger.info(f"Committee sync completed: {inserted} memberships inserted")
+        return {
+            "status": "ok",
+            "inserted": inserted,
+        }
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Committee sync failed: {e}")
+        return {"status": "error", "message": str(e)}
+    finally:
+        db.close()

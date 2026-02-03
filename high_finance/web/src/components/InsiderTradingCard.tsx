@@ -131,8 +131,32 @@ export function InsiderTradingCard({ ticker }: { ticker: string }) {
           border: "1px solid #7f1d1d",
           borderRadius: 8,
           fontSize: 13,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
         }}>
-          <b>Error:</b> {error}
+          <span><b>Error:</b> {error}</span>
+          <button
+            onClick={() => {
+              setError(null);
+              setLoading(true);
+              api.insiderSummary(ticker)
+                .then(setSummary)
+                .catch((e) => setError(e?.message ?? "Failed"))
+                .finally(() => setLoading(false));
+            }}
+            style={{
+              padding: "4px 10px",
+              fontSize: 11,
+              background: "#7f1d1d",
+              border: "none",
+              borderRadius: 4,
+              color: "#fff",
+              cursor: "pointer",
+            }}
+          >
+            Retry
+          </button>
         </div>
       )}
 
@@ -200,7 +224,7 @@ export function InsiderTradingCard({ ticker }: { ticker: string }) {
               </thead>
               <tbody>
                 {summary.recent_trades.slice(0, 10).map((trade, i) => (
-                  <tr key={i} style={{ borderBottom: "1px solid #222" }}>
+                  <tr key={`${trade.insider}-${trade.date ?? 'nodate'}-${i}`} style={{ borderBottom: "1px solid #222" }}>
                     <td style={{ padding: "10px 8px" }}>
                       <div style={{ fontWeight: 500 }}>{trade.insider}</div>
                       {trade.position && (

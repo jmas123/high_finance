@@ -14,18 +14,18 @@ export function MultiplesTable({ multiples, currentPrice }: { multiples: Valuati
             <th style={{ textAlign: "left", padding: "8px 0", opacity: 0.6, fontWeight: 500 }}>Method</th>
             <th style={{ textAlign: "right", padding: "8px 0", opacity: 0.6, fontWeight: 500 }}>Multiple</th>
             <th style={{ textAlign: "right", padding: "8px 0", opacity: 0.6, fontWeight: 500 }}>Fair Value</th>
-            {currentPrice && <th style={{ textAlign: "right", padding: "8px 0", opacity: 0.6, fontWeight: 500 }}>vs Current</th>}
+            {currentPrice != null && currentPrice !== 0 && <th style={{ textAlign: "right", padding: "8px 0", opacity: 0.6, fontWeight: 500 }}>vs Current</th>}
           </tr>
         </thead>
         <tbody>
           {multiples.implied_values.map((item, i) => {
-            const upside = currentPrice ? (item.fair_value - currentPrice) / currentPrice : null;
+            const upside = currentPrice != null && currentPrice !== 0 ? (item.fair_value - currentPrice) / currentPrice : null;
             return (
-              <tr key={i} style={{ borderBottom: "1px solid #222" }}>
+              <tr key={`${item.method}-${i}`} style={{ borderBottom: "1px solid #222" }}>
                 <td style={{ padding: "10px 0", fontWeight: 500 }}>{item.method}</td>
                 <td style={{ padding: "10px 0", textAlign: "right", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>{item.multiple.toFixed(1)}×</td>
                 <td style={{ padding: "10px 0", textAlign: "right", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontWeight: 600 }}>{fmtPx(item.fair_value)}</td>
-                {currentPrice && upside !== null && (
+                {currentPrice != null && currentPrice !== 0 && upside !== null && (
                   <td style={{ padding: "10px 0", textAlign: "right", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontWeight: 600, color: upside >= 0 ? "#22c55e" : "#ef4444" }}>
                     {fmtPctSigned(upside)}
                   </td>

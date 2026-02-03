@@ -1,6 +1,6 @@
 // src/components/CompanyHeader.tsx
 
-import React from "react";
+import React, { useState, useEffect } from "react";
 
 interface CompanyHeaderProps {
   company: {
@@ -18,8 +18,56 @@ interface CompanyHeaderProps {
     regular_market_price?: number;
     regular_market_previous_close?: number;
   };
-  prices: Array<{ close: number; open: number }>;
+  prices: Array<{ close: number; open: number; date?: string }>;
 }
+
+// ── Market hours detection (US Eastern Time) ─────────────────────────────────
+function getMarketStatus(): { isOpen: boolean; status: string; nextEvent: string } {
+  const now = new Date();
+
+  // Convert to ET (handles DST automatically)
+  const etTime = new Date(now.toLocaleString("en-US", { timeZone: "America/New_York" }));
+  const day = etTime.getDay(); // 0 = Sunday, 6 = Saturday
+  const hours = etTime.getHours();
+  const minutes = etTime.getMinutes();
+  const timeInMinutes = hours * 60 + minutes;
+
+  const marketOpen = 9 * 60 + 30;  // 9:30 AM ET
+  const marketClose = 16 * 60;      // 4:00 PM ET
+
+  // Weekend
+  if (day === 0 || day === 6) {
+    return { isOpen: false, status: "Closed", nextEvent: "Opens Monday 9:30 AM ET" };
+  }
+
+  // Before market open
+  if (timeInMinutes < marketOpen) {
+    const minsUntilOpen = marketOpen - timeInMinutes;
+    const h = Math.floor(minsUntilOpen / 60);
+    const m = minsUntilOpen % 60;
+    return {
+      isOpen: false,
+      status: "Pre-Market",
+      nextEvent: h > 0 ? `Opens in ${h}h ${m}m` : `Opens in ${m}m`
+    };
+  }
+
+  // After market close
+  if (timeInMinutes >= marketClose) {
+    return { isOpen: false, status: "After Hours", nextEvent: "Opens tomorrow 9:30 AM ET" };
+  }
+
+  // Market is open
+  const minsUntilClose = marketClose - timeInMinutes;
+  const h = Math.floor(minsUntilClose / 60);
+  const m = minsUntilClose % 60;
+  return {
+    isOpen: true,
+    status: "Market Open",
+    nextEvent: h > 0 ? `Closes in ${h}h ${m}m` : `Closes in ${m}m`
+  };
+}
+
 
 function formatMarketCap(value: number | undefined): string {
   if (!value) return "—";
@@ -63,6 +111,13 @@ function Stat({ label, value }: { label: string; value: string }) {
 }
 
 export function CompanyHeader({ company, fundamentals, prices }: CompanyHeaderProps) {
+  // Market status - updates every minute
+  const [marketStatus, setMarketStatus] = useState(getMarketStatus);
+  useEffect(() => {
+    const interval = setInterval(() => setMarketStatus(getMarketStatus()), 60000);
+    return () => clearInterval(interval);
+  }, []);
+
   // Candle-derived values (fallbacks)
   const lastCandleClose = prices.length > 0 ? prices[prices.length - 1].close : null;
   const prevCandleClose = prices.length > 1 ? prices[prices.length - 2].close : null;
@@ -78,7 +133,7 @@ export function CompanyHeader({ company, fundamentals, prices }: CompanyHeaderPr
   // Today change (quote-based)
   let dailyChange = 0;
   let dailyChangePercent = 0;
-  if (livePrice != null && previousClose != null) {
+  if (livePrice != null && previousClose != null && previousClose !== 0) {
     dailyChange = livePrice - previousClose;
     dailyChangePercent = (dailyChange / previousClose) * 100;
   }
@@ -86,7 +141,7 @@ export function CompanyHeader({ company, fundamentals, prices }: CompanyHeaderPr
   // Period change (chart-based)
   let periodChange = 0;
   let periodChangePercent = 0;
-  if (livePrice != null && periodStartClose != null) {
+  if (livePrice != null && periodStartClose != null && periodStartClose !== 0) {
     periodChange = livePrice - periodStartClose;
     periodChangePercent = (periodChange / periodStartClose) * 100;
   }
@@ -127,6 +182,43 @@ export function CompanyHeader({ company, fundamentals, prices }: CompanyHeaderPr
             <>
               <div style={{ fontSize: 32, fontWeight: 600 }}>${livePrice.toFixed(2)}</div>
 
+              {/* Market Status & Data Disclaimer Badges */}
+              <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", marginTop: 4 }}>
+                <span
+                  style={{
+                    fontSize: 10,
+                    padding: "2px 6px",
+                    borderRadius: 4,
+                    background: marketStatus.isOpen ? "rgba(34, 197, 94, 0.15)" : "rgba(136, 136, 136, 0.15)",
+                    color: marketStatus.isOpen ? "#22c55e" : "#888",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4,
+                  }}
+                  title={marketStatus.nextEvent}
+                >
+                  <span style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: "50%",
+                    background: marketStatus.isOpen ? "#22c55e" : "#666",
+                  }} />
+                  {marketStatus.status}
+                </span>
+                <span
+                  style={{
+                    fontSize: 10,
+                    padding: "2px 6px",
+                    borderRadius: 4,
+                    background: "rgba(136, 136, 136, 0.15)",
+                    color: "#888",
+                  }}
+                  title="Price data may be delayed up to 15 minutes"
+                >
+                  Delayed 15m
+                </span>
+              </div>
+
               <div
                 style={{
                   marginTop: 6,
@@ -139,11 +231,6 @@ export function CompanyHeader({ company, fundamentals, prices }: CompanyHeaderPr
                 <PriceChange change={dailyChange} percentChange={dailyChangePercent} label="Today" />
                 <PriceChange change={periodChange} percentChange={periodChangePercent} label="Period" />
               </div>
-
-              {/* Optional debug line (remove anytime) */}
-              {/* <div style={{ fontSize: 11, opacity: 0.5, marginTop: 6 }}>
-                prevClose: {previousClose?.toFixed?.(2) ?? "—"} | lastCandle: {lastCandleClose?.toFixed?.(2) ?? "—"}
-              </div> */}
             </>
           ) : (
             <div style={{ fontSize: 18, opacity: 0.7 }}>—</div>

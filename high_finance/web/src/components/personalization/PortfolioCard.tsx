@@ -1,12 +1,7 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { api } from "../../lib/api";
-import {
-  getPortfolio,
-  addPosition,
-  removePosition,
-  updatePosition,
-  type PortfolioPosition,
-} from "./storage";
+import { useUserData, type PortfolioPosition } from "../../lib/userData";
+import { useAuth } from "../../lib/auth";
 
 interface LivePosition extends PortfolioPosition {
   currentPrice: number;
@@ -20,7 +15,6 @@ interface LivePosition extends PortfolioPosition {
 
 interface PortfolioCardProps {
   onSelect: (ticker: string) => void;
-  refreshKey?: number;
 }
 
 // ── Ticker Search Autocomplete ──────────────────────────────────────────────
@@ -36,7 +30,6 @@ function TickerInput({
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Close dropdown on outside click
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
@@ -154,8 +147,9 @@ function TickerInput({
 }
 
 // ── Main Component ──────────────────────────────────────────────────────────
-export function PortfolioCard({ onSelect, refreshKey }: PortfolioCardProps) {
-  const [positions, setPositions] = useState<PortfolioPosition[]>([]);
+export function PortfolioCard({ onSelect }: PortfolioCardProps) {
+  const { isAuthenticated } = useAuth();
+  const { portfolio, addPosition, updatePosition, removePosition } = useUserData();
   const [live, setLive] = useState<LivePosition[]>([]);
   const [loading, setLoading] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -167,17 +161,9 @@ export function PortfolioCard({ onSelect, refreshKey }: PortfolioCardProps) {
   const [formShares, setFormShares] = useState("");
   const [formCost, setFormCost] = useState("");
 
-  const reload = useCallback(() => {
-    setPositions(getPortfolio());
-  }, []);
-
-  useEffect(() => {
-    reload();
-  }, [reload, refreshKey]);
-
   // Fetch live prices
   useEffect(() => {
-    if (positions.length === 0) {
+    if (portfolio.length === 0) {
       setLive([]);
       return;
     }
@@ -186,7 +172,7 @@ export function PortfolioCard({ onSelect, refreshKey }: PortfolioCardProps) {
     async function fetchPrices() {
       setLoading(true);
       const results = await Promise.allSettled(
-        positions.map((pos) =>
+        portfolio.map((pos) =>
           api.fundamentals(pos.ticker).then((f: any) => ({
             ...pos,
             currentPrice: f?.current_price ?? f?.market_price ?? 0,
@@ -203,7 +189,7 @@ export function PortfolioCard({ onSelect, refreshKey }: PortfolioCardProps) {
         if (r.status === "fulfilled") {
           const d = r.value;
           const marketValue = d.shares * d.currentPrice;
-          const totalCost = d.shares * d.avgCost;
+          const totalCost = d.shares * d.avg_cost;
           const pnl = marketValue - totalCost;
           const pnlPct = totalCost > 0 ? (pnl / totalCost) * 100 : 0;
           livePositions.push({ ...d, marketValue, totalCost, pnl, pnlPct });
@@ -220,7 +206,7 @@ export function PortfolioCard({ onSelect, refreshKey }: PortfolioCardProps) {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [positions]);
+  }, [portfolio]);
 
   // Totals
   const totalValue = live.reduce((s, p) => s + p.marketValue, 0);
@@ -247,14 +233,12 @@ export function PortfolioCard({ onSelect, refreshKey }: PortfolioCardProps) {
     setFormShares("");
     setFormCost("");
     setShowAddForm(false);
-    reload();
   }
 
   function handleRemove(e: React.MouseEvent, ticker: string) {
     e.stopPropagation();
     if (confirm(`Remove ${ticker} from portfolio?`)) {
       removePosition(ticker);
-      reload();
     }
   }
 
@@ -262,7 +246,7 @@ export function PortfolioCard({ onSelect, refreshKey }: PortfolioCardProps) {
     e.stopPropagation();
     setEditingTicker(pos.ticker);
     setFormShares(String(pos.shares));
-    setFormCost(String(pos.avgCost));
+    setFormCost(String(pos.avg_cost));
   }
 
   function handleSaveEdit() {
@@ -271,14 +255,13 @@ export function PortfolioCard({ onSelect, refreshKey }: PortfolioCardProps) {
     setEditingTicker(null);
     setFormShares("");
     setFormCost("");
-    reload();
   }
 
   const fmt = (n: number) =>
     n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   // ── Empty State ──────────────────────────────────────────────────────────
-  if (positions.length === 0 && !showAddForm) {
+  if (portfolio.length === 0 && !showAddForm) {
     return (
       <div style={{ background: "#1a1a1a", border: "1px solid #333", borderRadius: 10, padding: 24 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
@@ -316,7 +299,7 @@ export function PortfolioCard({ onSelect, refreshKey }: PortfolioCardProps) {
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontSize: 16 }}>💼</span>
           <span style={{ fontSize: 14, fontWeight: 600, color: "#fff" }}>Portfolio</span>
-          <span style={{ fontSize: 11, color: "#666" }}>({positions.length})</span>
+          <span style={{ fontSize: 11, color: "#666" }}>({portfolio.length})</span>
         </div>
         <button
           onClick={() => {
@@ -398,7 +381,7 @@ export function PortfolioCard({ onSelect, refreshKey }: PortfolioCardProps) {
         </div>
       )}
 
-      {/* Add Position Form — with autocomplete */}
+      {/* Add Position Form */}
       {showAddForm && (
         <div
           style={{
@@ -410,13 +393,11 @@ export function PortfolioCard({ onSelect, refreshKey }: PortfolioCardProps) {
           }}
         >
           <div style={{ display: "grid", gridTemplateColumns: "2fr 80px 90px auto", gap: 8, alignItems: "end" }}>
-            {/* Ticker search with autocomplete */}
             <div>
               <div style={{ fontSize: 10, color: "#666", marginBottom: 4 }}>TICKER</div>
               <TickerInput onSelect={handleTickerSelected} />
             </div>
 
-            {/* Shares */}
             <div>
               <div style={{ fontSize: 10, color: "#666", marginBottom: 4 }}>SHARES</div>
               <input
@@ -429,7 +410,6 @@ export function PortfolioCard({ onSelect, refreshKey }: PortfolioCardProps) {
               />
             </div>
 
-            {/* Avg Cost */}
             <div>
               <div style={{ fontSize: 10, color: "#666", marginBottom: 4 }}>AVG COST ($)</div>
               <input
@@ -442,7 +422,6 @@ export function PortfolioCard({ onSelect, refreshKey }: PortfolioCardProps) {
               />
             </div>
 
-            {/* Buttons */}
             <div style={{ display: "flex", gap: 4 }}>
               <button onClick={handleAdd} style={btnGreen} disabled={!selectedTicker}>
                 Add
@@ -460,7 +439,6 @@ export function PortfolioCard({ onSelect, refreshKey }: PortfolioCardProps) {
             </div>
           </div>
 
-          {/* Show selected ticker confirmation */}
           {selectedTicker && (
             <div style={{ marginTop: 8, fontSize: 11, color: "#888" }}>
               Selected: <span style={{ color: "#fff", fontWeight: 600 }}>{selectedTicker}</span>
@@ -507,13 +485,11 @@ export function PortfolioCard({ onSelect, refreshKey }: PortfolioCardProps) {
                   onMouseEnter={(e) => (e.currentTarget.style.background = "#1f1f1f")}
                   onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                 >
-                  {/* Ticker */}
                   <td style={{ padding: "8px", fontWeight: 600, color: "#fff" }}>
                     <div>{pos.ticker}</div>
                     <div style={{ fontSize: 10, color: "#555", fontWeight: 400 }}>{pos.name}</div>
                   </td>
 
-                  {/* Shares */}
                   <td style={tdRight}>
                     {isEditing ? (
                       <input
@@ -529,7 +505,6 @@ export function PortfolioCard({ onSelect, refreshKey }: PortfolioCardProps) {
                     )}
                   </td>
 
-                  {/* Avg Cost */}
                   <td style={tdRight}>
                     {isEditing ? (
                       <input
@@ -541,17 +516,13 @@ export function PortfolioCard({ onSelect, refreshKey }: PortfolioCardProps) {
                         onClick={(e) => e.stopPropagation()}
                       />
                     ) : (
-                      `$${fmt(pos.avgCost)}`
+                      `$${fmt(pos.avg_cost)}`
                     )}
                   </td>
 
-                  {/* Current Price */}
                   <td style={tdRight}>${fmt(pos.currentPrice)}</td>
-
-                  {/* Market Value */}
                   <td style={tdRight}>${fmt(pos.marketValue)}</td>
 
-                  {/* P&L */}
                   <td
                     style={{
                       ...tdRight,
@@ -567,7 +538,6 @@ export function PortfolioCard({ onSelect, refreshKey }: PortfolioCardProps) {
                     </div>
                   </td>
 
-                  {/* Day Change */}
                   <td
                     style={{
                       ...tdRight,
@@ -577,7 +547,6 @@ export function PortfolioCard({ onSelect, refreshKey }: PortfolioCardProps) {
                     {pos.dayChangePct >= 0 ? "+" : ""}{pos.dayChangePct.toFixed(2)}%
                   </td>
 
-                  {/* Actions */}
                   <td style={{ padding: "8px 4px", textAlign: "right" }}>
                     {isEditing ? (
                       <button
@@ -620,7 +589,7 @@ export function PortfolioCard({ onSelect, refreshKey }: PortfolioCardProps) {
       </div>
 
       <div style={{ marginTop: 10, fontSize: 10, color: "#444", textAlign: "center" }}>
-        Saved locally on this browser
+        {isAuthenticated ? "Synced with your account" : "Saved locally on this browser"}
       </div>
     </div>
   );

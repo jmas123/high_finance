@@ -39,8 +39,8 @@ export function LeadershipTable({ data }: LeadershipTableProps) {
         </thead>
         <tbody>
           {data.slice(0, 10).map((leader, i) => (
-            <tr 
-              key={i} 
+            <tr
+              key={`${leader.name ?? 'unknown'}-${i}`}
               style={{ 
                 background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.02)",
                 transition: "background 0.15s ease"

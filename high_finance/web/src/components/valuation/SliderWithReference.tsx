@@ -248,11 +248,36 @@ export function SliderWithReferences({
   tooltip?: string;
 }) {
   const [showLabelTooltip, setShowLabelTooltip] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValue, setEditValue] = useState("");
   const labelRef = useRef<HTMLDivElement>(null);
   const hasWarning = paramWarnings.some(w => w.severity === "warning" || w.severity === "error");
   const hasError = paramWarnings.some(w => w.severity === "error");
 
   const positionPct = (v: number) => Math.max(0, Math.min(100, ((v - min) / (max - min)) * 100));
+
+  // Stepper functions for mobile
+  const increment = () => setValue(Math.min(max, value + step));
+  const decrement = () => setValue(Math.max(min, value - step));
+
+  // Direct input handlers
+  const handleValueClick = () => {
+    setEditValue((value * 100).toFixed(1));
+    setIsEditing(true);
+  };
+
+  const handleEditSubmit = () => {
+    const parsed = parseFloat(editValue) / 100;
+    if (!isNaN(parsed)) {
+      setValue(Math.max(min, Math.min(max, parsed)));
+    }
+    setIsEditing(false);
+  };
+
+  const handleEditKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") handleEditSubmit();
+    if (e.key === "Escape") setIsEditing(false);
+  };
 
   return (
     <div style={{ 
@@ -279,51 +304,141 @@ export function SliderWithReferences({
             />
           )}
         </div>
-        <div style={{ 
-          fontSize: 13, 
-          fontWeight: 600,
-          fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-          color: hasError ? "#f87171" : hasWarning ? "#fbbf24" : "#3b82f6",
-        }}>
-          {(value * 100).toFixed(1)}%
-        </div>
+        {/* Tappable value - click to edit directly */}
+        {isEditing ? (
+          <input
+            autoFocus
+            type="number"
+            value={editValue}
+            onChange={(e) => setEditValue(e.target.value)}
+            onBlur={handleEditSubmit}
+            onKeyDown={handleEditKeyDown}
+            style={{
+              width: 60,
+              fontSize: 13,
+              fontWeight: 600,
+              fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+              color: hasError ? "#f87171" : hasWarning ? "#fbbf24" : "#3b82f6",
+              background: "#222",
+              border: "1px solid #444",
+              borderRadius: 4,
+              padding: "2px 4px",
+              textAlign: "right",
+              outline: "none",
+            }}
+          />
+        ) : (
+          <div
+            onClick={handleValueClick}
+            style={{
+              fontSize: 13,
+              fontWeight: 600,
+              fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+              color: hasError ? "#f87171" : hasWarning ? "#fbbf24" : "#3b82f6",
+              cursor: "pointer",
+              padding: "2px 4px",
+              borderRadius: 4,
+              transition: "background 0.15s",
+            }}
+            title="Click to edit"
+            onMouseEnter={(e) => e.currentTarget.style.background = "rgba(59, 130, 246, 0.1)"}
+            onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+          >
+            {(value * 100).toFixed(1)}%
+          </div>
+        )}
       </div>
-      
-      {/* Slider with reference markers */}
-      <div style={{ position: "relative", marginTop: 12, marginBottom: 8 }}>
-        <input
-          type="range"
-          min={min}
-          max={max}
-          step={step}
-          value={value}
-          onChange={(e) => setValue(Number(e.target.value))}
-          style={{ 
-            width: "100%", 
-            accentColor: hasError ? "#ef4444" : hasWarning ? "#f59e0b" : "#3b82f6", 
-            cursor: "pointer" 
+
+      {/* Slider with stepper buttons for mobile */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, marginBottom: 8 }}>
+        {/* Decrement button */}
+        <button
+          onClick={decrement}
+          disabled={value <= min}
+          style={{
+            width: 28,
+            height: 28,
+            borderRadius: 6,
+            border: "1px solid #333",
+            background: value <= min ? "#1a1a1a" : "#222",
+            color: value <= min ? "#444" : "#888",
+            fontSize: 16,
+            fontWeight: 600,
+            cursor: value <= min ? "not-allowed" : "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flexShrink: 0,
+            transition: "all 0.15s",
           }}
-        />
-        
-        {/* Reference markers with tooltips */}
-        {references.map((ref, i) => (
-          <ReferenceMarker
-            key={i}
-            reference={ref}
-            positionPct={positionPct(ref.value)}
+          title={`Decrease by ${(step * 100).toFixed(1)}%`}
+        >
+          −
+        </button>
+
+        {/* Slider */}
+        <div style={{ position: "relative", flex: 1 }}>
+          <input
+            type="range"
             min={min}
             max={max}
+            step={step}
+            value={value}
+            onChange={(e) => setValue(Number(e.target.value))}
+            style={{
+              width: "100%",
+              accentColor: hasError ? "#ef4444" : hasWarning ? "#f59e0b" : "#3b82f6",
+              cursor: "pointer"
+            }}
           />
-        ))}
+
+          {/* Reference markers with tooltips */}
+          {references.map((ref, i) => (
+            <ReferenceMarker
+              key={i}
+              reference={ref}
+              positionPct={positionPct(ref.value)}
+              min={min}
+              max={max}
+            />
+          ))}
+        </div>
+
+        {/* Increment button */}
+        <button
+          onClick={increment}
+          disabled={value >= max}
+          style={{
+            width: 28,
+            height: 28,
+            borderRadius: 6,
+            border: "1px solid #333",
+            background: value >= max ? "#1a1a1a" : "#222",
+            color: value >= max ? "#444" : "#888",
+            fontSize: 16,
+            fontWeight: 600,
+            cursor: value >= max ? "not-allowed" : "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flexShrink: 0,
+            transition: "all 0.15s",
+          }}
+          title={`Increase by ${(step * 100).toFixed(1)}%`}
+        >
+          +
+        </button>
       </div>
 
       {/* Min/Max labels */}
-      <div style={{ 
-        display: "flex", 
-        justifyContent: "space-between", 
-        fontSize: 10, 
+      <div style={{
+        display: "flex",
+        justifyContent: "space-between",
+        fontSize: 10,
         opacity: 0.4,
         marginTop: 4,
+        paddingLeft: 36,  /* Account for stepper button width + gap */
+        paddingRight: 36,
       }}>
         <span>{(min * 100).toFixed(0)}%</span>
         <span>{(max * 100).toFixed(0)}%</span>

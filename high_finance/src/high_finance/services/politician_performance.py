@@ -101,3 +101,41 @@ def politician_rolling_performance(
         "avg_return_pct": round(avg * 100, 2),
         "hit_rate": round(hit, 3),
     }
+
+
+def calculate_politician_grade(avg_return_pct: Optional[float], hit_rate: Optional[float]) -> Optional[str]:
+    """
+    Calculate a letter grade for a politician based on their trading performance.
+
+    Grade criteria:
+    - A+: avg_return > 5% and hit_rate > 0.70
+    - A:  avg_return > 3% and hit_rate > 0.60
+    - B:  avg_return > 1% and hit_rate > 0.50
+    - C:  avg_return > 0% and hit_rate > 0.45
+    - D:  avg_return > -2%
+    - F:  avg_return <= -2%
+    """
+    if avg_return_pct is None or hit_rate is None:
+        return None
+
+    if avg_return_pct > 5 and hit_rate > 0.70:
+        return "A+"
+    elif avg_return_pct > 3 and hit_rate > 0.60:
+        return "A"
+    elif avg_return_pct > 1 and hit_rate > 0.50:
+        return "B"
+    elif avg_return_pct > 0 and hit_rate > 0.45:
+        return "C"
+    elif avg_return_pct > -2:
+        return "D"
+    else:
+        return "F"
+
+
+def get_politician_grade(db: Session, politician_id: int) -> Optional[str]:
+    """
+    Get the grade for a politician based on their rolling performance.
+    Uses 30-day window with last 10 trades as default.
+    """
+    perf = politician_rolling_performance(db, politician_id, window_days=30, n=10)
+    return calculate_politician_grade(perf.get("avg_return_pct"), perf.get("hit_rate"))

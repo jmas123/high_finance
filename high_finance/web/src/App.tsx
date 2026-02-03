@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { Routes, Route, useNavigate, useParams, useLocation, Link } from "react-router-dom";
 import { api } from "./lib/api";
 import { projectsApi } from "./components/project/api";
 import { PriceChart } from "./components/PriceChart";
@@ -22,15 +23,14 @@ import { InsiderTradingCard } from "./components/InsiderTradingCard";
 import { InstitutionalFlowCard } from "./components/InstitutionalFlowCard";
 import BroaderMarketContext from "./components/market_context/BroaderMarketContextCard";
 
+// ── Auth ─────────────────────────────────────────────────────────────────────
+import { useAuth } from "./lib/auth";
+import { AuthModal } from "./components/auth/AuthModal";
+
 // ── Personalization ──────────────────────────────────────────────────────────
 import { HomeDashboard } from "./components/personalization/HomeDashBoard";
-import {
-  addToWatchlist,
-  removeFromWatchlist,
-  isInWatchlist,
-  addPosition,
-  addRecentTicker,
-} from "./components/personalization/storage";
+import { useUserData } from "./lib/userData";
+import { addRecentTicker } from "./components/personalization/storage";
 
 // ── Research Projects ────────────────────────────────────────────────────────
 import { ProjectListCard } from "./components/project/ProjectListCard";
@@ -52,245 +52,25 @@ type DCFState = {
   current_price: number | null;
 } | null;
 
-// ── localStorage keys for persistence ──────────────────────────────────────
-const STORAGE_KEYS = {
-  VIEW: "hf_last_view",
-  PROJECT_ID: "hf_last_project_id",
-};
-
-function loadPersistedView(): "ticker" | "notifications" | "projects" | "project" | "screener" {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEYS.VIEW);
-    if (saved && ["ticker", "notifications", "projects", "project", "screener"].includes(saved)) {
-      return saved as any;
-    }
-  } catch (e) {}
-  return "ticker";
-}
-
-function loadPersistedProjectId(): number | null {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEYS.PROJECT_ID);
-    if (saved) {
-      const id = parseInt(saved, 10);
-      if (!isNaN(id)) return id;
-    }
-  } catch (e) {}
-  return null;
-}
-
+// ══════════════════════════════════════════════════════════════════════════════
+// MAIN APP COMPONENT (Layout + Routes)
+// ══════════════════════════════════════════════════════════════════════════════
 export default function App() {
-  const [searchedTicker, setSearchedTicker] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { user, isAuthenticated, isLoading: authLoading, logout } = useAuth();
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const navigate = useNavigate();
+  const location = useLocation();
 
-  const [company, setCompany] = useState<any>(null);
-  const [fundamentals, setFundamentals] = useState<any>(null);
-  const [ownership, setOwnership] = useState<any[]>([]);
-  const [comps, setComps] = useState<CompsResponse | null>(null);
-  const [leadership, setLeadership] = useState<any[]>([]);
-  const [prices, setPrices] = useState<any[]>([]);
-  const [financials, setFinancials] = useState<FinancialStatementsResponse | null>(null);
-
-  // ── View state (extended with projects and screener) ────────────────────────
-  const [view, setViewState] = useState<"ticker" | "notifications" | "projects" | "project" | "screener">(loadPersistedView);
-
-  // Wrapper to persist view changes
-  const setView = (newView: typeof view) => {
-    setViewState(newView);
-    try {
-      localStorage.setItem(STORAGE_KEYS.VIEW, newView);
-    } catch (e) {}
+  // Determine active tab from current route
+  const getActiveTab = () => {
+    if (location.pathname.startsWith("/quote/")) return "ticker";
+    if (location.pathname === "/screener") return "screener";
+    if (location.pathname.startsWith("/projects")) return "projects";
+    if (location.pathname === "/signals") return "signals";
+    return "dashboard";
   };
 
-  // ── Personalization state ──────────────────────────────────────────────────
-  const [watchlistRefresh, setWatchlistRefresh] = useState(0);
-  const [portfolioRefresh, setPortfolioRefresh] = useState(0);
-  const [inWatchlist, setInWatchlist] = useState(false);
-  const [showAddPosition, setShowAddPosition] = useState(false);
-
-  // ── Research Projects state ────────────────────────────────────────────────
-  const [activeProjectId, setActiveProjectIdState] = useState<number | null>(loadPersistedProjectId);
-  const [projectRefresh, setProjectRefresh] = useState(0);
-  const [currentDCFState, setCurrentDCFState] = useState<DCFState>(null);
-  const [returnToProject, setReturnToProject] = useState<number | null>(null);
-
-  // Wrapper to persist active project ID
-  const setActiveProjectId = (id: number | null) => {
-    setActiveProjectIdState(id);
-    try {
-      if (id !== null) {
-        localStorage.setItem(STORAGE_KEYS.PROJECT_ID, String(id));
-      } else {
-        localStorage.removeItem(STORAGE_KEYS.PROJECT_ID);
-      }
-    } catch (e) {}
-  };
-
-  // Determine if current ticker is an ETF
-  const isETF = fundamentals?.is_etf === true;
-  const sector = fundamentals?.sector;
-  const isMutualFund = fundamentals?.is_mutual_fund === true;
-  const isStock = fundamentals && !isETF && !isMutualFund;
-
-  async function loadTicker(ticker: string) {
-    const t = ticker.trim().toUpperCase();
-    if (!t) return;
-
-    setLoading(true);
-    setError(null);
-    setShowAddPosition(false);
-
-    setCompany(null);
-    setFundamentals(null);
-    setOwnership([]);
-    setLeadership([]);
-    setPrices([]);
-    setFinancials(null);
-    setComps(null);
-    setCurrentDCFState(null);
-
-    // Make sure we're on the ticker view when loading a ticker
-    setView("ticker");
-
-    try {
-      // Always load these (work for both stocks and ETFs)
-      const [c, f, p] = await Promise.all([
-        api.company(t),
-        api.fundamentals(t),
-        api.prices(t, "1y"),
-      ]);
-
-      setCompany(c);
-      setFundamentals(f);
-      setPrices(p);
-      setSearchedTicker(t);
-
-      // ── Personalization tracking ───────────────────────────────────────────
-      addRecentTicker(t);
-      setInWatchlist(isInWatchlist(t));
-
-      // Only load stock-specific data if NOT an ETF
-      const isEtfOrFund = f?.is_etf || f?.is_mutual_fund;
-
-      if (!isEtfOrFund) {
-        // Load stock-specific data
-        const [o, l, fin, cmp] = await Promise.all([
-          api.ownership(t).catch(() => []),
-          api.leadership(t).catch(() => []),
-          api.financials(t).catch(() => null),
-          api.comps(t).catch(() => null),
-        ]);
-
-        setOwnership(o);
-        setLeadership(l);
-        setFinancials(fin);
-        setComps(cmp);
-      }
-    } catch (e: any) {
-      setError(e?.message ?? "Unknown error");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function loadPrices(period: string) {
-    if (!searchedTicker) return;
-    try {
-      const p = await api.prices(searchedTicker, period);
-      setPrices(p);
-    } catch (e: any) {
-      setError(e?.message ?? "Failed to load prices");
-    }
-  }
-
-  // ── Personalization handlers ─────────────────────────────────────────────
-  function toggleWatchlist() {
-    if (!searchedTicker || !company) return;
-    if (inWatchlist) {
-      removeFromWatchlist(searchedTicker);
-      setInWatchlist(false);
-    } else {
-      addToWatchlist(searchedTicker, company.name || company.short_name || searchedTicker);
-      setInWatchlist(true);
-    }
-    setWatchlistRefresh((n) => n + 1);
-  }
-
-  function handleAddPosition(shares: number, avgCost: number) {
-    if (!searchedTicker || !company) return;
-    addPosition(searchedTicker, company.name || company.short_name || searchedTicker, shares, avgCost);
-    setPortfolioRefresh((n) => n + 1);
-    setShowAddPosition(false);
-  }
-
-  function goToDashboard() {
-    setSearchedTicker("");
-    setCompany(null);
-    setFundamentals(null);
-    setOwnership([]);
-    setLeadership([]);
-    setPrices([]);
-    setFinancials(null);
-    setComps(null);
-    setShowAddPosition(false);
-    setCurrentDCFState(null);
-    setReturnToProject(null);
-    setView("ticker");
-  }
-
-  // ── Research Projects handlers ───────────────────────────────────────────
-  function openProject(projectId: number) {
-    setActiveProjectId(projectId);
-    setReturnToProject(null);
-    setView("project");
-  }
-
-  function goToProjectList() {
-    setActiveProjectId(null);
-    setReturnToProject(null);
-    setView("projects");
-  }
-
-  /** Navigate to DCF model from a project – remembers which project to return to */
-  function openDCFFromProject(ticker: string) {
-    if (activeProjectId) {
-      setReturnToProject(activeProjectId);
-    }
-    loadTicker(ticker);
-  }
-
-  /** Return from ticker view back to the originating project */
-  function returnFromDCFToProject() {
-    if (!returnToProject) return;
-    setActiveProjectId(returnToProject);
-    setReturnToProject(null);
-    setView("project");
-    // Note: currentDCFState is preserved — DCFCard has been updating it via onStateChange
-  }
-
-  async function createProjectFromTicker() {
-    if (!searchedTicker || !company) return;
-    const title = prompt("Project title:", `${searchedTicker} – Research Project`);
-    if (!title) return;
-    try {
-      const p = await projectsApi.createProject({
-        ticker: searchedTicker,
-        title,
-      });
-      setActiveProjectId(p.id);
-      setProjectRefresh((n) => n + 1);
-      setView("project");
-    } catch (e: any) {
-      setError(e?.message ?? "Failed to create project");
-    }
-  }
-
-  /** Open an existing project from the ticker view */
-  function openExistingProject(projectId: number) {
-    setActiveProjectId(projectId);
-    setView("project");
-  }
+  const activeTab = getActiveTab();
 
   return (
     <div
@@ -309,12 +89,456 @@ export default function App() {
           padding: 24,
         }}
       >
-        {/* Search Bar */}
-        <div style={{ marginBottom: 24 }}>
-          <SearchBar onSelect={loadTicker} loading={loading} />
+        {/* Header with Search + Auth */}
+        <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 24 }}>
+          <div style={{ flex: 1 }}>
+            <SearchBar
+              onSelect={(ticker) => navigate(`/quote/${ticker.toUpperCase()}`)}
+              loading={false}
+            />
+          </div>
+          {/* Auth Button */}
+          {authLoading ? (
+            <div style={{ fontSize: 13, color: "#666" }}>...</div>
+          ) : isAuthenticated && user ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 13, color: "#888" }}>{user.email}</span>
+              <button
+                onClick={logout}
+                style={{
+                  padding: "8px 14px",
+                  background: "#222",
+                  border: "1px solid #444",
+                  borderRadius: 8,
+                  color: "#fff",
+                  fontSize: 13,
+                  cursor: "pointer",
+                }}
+              >
+                Sign Out
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowAuthModal(true)}
+              style={{
+                padding: "8px 14px",
+                background: "#3b82f6",
+                border: "none",
+                borderRadius: 8,
+                color: "#fff",
+                fontSize: 13,
+                fontWeight: 500,
+                cursor: "pointer",
+              }}
+            >
+              Sign In
+            </button>
+          )}
         </div>
 
-        {error && (
+        {/* ── Navigation Tabs ───────────────────────────────────────────── */}
+        <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
+          <Link
+            to="/"
+            style={{
+              padding: "8px 12px",
+              borderRadius: 8,
+              border: "1px solid #444",
+              background: activeTab === "dashboard" ? "#222" : "#111",
+              color: "#fff",
+              cursor: "pointer",
+              textDecoration: "none",
+            }}
+          >
+            Dashboard
+          </Link>
+
+          <Link
+            to="/screener"
+            style={{
+              padding: "8px 12px",
+              borderRadius: 8,
+              border: "1px solid #444",
+              background: activeTab === "screener" ? "#222" : "#111",
+              color: "#fff",
+              cursor: "pointer",
+              textDecoration: "none",
+            }}
+          >
+            Screener
+          </Link>
+
+          <Link
+            to="/projects"
+            style={{
+              padding: "8px 12px",
+              borderRadius: 8,
+              border: "1px solid #444",
+              background: activeTab === "projects" ? "#222" : "#111",
+              color: "#fff",
+              cursor: "pointer",
+              textDecoration: "none",
+            }}
+          >
+            Projects
+          </Link>
+
+          <Link
+            to="/signals"
+            style={{
+              padding: "8px 12px",
+              borderRadius: 8,
+              border: "1px solid #444",
+              background: activeTab === "signals" ? "#222" : "#111",
+              color: "#fff",
+              cursor: "pointer",
+              textDecoration: "none",
+            }}
+          >
+            Signals
+          </Link>
+        </div>
+
+        {/* ── Routes ─────────────────────────────────────────────────────── */}
+        <Routes>
+          <Route path="/" element={<DashboardView />} />
+          <Route path="/quote/:ticker" element={<TickerView />} />
+          <Route path="/screener" element={<ScreenerView />} />
+          <Route path="/projects" element={<ProjectsListView />} />
+          <Route path="/projects/:projectId" element={<ProjectView />} />
+          <Route path="/signals" element={<SignalsView />} />
+        </Routes>
+      </div>
+
+      {/* Auth Modal */}
+      <AuthModal isOpen={showAuthModal} onClose={() => setShowAuthModal(false)} />
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// DASHBOARD VIEW (/)
+// ══════════════════════════════════════════════════════════════════════════════
+function DashboardView() {
+  const navigate = useNavigate();
+
+  return (
+    <HomeDashboard
+      onSelect={(ticker) => navigate(`/quote/${ticker.toUpperCase()}`)}
+      onOpenProject={(projectId) => navigate(`/projects/${projectId}`)}
+    />
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SCREENER VIEW (/screener)
+// ══════════════════════════════════════════════════════════════════════════════
+function ScreenerView() {
+  const navigate = useNavigate();
+
+  return (
+    <ScreenerCard
+      onSelectTicker={(ticker) => navigate(`/quote/${ticker.toUpperCase()}`)}
+    />
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SIGNALS VIEW (/signals) - formerly "Notifications"
+// ══════════════════════════════════════════════════════════════════════════════
+function SignalsView() {
+  return (
+    <div style={{ marginBottom: 20 }}>
+      <NotificationsCard />
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PROJECTS LIST VIEW (/projects)
+// ══════════════════════════════════════════════════════════════════════════════
+function ProjectsListView() {
+  const navigate = useNavigate();
+  const [error, setError] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  return (
+    <>
+      {error && (
+        <div
+          style={{
+            marginBottom: 20,
+            padding: 12,
+            background: "#3b1818",
+            border: "1px solid #7f1d1d",
+            borderRadius: 8,
+          }}
+        >
+          <b>Error:</b> {error}
+        </div>
+      )}
+      <ProjectListCard
+        onOpenProject={(projectId) => navigate(`/projects/${projectId}`)}
+        onCreateProject={(ticker?: string) => {
+          const t = ticker || prompt("Ticker for new project:");
+          if (!t) return;
+          const title = prompt("Project title:", `${t.toUpperCase()} – Research Project`);
+          if (!title) return;
+          projectsApi
+            .createProject({ ticker: t.toUpperCase(), title })
+            .then((p) => {
+              setRefreshKey((n) => n + 1);
+              navigate(`/projects/${p.id}`);
+            })
+            .catch((e: any) => setError(e?.message ?? "Failed to create project"));
+        }}
+        refreshKey={refreshKey}
+      />
+    </>
+  );
+}
+
+// ── SessionStorage keys for cross-route DCF state ────────────────────────────
+const DCF_SESSION_KEY = "hf_dcf_import_state";
+
+function saveDCFToSession(state: DCFState) {
+  if (state) {
+    sessionStorage.setItem(DCF_SESSION_KEY, JSON.stringify(state));
+  }
+}
+
+function loadDCFFromSession(): DCFState {
+  try {
+    const stored = sessionStorage.getItem(DCF_SESSION_KEY);
+    if (stored) return JSON.parse(stored);
+  } catch {}
+  return null;
+}
+
+function clearDCFSession() {
+  sessionStorage.removeItem(DCF_SESSION_KEY);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SINGLE PROJECT VIEW (/projects/:projectId)
+// ══════════════════════════════════════════════════════════════════════════════
+function ProjectView() {
+  const { projectId } = useParams<{ projectId: string }>();
+  const navigate = useNavigate();
+
+  // Load DCF state from sessionStorage (persists across route changes)
+  const [currentDCFState, setCurrentDCFState] = useState<DCFState>(() => loadDCFFromSession());
+
+  const id = projectId ? parseInt(projectId, 10) : null;
+
+  if (!id || isNaN(id)) {
+    return (
+      <div style={{ padding: 40, textAlign: "center", color: "#888" }}>
+        Invalid project ID
+      </div>
+    );
+  }
+
+  return (
+    <ProjectWorkspace
+      projectId={id}
+      onBack={() => navigate("/projects")}
+      onOpenTicker={(ticker) => navigate(`/quote/${ticker.toUpperCase()}`)}
+      onOpenDCF={(ticker) => {
+        // Store project ID in sessionStorage so we can return
+        sessionStorage.setItem("hf_return_project", String(id));
+        navigate(`/quote/${ticker.toUpperCase()}`);
+      }}
+      currentDCF={currentDCFState}
+      onDCFImported={() => {
+        setCurrentDCFState(null);
+        clearDCFSession();
+      }}
+    />
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// TICKER VIEW (/quote/:ticker)
+// ══════════════════════════════════════════════════════════════════════════════
+function TickerView() {
+  const { ticker: urlTicker } = useParams<{ ticker: string }>();
+  const navigate = useNavigate();
+  const {
+    addToWatchlist,
+    removeFromWatchlist,
+    isInWatchlist,
+    addPosition,
+  } = useUserData();
+
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [company, setCompany] = useState<any>(null);
+  const [fundamentals, setFundamentals] = useState<any>(null);
+  const [comps, setComps] = useState<CompsResponse | null>(null);
+  const [leadership, setLeadership] = useState<any[]>([]);
+  const [prices, setPrices] = useState<any[]>([]);
+  const [financials, setFinancials] = useState<FinancialStatementsResponse | null>(null);
+
+  const [showAddPosition, setShowAddPosition] = useState(false);
+
+  // Check if we came from a project (for return button)
+  const returnProjectId = sessionStorage.getItem("hf_return_project");
+
+  // DCF state for project import flow - save to sessionStorage for cross-route persistence
+  const handleDCFStateChange = useCallback((state: DCFState) => {
+    if (state && returnProjectId) {
+      // Only save to session if we came from a project
+      saveDCFToSession(state);
+    }
+  }, [returnProjectId]);
+
+  const ticker = urlTicker?.toUpperCase() || "";
+
+  // Determine if current ticker is an ETF
+  const isETF = fundamentals?.is_etf === true;
+  const sector = fundamentals?.sector;
+  const isMutualFund = fundamentals?.is_mutual_fund === true;
+  const isStock = fundamentals && !isETF && !isMutualFund;
+
+  // Load ticker data when URL param changes
+  const loadTicker = useCallback(async (t: string) => {
+    if (!t) return;
+
+    setLoading(true);
+    setError(null);
+    setShowAddPosition(false);
+
+    setCompany(null);
+    setFundamentals(null);
+    setLeadership([]);
+    setPrices([]);
+    setFinancials(null);
+    setComps(null);
+
+    try {
+      // Always load these (work for both stocks and ETFs)
+      const [c, f, p] = await Promise.all([
+        api.company(t),
+        api.fundamentals(t),
+        api.prices(t, "1y"),
+      ]);
+
+      setCompany(c);
+      setFundamentals(f);
+      setPrices(p);
+
+      // ── Personalization tracking ───────────────────────────────────────────
+      addRecentTicker(t);
+
+      // Only load stock-specific data if NOT an ETF
+      const isEtfOrFund = f?.is_etf || f?.is_mutual_fund;
+
+      if (!isEtfOrFund) {
+        // Load stock-specific data
+        const [l, fin, cmp] = await Promise.all([
+          api.leadership(t).catch(() => []),
+          api.financials(t).catch(() => null),
+          api.comps(t).catch(() => null),
+        ]);
+
+        setLeadership(l);
+        setFinancials(fin);
+        setComps(cmp);
+      }
+    } catch (e: any) {
+      setError(e?.message ?? "Unknown error");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Load data when ticker URL param changes
+  useEffect(() => {
+    if (ticker) {
+      loadTicker(ticker);
+      // Scroll to top when loading new ticker
+      window.scrollTo(0, 0);
+    }
+  }, [ticker, loadTicker]);
+
+  async function loadPrices(period: string) {
+    if (!ticker) return;
+    try {
+      const p = await api.prices(ticker, period);
+      setPrices(p);
+    } catch (e: any) {
+      setError(e?.message ?? "Failed to load prices");
+    }
+  }
+
+  // ── Personalization handlers ─────────────────────────────────────────────
+  const inWatchlist = ticker ? isInWatchlist(ticker) : false;
+
+  function toggleWatchlist() {
+    if (!ticker || !company) return;
+    if (inWatchlist) {
+      removeFromWatchlist(ticker);
+    } else {
+      addToWatchlist(ticker, company.name || company.short_name || ticker);
+    }
+  }
+
+  function handleAddPosition(shares: number, avgCost: number) {
+    if (!ticker || !company) return;
+    addPosition(ticker, company.name || company.short_name || ticker, shares, avgCost);
+    setShowAddPosition(false);
+  }
+
+  function goToDashboard() {
+    sessionStorage.removeItem("hf_return_project");
+    navigate("/");
+  }
+
+  // ── Research Projects handlers ───────────────────────────────────────────
+  async function createProjectFromTicker() {
+    if (!ticker || !company) return;
+    const title = prompt("Project title:", `${ticker} – Research Project`);
+    if (!title) return;
+    try {
+      const p = await projectsApi.createProject({
+        ticker: ticker,
+        title,
+      });
+      navigate(`/projects/${p.id}`);
+    } catch (e: any) {
+      setError(e?.message ?? "Failed to create project");
+    }
+  }
+
+  function returnToProject() {
+    if (!returnProjectId) return;
+    sessionStorage.removeItem("hf_return_project");
+    navigate(`/projects/${returnProjectId}`);
+  }
+
+  // ── Loading State ─────────────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <div
+        style={{
+          textAlign: "center",
+          padding: 80,
+          opacity: 0.6,
+        }}
+      >
+        <div style={{ fontSize: 48, marginBottom: 20 }}>⏳</div>
+        <div style={{ fontSize: 18 }}>Loading {ticker}...</div>
+      </div>
+    );
+  }
+
+  if (!company || !fundamentals) {
+    return (
+      <div style={{ padding: 40, textAlign: "center", color: "#888" }}>
+        {error ? (
           <div
             style={{
               marginBottom: 20,
@@ -322,430 +546,291 @@ export default function App() {
               background: "#3b1818",
               border: "1px solid #7f1d1d",
               borderRadius: 8,
+              textAlign: "left",
             }}
           >
             <b>Error:</b> {error}
           </div>
-        )}
-
-        {/* ── Navigation Tabs ───────────────────────────────────────────── */}
-        <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
-          <button
-            onClick={() => {
-              if (!company) {
-                goToDashboard();
-              }
-              setView("ticker");
-            }}
-            style={{
-              padding: "8px 12px",
-              borderRadius: 8,
-              border: "1px solid #444",
-              background: view === "ticker" ? "#222" : "#111",
-              color: "#fff",
-              cursor: "pointer",
-            }}
-          >
-            {company ? "Ticker" : "Dashboard"}
-          </button>
-
-          <button
-            onClick={() => setView("screener")}
-            style={{
-              padding: "8px 12px",
-              borderRadius: 8,
-              border: "1px solid #444",
-              background: view === "screener" ? "#222" : "#111",
-              color: "#fff",
-              cursor: "pointer",
-            }}
-          >
-            Screener
-          </button>
-
-          <button
-            onClick={() => {
-              // Restore last viewed project if one exists, otherwise show list
-              if (activeProjectId) {
-                setView("project");
-              } else {
-                setView("projects");
-              }
-            }}
-            style={{
-              padding: "8px 12px",
-              borderRadius: 8,
-              border: "1px solid #444",
-              background: view === "projects" || view === "project" ? "#222" : "#111",
-              color: "#fff",
-              cursor: "pointer",
-            }}
-          >
-            Projects
-          </button>
-
-          <button
-            onClick={() => setView("notifications")}
-            style={{
-              padding: "8px 12px",
-              borderRadius: 8,
-              border: "1px solid #444",
-              background: view === "notifications" ? "#222" : "#111",
-              color: "#fff",
-              cursor: "pointer",
-            }}
-          >
-            Notifications
-          </button>
-        </div>
-
-        {/* ── Loading State ─────────────────────────────────────────────── */}
-        {loading && (
-          <div
-            style={{
-              textAlign: "center",
-              padding: 80,
-              opacity: 0.6,
-            }}
-          >
-            <div style={{ fontSize: 48, marginBottom: 20 }}>⏳</div>
-            <div style={{ fontSize: 18 }}>Loading data...</div>
-          </div>
-        )}
-
-        {/* ── Notifications View ────────────────────────────────────────── */}
-        {view === "notifications" && !loading && (
-          <div style={{ marginBottom: 20 }}>
-            <NotificationsCard />
-          </div>
-        )}
-
-        {/* ============================================================== */}
-        {/* SCREENER VIEW                                                   */}
-        {/* ============================================================== */}
-        {view === "screener" && !loading && (
-          <ScreenerCard
-            onSelectTicker={(ticker) => {
-              loadTicker(ticker);
-            }}
-          />
-        )}
-
-        {/* ============================================================== */}
-        {/* PROJECT LIST VIEW                                               */}
-        {/* ============================================================== */}
-        {view === "projects" && !loading && (
-          <ProjectListCard
-            onOpenProject={openProject}
-            onCreateProject={(ticker?: string) => {
-              const t = ticker || prompt("Ticker for new project:");
-              if (!t) return;
-              const title = prompt("Project title:", `${t.toUpperCase()} – Research Project`);
-              if (!title) return;
-              projectsApi
-                .createProject({ ticker: t.toUpperCase(), title })
-                .then((p) => {
-                  setActiveProjectId(p.id);
-                  setProjectRefresh((n) => n + 1);
-                  setView("project");
-                })
-                .catch((e: any) => setError(e?.message ?? "Failed to create project"));
-            }}
-            refreshKey={projectRefresh}
-          />
-        )}
-
-        {/* ============================================================== */}
-        {/* SINGLE PROJECT WORKSPACE                                        */}
-        {/* ============================================================== */}
-        {view === "project" && activeProjectId && !loading && (
-          <ProjectWorkspace
-            projectId={activeProjectId}
-            onBack={goToProjectList}
-            onOpenTicker={(ticker) => loadTicker(ticker)}
-            onOpenDCF={openDCFFromProject}
-            currentDCF={currentDCFState}
-            onDCFImported={() => setCurrentDCFState(null)}
-          />
-        )}
-
-        {/* ============================================================== */}
-        {/* HOME DASHBOARD — shown when no ticker loaded                    */}
-        {/* ============================================================== */}
-        {view === "ticker" && !company && !loading && (
-          <HomeDashboard
-            onSelect={loadTicker}
-            onOpenProject={openExistingProject}
-            watchlistRefreshKey={watchlistRefresh}
-            portfolioRefreshKey={portfolioRefresh}
-          />
-        )}
-
-        {/* ============================================================== */}
-        {/* TICKER VIEW — shown when a stock/etf is loaded                  */}
-        {/* ============================================================== */}
-        {view === "ticker" && company && fundamentals && !loading && (
-          <>
-            {/* ETF Badge */}
-            {isETF && (
-              <div
-                style={{
-                  display: "inline-block",
-                  padding: "4px 12px",
-                  background: "#3b82f6",
-                  borderRadius: 999,
-                  fontSize: 12,
-                  fontWeight: 600,
-                  marginBottom: 12,
-                }}
-              >
-                📊 ETF
-              </div>
-            )}
-
-            <CompanyHeader company={company} fundamentals={fundamentals} prices={prices} />
-
-            {/* ── Action Buttons (Watch / Portfolio / Project / Back) ──── */}
-            <div style={{ display: "flex", gap: 8, marginBottom: 16, marginTop: 12 }}>
-              <button
-                onClick={toggleWatchlist}
-                style={{
-                  background: inWatchlist ? "#22c55e20" : "#222",
-                  border: `1px solid ${inWatchlist ? "#22c55e40" : "#444"}`,
-                  borderRadius: 8,
-                  color: inWatchlist ? "#22c55e" : "#aaa",
-                  fontSize: 13,
-                  padding: "6px 14px",
-                  cursor: "pointer",
-                  transition: "all 0.15s",
-                }}
-              >
-                {inWatchlist ? "★ Watching" : "☆ Watch"}
-              </button>
-
-              <button
-                onClick={() => setShowAddPosition(!showAddPosition)}
-                style={{
-                  background: showAddPosition ? "#8b5cf620" : "#222",
-                  border: `1px solid ${showAddPosition ? "#8b5cf640" : "#444"}`,
-                  borderRadius: 8,
-                  color: showAddPosition ? "#8b5cf6" : "#aaa",
-                  fontSize: 13,
-                  padding: "6px 14px",
-                  cursor: "pointer",
-                  transition: "all 0.15s",
-                }}
-              >
-                💼 Add to Portfolio
-              </button>
-
-              {/* ── Save to Project dropdown ──────────────────────────── */}
-              {isStock && (
-                <SaveToProjectButton
-                  ticker={searchedTicker}
-                  onCreateNew={createProjectFromTicker}
-                  onOpenProject={openExistingProject}
-                />
-              )}
-
-              {/* ── Return to Project button (shown when came from project DCF flow) ── */}
-              {returnToProject && (
-                <button
-                  onClick={returnFromDCFToProject}
-                  style={{
-                    background: "#a855f720",
-                    border: "1px solid #a855f740",
-                    borderRadius: 8,
-                    color: "#a855f7",
-                    fontSize: 13,
-                    fontWeight: 600,
-                    padding: "6px 14px",
-                    cursor: "pointer",
-                    transition: "all 0.15s",
-                    marginLeft: "auto",
-                  }}
-                >
-                  ← Import to Project
-                </button>
-              )}
-
-              <button
-                onClick={goToDashboard}
-                style={{
-                  background: "#222",
-                  border: "1px solid #444",
-                  borderRadius: 8,
-                  color: "#888",
-                  fontSize: 13,
-                  padding: "6px 14px",
-                  cursor: "pointer",
-                  marginLeft: returnToProject ? undefined : "auto",
-                }}
-              >
-                ← Dashboard
-              </button>
-            </div>
-
-            {/* ── Inline Add Position Form ────────────────────────────── */}
-            {showAddPosition && (
-              <AddPositionInline
-                ticker={searchedTicker}
-                onAdd={handleAddPosition}
-                onCancel={() => setShowAddPosition(false)}
-              />
-            )}
-
-            {/* Price Chart - Always show */}
-            {prices.length > 0 && (
-              <div
-                style={{
-                  marginBottom: 20,
-                  background: "#1a1a1a",
-                  border: "1px solid #333",
-                  borderRadius: 10,
-                  padding: 16,
-                }}
-              >
-                <PriceChart data={prices} ticker={searchedTicker} onPeriodChange={loadPrices} />
-              </div>
-            )}
-
-            {/* ==================== */}
-            {/* STOCK-ONLY SECTIONS */}
-            {/* ==================== */}
-            {isStock && (
-              <>
-                {/* ML Prediction */}
-                <div style={{ marginBottom: 20 }}>
-                  <PredictionCard key={`pred-${searchedTicker}`} ticker={searchedTicker} />
-                </div>
-
-                {/* DCF + Risk (side by side) */}
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "1fr 1fr",
-                    gap: 16,
-                    marginBottom: 16,
-                  }}
-                >
-                  <DCFCard
-                    key={`dcf-${searchedTicker}`}
-                    ticker={searchedTicker}
-                    onStateChange={setCurrentDCFState}
-                  />
-                  <RiskCard key={`risk-${searchedTicker}`} ticker={searchedTicker} />
-                </div>
-
-                {/* Fundamentals + Institutional Flow */}
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "1fr 1fr",
-                    gap: 16,
-                    marginBottom: 16,
-                  }}
-                >
-                  <FundamentalsCard data={fundamentals} />
-                  <InstitutionalFlowCard key={`inst-${searchedTicker}`} ticker={searchedTicker} />
-                </div>
-
-                {/* Comps Table */}
-                {comps && (
-                  <div style={{ marginBottom: 16 }}>
-                    <CompsTable data={comps} />
-                  </div>
-                )}
-
-                <div
-                  style={{
-                    marginBottom: 20,
-                    background: "#1a1a1a",
-                    border: "1px solid #333",
-                    borderRadius: 10,
-                    padding: 20,
-                  }}
-                >
-                  <BroaderMarketContext
-                    ticker={searchedTicker}
-                    sector={sector}
-                    showMacro={true}
-                    showSectors={true}
-                    showRateImpact={true}
-                  />
-                </div>
-
-                {/* Insider + Politicians */}
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "1fr 1fr",
-                    gap: 16,
-                    marginBottom: 16,
-                  }}
-                >
-                  <InsiderTradingCard key={`insider-${searchedTicker}`} ticker={searchedTicker} />
-                  <PoliticianTradesCard key={`pol-${searchedTicker}`} ticker={searchedTicker} />
-                </div>
-
-                {/* Leadership */}
-                {leadership.length > 0 && <LeadershipTable data={leadership} />}
-
-                {/* Earnings */}
-                <div style={{ marginBottom: 20 }}>
-                  <EarningsCard key={`earnings-${searchedTicker}`} ticker={searchedTicker} />
-                </div>
-              </>
-            )}
-
-            {/* ==================== */}
-            {/* ETF-ONLY SECTIONS */}
-            {/* ==================== */}
-            {isETF && (
-              <>
-                {/* ETF Fundamentals Card */}
-                <div style={{ marginBottom: 20 }}>
-                  <ETFFundamentalsCard data={fundamentals} />
-                </div>
-
-                {/* Risk Card - Works for ETFs too */}
-                <div style={{ marginBottom: 20 }}>
-                  <RiskCard key={`risk-${searchedTicker}`} ticker={searchedTicker} />
-                </div>
-              </>
-            )}
-
-            {/* ==================== */}
-            {/* SHARED SECTIONS */}
-            {/* ==================== */}
-
-            {/* News - Works for both */}
-            <NewsCard ticker={searchedTicker} />
-
-            {/* Options - Works for both (most ETFs have options) */}
-            <div style={{ marginBottom: 20 }}>
-              <OptionsFlowCard key={`options-${searchedTicker}`} ticker={searchedTicker} />
-            </div>
-
-            {/* Option Decay Simulator - Works for both */}
-            <div style={{ marginBottom: 20 }}>
-              <OptionDecaySimulator key={`decay-${searchedTicker}`} ticker={searchedTicker} />
-            </div>
-
-            {/* Financial Statements - Stock only */}
-            {isStock && financials && (
-              <div style={{ marginTop: 16 }}>
-                <FinancialStatements
-                  key={`fin-${searchedTicker}`}
-                  data={financials}
-                  ticker={searchedTicker}
-                />
-              </div>
-            )}
-          </>
+        ) : (
+          `Loading ${ticker}...`
         )}
       </div>
-    </div>
+    );
+  }
+
+  return (
+    <>
+      {error && (
+        <div
+          style={{
+            marginBottom: 20,
+            padding: 12,
+            background: "#3b1818",
+            border: "1px solid #7f1d1d",
+            borderRadius: 8,
+          }}
+        >
+          <b>Error:</b> {error}
+        </div>
+      )}
+
+      {/* ETF Badge */}
+      {isETF && (
+        <div
+          style={{
+            display: "inline-block",
+            padding: "4px 12px",
+            background: "#3b82f6",
+            borderRadius: 999,
+            fontSize: 12,
+            fontWeight: 600,
+            marginBottom: 12,
+          }}
+        >
+          📊 ETF
+        </div>
+      )}
+
+      <CompanyHeader company={company} fundamentals={fundamentals} prices={prices} />
+
+      {/* ── Action Buttons (Watch / Portfolio / Project / Back) ──── */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 16, marginTop: 12 }}>
+        <button
+          onClick={toggleWatchlist}
+          style={{
+            background: inWatchlist ? "#22c55e20" : "#222",
+            border: `1px solid ${inWatchlist ? "#22c55e40" : "#444"}`,
+            borderRadius: 8,
+            color: inWatchlist ? "#22c55e" : "#aaa",
+            fontSize: 13,
+            padding: "6px 14px",
+            cursor: "pointer",
+            transition: "all 0.15s",
+          }}
+        >
+          {inWatchlist ? "★ Watching" : "☆ Watch"}
+        </button>
+
+        <button
+          onClick={() => setShowAddPosition(!showAddPosition)}
+          style={{
+            background: showAddPosition ? "#8b5cf620" : "#222",
+            border: `1px solid ${showAddPosition ? "#8b5cf640" : "#444"}`,
+            borderRadius: 8,
+            color: showAddPosition ? "#8b5cf6" : "#aaa",
+            fontSize: 13,
+            padding: "6px 14px",
+            cursor: "pointer",
+            transition: "all 0.15s",
+          }}
+        >
+          💼 Add to Portfolio
+        </button>
+
+        {/* ── Save to Project dropdown ──────────────────────────── */}
+        {isStock && (
+          <SaveToProjectButton
+            ticker={ticker}
+            onCreateNew={createProjectFromTicker}
+            onOpenProject={(projectId) => navigate(`/projects/${projectId}`)}
+          />
+        )}
+
+        {/* ── Return to Project button (shown when came from project DCF flow) ── */}
+        {returnProjectId && (
+          <button
+            onClick={returnToProject}
+            style={{
+              background: "#a855f720",
+              border: "1px solid #a855f740",
+              borderRadius: 8,
+              color: "#a855f7",
+              fontSize: 13,
+              fontWeight: 600,
+              padding: "6px 14px",
+              cursor: "pointer",
+              transition: "all 0.15s",
+              marginLeft: "auto",
+            }}
+          >
+            ← Import to Project
+          </button>
+        )}
+
+        <button
+          onClick={goToDashboard}
+          style={{
+            background: "#222",
+            border: "1px solid #444",
+            borderRadius: 8,
+            color: "#888",
+            fontSize: 13,
+            padding: "6px 14px",
+            cursor: "pointer",
+            marginLeft: returnProjectId ? undefined : "auto",
+          }}
+        >
+          ← Dashboard
+        </button>
+      </div>
+
+      {/* ── Inline Add Position Form ────────────────────────────── */}
+      {showAddPosition && (
+        <AddPositionInline
+          ticker={ticker}
+          onAdd={handleAddPosition}
+          onCancel={() => setShowAddPosition(false)}
+        />
+      )}
+
+      {/* Price Chart - Always show */}
+      {prices.length > 0 && (
+        <div
+          style={{
+            marginBottom: 20,
+            background: "#1a1a1a",
+            border: "1px solid #333",
+            borderRadius: 10,
+            padding: 16,
+          }}
+        >
+          <PriceChart data={prices} ticker={ticker} onPeriodChange={loadPrices} />
+        </div>
+      )}
+
+      {/* ==================== */}
+      {/* STOCK-ONLY SECTIONS */}
+      {/* ==================== */}
+      {isStock && (
+        <>
+          {/* ML Prediction */}
+          <div style={{ marginBottom: 20 }}>
+            <PredictionCard key={`pred-${ticker}`} ticker={ticker} />
+          </div>
+
+          {/* DCF + Risk (side by side) */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: 16,
+              marginBottom: 16,
+            }}
+          >
+            <DCFCard
+              key={`dcf-${ticker}`}
+              ticker={ticker}
+              onStateChange={handleDCFStateChange}
+            />
+            <RiskCard key={`risk-${ticker}`} ticker={ticker} />
+          </div>
+
+          {/* Fundamentals + Institutional Flow */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: 16,
+              marginBottom: 16,
+            }}
+          >
+            <FundamentalsCard data={fundamentals} />
+            <InstitutionalFlowCard key={`inst-${ticker}`} ticker={ticker} />
+          </div>
+
+          {/* Comps Table */}
+          {comps && (
+            <div style={{ marginBottom: 16 }}>
+              <CompsTable data={comps} />
+            </div>
+          )}
+
+          <div
+            style={{
+              marginBottom: 20,
+              background: "#1a1a1a",
+              border: "1px solid #333",
+              borderRadius: 10,
+              padding: 20,
+            }}
+          >
+            <BroaderMarketContext
+              ticker={ticker}
+              sector={sector}
+              showMacro={true}
+              showSectors={true}
+              showRateImpact={true}
+            />
+          </div>
+
+          {/* Insider + Politicians */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: 16,
+              marginBottom: 16,
+            }}
+          >
+            <InsiderTradingCard key={`insider-${ticker}`} ticker={ticker} />
+            <PoliticianTradesCard key={`pol-${ticker}`} ticker={ticker} />
+          </div>
+
+          {/* Leadership */}
+          {leadership.length > 0 && <LeadershipTable data={leadership} />}
+
+          {/* Earnings */}
+          <div style={{ marginBottom: 20 }}>
+            <EarningsCard key={`earnings-${ticker}`} ticker={ticker} />
+          </div>
+        </>
+      )}
+
+      {/* ==================== */}
+      {/* ETF-ONLY SECTIONS */}
+      {/* ==================== */}
+      {isETF && (
+        <>
+          {/* ETF Fundamentals Card */}
+          <div style={{ marginBottom: 20 }}>
+            <ETFFundamentalsCard data={fundamentals} />
+          </div>
+
+          {/* Risk Card - Works for ETFs too */}
+          <div style={{ marginBottom: 20 }}>
+            <RiskCard key={`risk-${ticker}`} ticker={ticker} />
+          </div>
+        </>
+      )}
+
+      {/* ==================== */}
+      {/* SHARED SECTIONS */}
+      {/* ==================== */}
+
+      {/* News - Works for both */}
+      <NewsCard ticker={ticker} />
+
+      {/* Options - Works for both (most ETFs have options) */}
+      <div style={{ marginBottom: 20 }}>
+        <OptionsFlowCard key={`options-${ticker}`} ticker={ticker} />
+      </div>
+
+      {/* Option Decay Simulator - Works for both */}
+      <div style={{ marginBottom: 20 }}>
+        <OptionDecaySimulator key={`decay-${ticker}`} ticker={ticker} />
+      </div>
+
+      {/* Financial Statements - Stock only */}
+      {isStock && financials && (
+        <div style={{ marginTop: 16 }}>
+          <FinancialStatements
+            key={`fin-${ticker}`}
+            data={financials}
+            ticker={ticker}
+          />
+        </div>
+      )}
+    </>
   );
 }
 

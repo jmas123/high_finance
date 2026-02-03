@@ -18,6 +18,8 @@ export type Politician = {
   state?: string | null;
   district?: string | null;
   party?: string | null;
+  hit_rate?: number | null;  // Win rate as decimal (0-1), e.g. 0.65 = 65%
+  avg_return_pct?: number | null;  // Average return percentage
 };
 
 export type PoliticianTrade = {
@@ -46,6 +48,8 @@ export type PoliticianTradeWithPolitician = {
     district?: string | null;
     party?: string | null;
     bioguide_id?: string | null;
+    hit_rate?: number | null;  // Win rate as decimal (0-1)
+    avg_return_pct?: number | null;  // Average return percentage
   } | null;
 };
 
@@ -970,4 +974,16 @@ export type SavedScreen = {
 export type SavedScreenCreate = {
   name: string;
   filters: ScreenerFilters;
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// EXCEL EXPORT TYPES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export type ExportInputs = {
+  growth?: number;
+  margin?: number;
+  wacc?: number;
+  tax?: number;
+  terminal_g?: number;
 };

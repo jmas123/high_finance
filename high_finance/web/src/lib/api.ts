@@ -18,10 +18,20 @@ import type {
   ScreenerResponse,
   SavedScreen,
   SavedScreenCreate,
+  ExportInputs,
 } from "./types";
 // import type { OptionDecaySimulation, IVContext, ContractIVResponse } from "./types";
 
 const BASE = "/api/v1";
+const TOKEN_KEY = "hf_access_token";
+
+function getAuthHeaders(): Record<string, string> {
+  const token = localStorage.getItem(TOKEN_KEY);
+  if (token) {
+    return { Authorization: `Bearer ${token}` };
+  }
+  return {};
+}
 
 async function getJSON<T>(path: string): Promise<T> {
   const res = await fetch(path);
@@ -271,9 +281,9 @@ valuation: (ticker: string, params?: Partial<{growth:number;margin:number;tax:nu
   /**
    * List saved screens for current user
    */
-  listSavedScreens: (ownerId: string) =>
+  listSavedScreens: (_ownerId: string) =>
     fetch(`${BASE}/screener/saved`, {
-      headers: { "X-Owner-Id": ownerId },
+      headers: { ...getAuthHeaders() },
     }).then(res => {
       if (!res.ok) throw new Error("Failed to fetch saved screens");
       return res.json() as Promise<SavedScreen[]>;
@@ -282,12 +292,12 @@ valuation: (ticker: string, params?: Partial<{growth:number;margin:number;tax:nu
   /**
    * Create a saved screen
    */
-  createSavedScreen: (ownerId: string, data: SavedScreenCreate) =>
+  createSavedScreen: (_ownerId: string, data: SavedScreenCreate) =>
     fetch(`${BASE}/screener/saved`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-Owner-Id": ownerId,
+        ...getAuthHeaders(),
       },
       body: JSON.stringify(data),
     }).then(res => {
@@ -298,13 +308,44 @@ valuation: (ticker: string, params?: Partial<{growth:number;margin:number;tax:nu
   /**
    * Delete a saved screen
    */
-  deleteSavedScreen: (ownerId: string, screenId: number) =>
+  deleteSavedScreen: (_ownerId: string, screenId: number) =>
     fetch(`${BASE}/screener/saved/${screenId}`, {
       method: "DELETE",
-      headers: { "X-Owner-Id": ownerId },
+      headers: { ...getAuthHeaders() },
     }).then(res => {
       if (!res.ok && res.status !== 204) throw new Error("Failed to delete saved screen");
       return true;
     }),
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // EXCEL EXPORT API
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Export ticker valuation as Excel file
+   * Returns a Blob that can be downloaded
+   */
+  exportTickerToExcel: async (ticker: string, inputs: ExportInputs): Promise<Blob> => {
+    const params = new URLSearchParams();
+    if (inputs.growth != null) params.set("growth", String(inputs.growth));
+    if (inputs.margin != null) params.set("margin", String(inputs.margin));
+    if (inputs.wacc != null) params.set("wacc", String(inputs.wacc));
+    if (inputs.tax != null) params.set("tax", String(inputs.tax));
+    if (inputs.terminal_g != null) params.set("terminal_g", String(inputs.terminal_g));
+
+    const queryString = params.toString();
+    const url = `${BASE}/export/${encodeURIComponent(ticker)}/excel${queryString ? `?${queryString}` : ""}`;
+
+    const res = await fetch(url, {
+      headers: getAuthHeaders(),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: "Export failed" }));
+      throw new Error(err.detail || "Export failed");
+    }
+
+    return res.blob();
+  },
 };
 

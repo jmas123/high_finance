@@ -19,18 +19,21 @@ interface FundamentalsProps {
 }
 
 function formatValue(value: number | undefined | null, type: "currency" | "percent" | "number" | "large"): string {
-  if (value === undefined || value === null) return "—";
-  
+  if (value === undefined || value === null || !Number.isFinite(value)) return "—";
+
+  const absValue = Math.abs(value);
+  const sign = value < 0 ? "-" : "";
+
   switch (type) {
     case "currency":
-      return `$${value.toFixed(2)}`;
+      return `${sign}$${absValue.toFixed(2)}`;
     case "percent":
-      return `${(value * 100).toFixed(2)}%`;
+      return `${sign}${(absValue * 100).toFixed(2)}%`;
     case "large":
-      if (value >= 1e12) return `$${(value / 1e12).toFixed(2)}T`;
-      if (value >= 1e9) return `$${(value / 1e9).toFixed(2)}B`;
-      if (value >= 1e6) return `$${(value / 1e6).toFixed(2)}M`;
-      return `$${value.toLocaleString()}`;
+      if (absValue >= 1e12) return `${sign}$${(absValue / 1e12).toFixed(2)}T`;
+      if (absValue >= 1e9) return `${sign}$${(absValue / 1e9).toFixed(2)}B`;
+      if (absValue >= 1e6) return `${sign}$${(absValue / 1e6).toFixed(2)}M`;
+      return `${sign}$${absValue.toLocaleString()}`;
     default:
       return value.toFixed(2);
   }

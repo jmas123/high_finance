@@ -7,7 +7,9 @@ interface DivergenceExplainerProps {
   currentInputs: ValuationScenarioInputs;
   currentPrice: number;
   fairValue: number;
-  onUseMarketAssumptions: (assumptions: Partial<ValuationScenarioInputs>) => void;
+  onUseMarketAssumptions: () => void;
+  onKeepMyAssumptions: () => void;
+  hasPreMarketValues: boolean;
 }
 
 export function DivergenceExplainer({
@@ -16,6 +18,8 @@ export function DivergenceExplainer({
   currentPrice,
   fairValue,
   onUseMarketAssumptions,
+  onKeepMyAssumptions,
+  hasPreMarketValues,
 }: DivergenceExplainerProps) {
   const [expanded, setExpanded] = useState(divergence.divergence_tier === "extreme");
 
@@ -49,18 +53,9 @@ export function DivergenceExplainer({
     },
   ];
 
+  // Handler just calls the callback - DCFCard uses captured values to prevent oscillation
   const handleUseMarket = () => {
-    const newAssumptions: Partial<ValuationScenarioInputs> = {};
-    if (implied.implied_growth !== null) {
-      newAssumptions.growth = Math.min(0.50, Math.max(-0.10, implied.implied_growth));
-    }
-    if (implied.implied_margin !== null) {
-      newAssumptions.margin = Math.min(0.50, Math.max(-0.10, implied.implied_margin));
-    }
-    if (implied.implied_wacc !== null) {
-      newAssumptions.wacc = Math.min(0.20, Math.max(0.05, implied.implied_wacc));
-    }
-    onUseMarketAssumptions(newAssumptions);
+    onUseMarketAssumptions();
   };
 
   // Collapsed view for notable tier
@@ -261,33 +256,41 @@ export function DivergenceExplainer({
       <div style={{ display: "flex", gap: 10 }}>
         <button
           onClick={handleUseMarket}
+          disabled={hasPreMarketValues}
           style={{
             flex: 1,
             padding: "10px 16px",
-            background: tierColor,
-            color: "#000",
+            background: hasPreMarketValues ? "#444" : tierColor,
+            color: hasPreMarketValues ? "#888" : "#000",
             border: "none",
             borderRadius: 6,
             fontSize: 12,
             fontWeight: 600,
-            cursor: "pointer",
+            cursor: hasPreMarketValues ? "not-allowed" : "pointer",
           }}
         >
-          Use Market-Implied Assumptions
+          {hasPreMarketValues ? "✓ Market-Implied Applied" : "Use Market-Implied Assumptions"}
         </button>
         <button
-          onClick={() => setExpanded(false)}
+          onClick={() => {
+            if (hasPreMarketValues) {
+              onKeepMyAssumptions();
+            } else {
+              setExpanded(false);
+            }
+          }}
           style={{
             padding: "10px 16px",
-            background: "transparent",
-            color: "#888",
-            border: "1px solid #333",
+            background: hasPreMarketValues ? "#3b82f620" : "transparent",
+            color: hasPreMarketValues ? "#3b82f6" : "#888",
+            border: `1px solid ${hasPreMarketValues ? "#3b82f640" : "#333"}`,
             borderRadius: 6,
             fontSize: 12,
+            fontWeight: hasPreMarketValues ? 600 : 400,
             cursor: "pointer",
           }}
         >
-          Keep My Assumptions
+          {hasPreMarketValues ? "↩ Restore My Assumptions" : "Keep My Assumptions"}
         </button>
       </div>
 

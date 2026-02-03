@@ -19,3 +19,6 @@ from .project import (
     ProjectSource,
 )
 from .screener import ScreenerUniverse, ScreenerCache, SavedScreen
+from .user import User
+from .user_data import WatchlistItem, PortfolioPosition
+from .job_execution import JobExecution

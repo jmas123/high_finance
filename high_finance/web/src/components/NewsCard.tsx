@@ -32,7 +32,10 @@ function sentimentLabel(score: number | null) {
 function timeAgo(dateStr: string | null): string {
   if (!dateStr) return "";
   const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return ""; // Invalid date
   const diff = Math.floor((Date.now() - d.getTime()) / 1000);
+  if (diff < 0) return "Just now"; // Future date handling
+  if (diff < 60) return "Just now";
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
   return `${Math.floor(diff / 86400)}d ago`;
@@ -118,9 +121,30 @@ export function NewsCard({ ticker }: { ticker: string }) {
             border: "1px solid #7f1d1d",
             borderRadius: 8,
             fontSize: 13,
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
           }}
         >
-          <b>Error:</b> {error}
+          <span><b>Error:</b> {error}</span>
+          <button
+            onClick={() => {
+              setError(null);
+              setLoading(true);
+              api.news(ticker).then(setData).catch((e) => setError(e?.message ?? "Failed")).finally(() => setLoading(false));
+            }}
+            style={{
+              padding: "4px 10px",
+              fontSize: 11,
+              background: "#7f1d1d",
+              border: "none",
+              borderRadius: 4,
+              color: "#fff",
+              cursor: "pointer",
+            }}
+          >
+            Retry
+          </button>
         </div>
       )}
 
@@ -131,11 +155,13 @@ export function NewsCard({ ticker }: { ticker: string }) {
             <div>
               {data.headlines.slice(0, 8).map((h, i) => (
                 <a
-                  key={i}
-                  href={h.url ?? "#"}
-                  target="_blank"
-                  rel="noreferrer"
+                  key={`${h.title.slice(0, 20)}-${i}`}
+                  href={h.url || undefined}
+                  target={h.url ? "_blank" : undefined}
+                  rel={h.url ? "noreferrer" : undefined}
+                  onClick={h.url ? undefined : (e) => e.preventDefault()}
                   style={{
+                    cursor: h.url ? "pointer" : "default",
                     display: "block",
                     padding: "10px 0",
                     borderBottom: "1px solid #222",
@@ -187,7 +213,7 @@ export function NewsCard({ ticker }: { ticker: string }) {
                 Recent SEC Filings
               </div>
               {data.filings.slice(0, 5).map((f, i) => (
-                <div key={i} style={{ fontSize: 12, padding: "4px 0" }}>
+                <div key={`${f.form}-${f.date}-${i}`} style={{ fontSize: 12, padding: "4px 0" }}>
                   {f.form} • {f.date}
                 </div>
               ))}

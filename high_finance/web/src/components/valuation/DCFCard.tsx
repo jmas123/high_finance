@@ -9,8 +9,43 @@ import { ScenarioCard } from "./ScenarioCard";
 import { WarningBadge } from "./Warnings";
 import { DivergenceExplainer } from "./DivergenceExplainer";
 import { fmtMoney, fmtPct, fmtPctSigned, fmtPx } from "../Functions";
+import { api } from "../../lib/api";
 
-// ── NEW: callback shape for project DCF snapshot wiring ──────────────────────
+// ── localStorage persistence for DCF inputs ──────────────────────────────────
+const DCF_STORAGE_KEY = "hf_dcf_inputs";
+
+type SavedDCFInputs = {
+  growth: number;
+  margin: number;
+  tax: number;
+  wacc: number;
+  terminal_g: number;
+  savedAt: string;
+};
+
+function loadSavedInputs(ticker: string): SavedDCFInputs | null {
+  try {
+    const stored = localStorage.getItem(DCF_STORAGE_KEY);
+    if (!stored) return null;
+    const all = JSON.parse(stored) as Record<string, SavedDCFInputs>;
+    return all[ticker.toUpperCase()] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function saveInputs(ticker: string, inputs: Omit<SavedDCFInputs, "savedAt">) {
+  try {
+    const stored = localStorage.getItem(DCF_STORAGE_KEY);
+    const all = stored ? JSON.parse(stored) : {};
+    all[ticker.toUpperCase()] = { ...inputs, savedAt: new Date().toISOString() };
+    localStorage.setItem(DCF_STORAGE_KEY, JSON.stringify(all));
+  } catch {
+    // Silently fail if localStorage is unavailable
+  }
+}
+
+// ── Callback shape for project DCF snapshot wiring ───────────────────────────
 type DCFStateReport = {
   growth: number;
   margin: number;
@@ -39,8 +74,30 @@ export function DCFCard({ ticker, onStateChange }: DCFCardProps) {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [initialized, setInitialized] = useState(false);
+  const [lastSaved, setLastSaved] = useState<Date | null>(null);
 
   const [activeTab, setActiveTab] = useState<"dcf" | "multiples" | "sensitivity">("dcf");
+
+  // Export state
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+
+  // ── Capture market-implied assumptions when divergence first detected ──────
+  // This prevents the "oscillation bug" where clicking "Use Market Implied"
+  // causes divergence to flip, and clicking again reverts to original values
+  const [capturedImplied, setCapturedImplied] = useState<{
+    implied_growth: number | null;
+    implied_margin: number | null;
+    implied_wacc: number | null;
+  } | null>(null);
+
+  // ── Store user's original values before applying market-implied ──────────
+  // This allows "Keep My Assumptions" to properly restore user's values
+  const [preMarketValues, setPreMarketValues] = useState<{
+    growth: number;
+    margin: number;
+    wacc: number;
+  } | null>(null);
 
   // ── Report state to parent when data or inputs change ──────────────────────
   useEffect(() => {
@@ -61,27 +118,55 @@ export function DCFCard({ ticker, onStateChange }: DCFCardProps) {
     });
   }, [data, growth, margin, tax, wacc, terminalG, initialized]);
 
-  // Initial load - let backend compute smart defaults
+  // Initial load - check localStorage first, then fall back to smart defaults
   useEffect(() => {
     if (!ticker) return;
-    
+
     let mounted = true;
     async function loadInitial() {
       setLoading(true);
       setErr(null);
       setInitialized(false);
+
+      // Check for saved inputs in localStorage
+      const saved = loadSavedInputs(ticker);
+
       try {
-        const res = await fetch(`/api/v1/valuation/${encodeURIComponent(ticker)}`);
+        // If we have saved inputs, use them; otherwise get smart defaults
+        let url = `/api/v1/valuation/${encodeURIComponent(ticker)}`;
+        if (saved) {
+          const q = new URLSearchParams({
+            growth: String(saved.growth),
+            margin: String(saved.margin),
+            tax: String(saved.tax),
+            wacc: String(saved.wacc),
+            terminal_g: String(saved.terminal_g),
+          });
+          url += `?${q.toString()}`;
+        }
+
+        const res = await fetch(url);
         if (!res.ok) throw new Error(await res.text());
         const json = (await res.json()) as ValuationBundle;
+
         if (mounted) {
           setData(json);
-          // Initialize sliders with smart defaults
-          setGrowth(json.inputs.growth);
-          setMargin(json.inputs.margin);
-          setTax(json.inputs.tax);
-          setWacc(json.inputs.wacc);
-          setTerminalG(json.inputs.terminal_g);
+          // Use saved inputs if available, otherwise use smart defaults from API
+          if (saved) {
+            setGrowth(saved.growth);
+            setMargin(saved.margin);
+            setTax(saved.tax);
+            setWacc(saved.wacc);
+            setTerminalG(saved.terminal_g);
+            setLastSaved(new Date(saved.savedAt));
+          } else {
+            setGrowth(json.inputs.growth);
+            setMargin(json.inputs.margin);
+            setTax(json.inputs.tax);
+            setWacc(json.inputs.wacc);
+            setTerminalG(json.inputs.terminal_g);
+            setLastSaved(new Date());
+          }
           setInitialized(true);
         }
       } catch (e: any) {
@@ -94,10 +179,10 @@ export function DCFCard({ ticker, onStateChange }: DCFCardProps) {
     return () => { mounted = false; };
   }, [ticker]);
 
-  // Subsequent updates when sliders change
+  // Subsequent updates when sliders change - also saves to localStorage
   useEffect(() => {
     if (!ticker || !initialized || growth === null) return;
-    
+
     let mounted = true;
     async function update() {
       setLoading(true);
@@ -112,17 +197,51 @@ export function DCFCard({ ticker, onStateChange }: DCFCardProps) {
         const res = await fetch(`/api/v1/valuation/${encodeURIComponent(ticker)}?${q.toString()}`);
         if (!res.ok) throw new Error(await res.text());
         const json = (await res.json()) as ValuationBundle;
-        if (mounted) setData(json);
+        if (mounted) {
+          setData(json);
+          setLastSaved(new Date());
+          // Persist inputs to localStorage
+          saveInputs(ticker, {
+            growth: growth!,
+            margin: margin!,
+            tax: tax!,
+            wacc: wacc!,
+            terminal_g: terminalG!,
+          });
+        }
       } catch (e: any) {
         if (mounted) setErr(e?.message ?? "Failed to update valuation");
       } finally {
         if (mounted) setLoading(false);
       }
     }
-    
+
     const timer = setTimeout(update, 300); // Debounce
     return () => { mounted = false; clearTimeout(timer); };
   }, [ticker, growth, margin, tax, wacc, terminalG, initialized]);
+
+  // Capture market-implied assumptions when divergence first detected
+  // Only capture once per ticker - this prevents oscillation when user clicks the button
+  useEffect(() => {
+    const divergence = data?.divergence_analysis;
+    if (
+      divergence &&
+      divergence.divergence_tier !== "normal" &&
+      divergence.implied_assumptions &&
+      !capturedImplied
+    ) {
+      setCapturedImplied({
+        implied_growth: divergence.implied_assumptions.implied_growth,
+        implied_margin: divergence.implied_assumptions.implied_margin,
+        implied_wacc: divergence.implied_assumptions.implied_wacc,
+      });
+    }
+  }, [data?.divergence_analysis, capturedImplied]);
+
+  // Reset captured implied when ticker changes
+  useEffect(() => {
+    setCapturedImplied(null);
+  }, [ticker]);
 
   // Build slider references from smart defaults
   const sliderRefs = useMemo(() => {
@@ -165,11 +284,113 @@ export function DCFCard({ ticker, onStateChange }: DCFCardProps) {
   }, [data?.warnings]);
 
   // Handler for "Use Market Assumptions" button
-  const handleUseMarketAssumptions = useCallback((assumptions: Partial<ValuationScenarioInputs>) => {
-    if (assumptions.growth !== undefined) setGrowth(assumptions.growth);
-    if (assumptions.margin !== undefined) setMargin(assumptions.margin);
-    if (assumptions.wacc !== undefined) setWacc(assumptions.wacc);
-  }, []);
+  // Uses CAPTURED implied values (from first detection) to prevent oscillation bug
+  const handleUseMarketAssumptions = useCallback(() => {
+    if (!capturedImplied || growth === null || margin === null || wacc === null) return;
+
+    // Save current values so user can revert with "Keep My Assumptions"
+    setPreMarketValues({ growth, margin, wacc });
+
+    if (capturedImplied.implied_growth !== null) {
+      const g = Math.min(0.50, Math.max(-0.10, capturedImplied.implied_growth));
+      setGrowth(g);
+    }
+    if (capturedImplied.implied_margin !== null) {
+      const m = Math.min(0.50, Math.max(-0.10, capturedImplied.implied_margin));
+      setMargin(m);
+    }
+    if (capturedImplied.implied_wacc !== null) {
+      // Floor at 8% (assumes ~4% risk-free + 4% minimum equity risk premium)
+      const w = Math.min(0.20, Math.max(0.08, capturedImplied.implied_wacc));
+      setWacc(w);
+    }
+  }, [capturedImplied, growth, margin, wacc]);
+
+  // Handler for "Keep My Assumptions" button - restores values from before market-implied was applied
+  const handleKeepMyAssumptions = useCallback(() => {
+    if (preMarketValues) {
+      setGrowth(preMarketValues.growth);
+      setMargin(preMarketValues.margin);
+      setWacc(preMarketValues.wacc);
+      setPreMarketValues(null);
+    }
+  }, [preMarketValues]);
+
+  // Handler to reset to smart defaults (clears localStorage)
+  const handleResetToDefaults = useCallback(() => {
+    if (!data?.smart_defaults) return;
+    // Clear from localStorage
+    try {
+      const stored = localStorage.getItem(DCF_STORAGE_KEY);
+      if (stored) {
+        const all = JSON.parse(stored);
+        delete all[ticker.toUpperCase()];
+        localStorage.setItem(DCF_STORAGE_KEY, JSON.stringify(all));
+      }
+    } catch {}
+    // Reset sliders to smart defaults from current data
+    if (data.inputs) {
+      setGrowth(data.inputs.growth);
+      setMargin(data.inputs.margin);
+      setTax(data.inputs.tax);
+      setWacc(data.inputs.wacc);
+      setTerminalG(data.inputs.terminal_g);
+    }
+  }, [ticker, data]);
+
+  // Handler to export to Excel
+  const handleExportToExcel = useCallback(async () => {
+    if (!ticker || growth === null) return;
+
+    setExporting(true);
+    setExportError(null);
+
+    try {
+      const blob = await api.exportTickerToExcel(ticker, {
+        growth: growth!,
+        margin: margin!,
+        wacc: wacc!,
+        tax: tax!,
+        terminal_g: terminalG!,
+      });
+
+      // Trigger download
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = ""; // Browser uses Content-Disposition filename
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      const msg = err.message || "Export failed";
+      setExportError(msg);
+      // Clear error after 5 seconds
+      setTimeout(() => setExportError(null), 5000);
+    } finally {
+      setExporting(false);
+    }
+  }, [ticker, growth, margin, wacc, tax, terminalG]);
+
+  // Check if current values differ from smart defaults
+  const hasCustomValues = useMemo(() => {
+    if (!data?.smart_defaults || growth === null) return false;
+    const sd = data.smart_defaults;
+    const defaultGrowth = sd.growth.analyst_estimate ?? sd.growth.historical_3y ?? sd.growth.sector_median;
+    const defaultMargin = sd.margin.current ?? sd.margin.historical_avg ?? sd.margin.sector_median;
+    const defaultWacc = sd.wacc.beta_implied ?? 0.10;
+    const defaultTax = sd.tax.effective_rate ?? 0.21;
+    const defaultTerminalG = 0.025;
+
+    return (
+      Math.abs(growth - defaultGrowth) > 0.001 ||
+      Math.abs(margin! - defaultMargin) > 0.001 ||
+      Math.abs(wacc! - defaultWacc) > 0.001 ||
+      Math.abs(tax! - defaultTax) > 0.001 ||
+      Math.abs(terminalG! - defaultTerminalG) > 0.001
+    );
+  }, [data?.smart_defaults, growth, margin, wacc, tax, terminalG]);
 
   const upside = data?.upside_downside;
   const fvRange = data?.fair_value_range;
@@ -194,7 +415,75 @@ export function DCFCard({ ticker, onStateChange }: DCFCardProps) {
       {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "flex-start" }}>
         <div>
-          <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: "-0.3px" }}>Valuation Engine</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 18, fontWeight: 700, letterSpacing: "-0.3px" }}>Valuation Engine</span>
+            {/* Save Status Indicator */}
+            {loading ? (
+              <span style={{
+                fontSize: 11,
+                color: "#f59e0b",
+                background: "rgba(245, 158, 11, 0.1)",
+                padding: "2px 8px",
+                borderRadius: 4,
+                display: "flex",
+                alignItems: "center",
+                gap: 4
+              }}>
+                ⏳ Calculating...
+              </span>
+            ) : lastSaved ? (
+              <span style={{
+                fontSize: 11,
+                color: "#22c55e",
+                background: "rgba(34, 197, 94, 0.1)",
+                padding: "2px 8px",
+                borderRadius: 4,
+                display: "flex",
+                alignItems: "center",
+                gap: 4
+              }}>
+                ✓ Saved {lastSaved.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+              </span>
+            ) : null}
+            {/* Reset button - only show when values have been customized */}
+            {hasCustomValues && !loading && (
+              <button
+                onClick={handleResetToDefaults}
+                style={{
+                  fontSize: 10,
+                  color: "#888",
+                  background: "transparent",
+                  border: "1px solid #333",
+                  borderRadius: 4,
+                  padding: "2px 6px",
+                  cursor: "pointer",
+                }}
+                title="Reset to smart defaults"
+              >
+                Reset
+              </button>
+            )}
+            {/* Export to Excel button */}
+            {initialized && !loading && (
+              <button
+                onClick={handleExportToExcel}
+                disabled={exporting}
+                style={{
+                  fontSize: 10,
+                  color: exporting ? "#666" : "#3b82f6",
+                  background: "transparent",
+                  border: "1px solid #3b82f6",
+                  borderRadius: 4,
+                  padding: "2px 8px",
+                  cursor: exporting ? "not-allowed" : "pointer",
+                  opacity: exporting ? 0.6 : 1,
+                }}
+                title="Export valuation to Excel"
+              >
+                {exporting ? "Exporting..." : "Export Excel"}
+              </button>
+            )}
+          </div>
           <div style={{ marginTop: 4, fontSize: 12, opacity: 0.5 }}>
             {data?.benchmarks?.sector && <span>{data.benchmarks.sector} • </span>}
             DCF + Multiples + Sensitivity
@@ -253,6 +542,8 @@ export function DCFCard({ ticker, onStateChange }: DCFCardProps) {
           currentPrice={data.facts.current_price}
           fairValue={data.fair_value_per_share_est}
           onUseMarketAssumptions={handleUseMarketAssumptions}
+          onKeepMyAssumptions={handleKeepMyAssumptions}
+          hasPreMarketValues={preMarketValues !== null}
         />
       )}
 
@@ -260,6 +551,13 @@ export function DCFCard({ ticker, onStateChange }: DCFCardProps) {
       {err && (
         <div style={{ marginTop: 14, padding: 12, borderRadius: 10, border: "1px solid rgba(239, 68, 68, 0.3)", background: "rgba(239, 68, 68, 0.1)" }}>
           <b>Error:</b> {err}
+        </div>
+      )}
+
+      {/* Export Error */}
+      {exportError && (
+        <div style={{ marginTop: 14, padding: 12, borderRadius: 10, border: "1px solid rgba(245, 158, 11, 0.3)", background: "rgba(245, 158, 11, 0.1)" }}>
+          <b>Export failed:</b> {exportError}
         </div>
       )}
 
@@ -275,7 +573,7 @@ export function DCFCard({ ticker, onStateChange }: DCFCardProps) {
       {data?.warnings && data.warnings.length > 0 && (
         <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 8 }}>
           {data.warnings.filter(w => w.severity === "error" || w.severity === "warning").map((w, i) => (
-            <WarningBadge key={i} warning={w as Warning} />
+            <WarningBadge key={`${w.param}-${w.severity}-${i}`} warning={w as Warning} />
           ))}
         </div>
       )}

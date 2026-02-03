@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from high_finance.db.session import get_db
 from high_finance.services import screener as svc
+from high_finance.core.security import get_current_user_optional, User
 from high_finance.api.v1.schemas.screener import (
     ScreenerResponse,
     ScreenerResult,
@@ -24,9 +25,24 @@ from high_finance.api.v1.schemas.screener import (
 router = APIRouter()
 
 
-def get_owner_id(x_owner_id: str = Header(..., description="Owner ID for saved screens")) -> str:
-    """Extract owner_id from request header."""
+def get_owner_id_header(x_owner_id: str = Header(None, description="Owner ID (deprecated, use JWT)")) -> Optional[str]:
+    """Extract owner_id from request header (deprecated)."""
     return x_owner_id
+
+
+def resolve_owner_id(user: Optional[User], header_owner_id: Optional[str]) -> Optional[str]:
+    """JWT user takes precedence over header."""
+    if user:
+        return user.id
+    return header_owner_id
+
+
+def require_owner_id(user: Optional[User], header_owner_id: Optional[str]) -> str:
+    """Require authentication for saved screens."""
+    owner_id = resolve_owner_id(user, header_owner_id)
+    if not owner_id:
+        raise HTTPException(401, "Authentication required for saved screens")
+    return owner_id
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -145,10 +161,12 @@ async def get_sector_counts(db: Session = Depends(get_db)):
 
 @router.get("/saved", response_model=list[SavedScreenOut])
 async def list_saved_screens(
-    owner_id: str = Depends(get_owner_id),
     db: Session = Depends(get_db),
+    user: Optional[User] = Depends(get_current_user_optional),
+    header_owner_id: Optional[str] = Depends(get_owner_id_header),
 ):
     """List all saved screens for the current owner."""
+    owner_id = require_owner_id(user, header_owner_id)
     screens = await svc.list_saved_screens(db, owner_id)
     return screens
 
@@ -156,10 +174,12 @@ async def list_saved_screens(
 @router.post("/saved", response_model=SavedScreenOut, status_code=201)
 async def create_saved_screen(
     body: SavedScreenCreate,
-    owner_id: str = Depends(get_owner_id),
     db: Session = Depends(get_db),
+    user: Optional[User] = Depends(get_current_user_optional),
+    header_owner_id: Optional[str] = Depends(get_owner_id_header),
 ):
     """Save a new screen configuration."""
+    owner_id = require_owner_id(user, header_owner_id)
     screen = await svc.create_saved_screen(
         db,
         owner_id=owner_id,
@@ -172,10 +192,12 @@ async def create_saved_screen(
 @router.delete("/saved/{screen_id}", status_code=204)
 async def delete_saved_screen(
     screen_id: int,
-    owner_id: str = Depends(get_owner_id),
     db: Session = Depends(get_db),
+    user: Optional[User] = Depends(get_current_user_optional),
+    header_owner_id: Optional[str] = Depends(get_owner_id_header),
 ):
     """Delete a saved screen."""
+    owner_id = require_owner_id(user, header_owner_id)
     deleted = await svc.delete_saved_screen(db, screen_id, owner_id)
     if not deleted:
         raise HTTPException(404, "Saved screen not found")

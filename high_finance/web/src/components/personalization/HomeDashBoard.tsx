@@ -8,15 +8,11 @@ import { getRecentTickers, exportAllData, importAllData, clearAllData } from "./
 interface HomeDashboardProps {
   onSelect: (ticker: string) => void;
   onOpenProject?: (projectId: number) => void;
-  watchlistRefreshKey: number;
-  portfolioRefreshKey: number;
 }
 
 export function HomeDashboard({
   onSelect,
   onOpenProject,
-  watchlistRefreshKey,
-  portfolioRefreshKey,
 }: HomeDashboardProps) {
   const [recentTickers, setRecentTickers] = useState<string[]>([]);
   const [showDataMenu, setShowDataMenu] = useState(false);
@@ -143,8 +139,8 @@ export function HomeDashboard({
 
       {/* Two Column: Watchlist + Portfolio */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 16, marginBottom: 20 }}>
-        <WatchlistCard onSelect={onSelect} onOpenProject={onOpenProject} refreshKey={watchlistRefreshKey} />
-        <PortfolioCard onSelect={onSelect} refreshKey={portfolioRefreshKey} />
+        <WatchlistCard onSelect={onSelect} onOpenProject={onOpenProject} />
+        <PortfolioCard onSelect={onSelect} />
       </div>
 
       {/* Active Projects */}

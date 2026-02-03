@@ -18,6 +18,15 @@ class Settings(BaseSettings):
     # Debug mode
     DEBUG: bool = False
 
+    # Admin API (required if scheduler enabled)
+    ADMIN_API_KEY: str | None = None
+
+    # Scheduler settings
+    SCHEDULER_ENABLED: bool = True
+
+    # Alerting (optional)
+    SLACK_WEBHOOK_URL: str | None = None
+
     # Optional in dev; required only when you use those features
     SEC_API_KEY: str | None = None
 

@@ -124,11 +124,11 @@ export function FairValueRangeBar({
 
         {/* Current price marker */}
         {current && (
-          <div style={{ position: "absolute", left: `${pos(current)}%`, top: isClustered ? 16 : -12, transform: "translateX(-50%)", textAlign: "center", zIndex: 10 }}>
-            <div style={{ fontSize: 9, background: "#fff", color: "#000", padding: "2px 6px", borderRadius: 4, fontWeight: 600 }}>
+          <div style={{ position: "absolute", left: `${pos(current)}%`, top: isClustered ? 16 : -12, transform: "translateX(-50%)", textAlign: "center", zIndex: 20 }}>
+            <div style={{ fontSize: 9, background: "#fff", color: "#000", padding: "2px 6px", borderRadius: 4, fontWeight: 600, border: "2px solid #333", boxShadow: "0 2px 8px rgba(0,0,0,0.6)" }}>
               NOW: {fmtPx(current)}
             </div>
-            <div style={{ width: 0, height: 0, borderLeft: "6px solid transparent", borderRight: "6px solid transparent", borderTop: "6px solid #fff", margin: "0 auto" }} />
+            <div style={{ width: 0, height: 0, borderLeft: "6px solid transparent", borderRight: "6px solid transparent", borderTop: "6px solid #333", margin: "0 auto" }} />
           </div>
         )}
 

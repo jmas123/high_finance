@@ -1,12 +1,9 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { api } from "../../lib/api";
+import { useUserData } from "../../lib/userData";
+import { useAuth } from "../../lib/auth";
 import { projectsApi } from "../project/api";
 import type { ProjectSummary } from "../../lib/types";
-import {
-  getWatchlist,
-  removeFromWatchlist,
-  type WatchlistItem,
-} from "./storage";
 
 interface Quote {
   ticker: string;
@@ -17,26 +14,15 @@ interface Quote {
 
 interface WatchlistCardProps {
   onSelect: (ticker: string) => void;
-  /** Called when user clicks on a project badge */
   onOpenProject?: (projectId: number) => void;
-  /** Bumped externally whenever the watchlist changes (e.g. user adds from ticker view) */
-  refreshKey?: number;
 }
 
-export function WatchlistCard({ onSelect, onOpenProject, refreshKey }: WatchlistCardProps) {
-  const [items, setItems] = useState<WatchlistItem[]>([]);
+export function WatchlistCard({ onSelect, onOpenProject }: WatchlistCardProps) {
+  const { isAuthenticated } = useAuth();
+  const { watchlist, removeFromWatchlist } = useUserData();
   const [quotes, setQuotes] = useState<Record<string, Quote>>({});
   const [loading, setLoading] = useState(false);
   const [projectsByTicker, setProjectsByTicker] = useState<Record<string, ProjectSummary>>({});
-
-  // Load watchlist from localStorage
-  const reload = useCallback(() => {
-    setItems(getWatchlist());
-  }, []);
-
-  useEffect(() => {
-    reload();
-  }, [reload, refreshKey]);
 
   // Fetch projects to show indicators
   useEffect(() => {
@@ -45,7 +31,6 @@ export function WatchlistCard({ onSelect, onOpenProject, refreshKey }: Watchlist
       .then((projects) => {
         const map: Record<string, ProjectSummary> = {};
         for (const p of projects) {
-          // Store first project for each ticker (most recent due to API sort)
           if (!map[p.ticker.toUpperCase()]) {
             map[p.ticker.toUpperCase()] = p;
           }
@@ -53,33 +38,28 @@ export function WatchlistCard({ onSelect, onOpenProject, refreshKey }: Watchlist
         setProjectsByTicker(map);
       })
       .catch(() => setProjectsByTicker({}));
-  }, [refreshKey]);
+  }, []);
 
   // Fetch quotes for all watchlist tickers
   useEffect(() => {
-    if (items.length === 0) return;
+    if (watchlist.length === 0) return;
     let cancelled = false;
 
     async function fetchQuotes() {
       setLoading(true);
       const newQuotes: Record<string, Quote> = {};
 
-      // Batch fetch — use the batch endpoint if available, otherwise parallel single calls
       const results = await Promise.allSettled(
-        items.map((item) =>
+        watchlist.map((item) =>
           api.fundamentals(item.ticker).then((f: any) => {
-  const base = f?.target ?? f; // ✅ handles both shapes
-
-
-  return {
-    ticker: item.ticker,
-    price: base?.current_price ?? base?.market_price ?? 0,
-    change: base?.price_change ?? 0,
-    changePct: base?.price_change_pct ?? 0,
-  };
-  
-})
-
+            const base = f?.target ?? f;
+            return {
+              ticker: item.ticker,
+              price: base?.current_price ?? base?.market_price ?? 0,
+              change: base?.price_change ?? 0,
+              changePct: base?.price_change_pct ?? 0,
+            };
+          })
         )
       );
 
@@ -97,21 +77,19 @@ export function WatchlistCard({ onSelect, onOpenProject, refreshKey }: Watchlist
 
     fetchQuotes();
 
-    // Refresh every 60s
     const interval = setInterval(fetchQuotes, 60_000);
     return () => {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [items]);
+  }, [watchlist]);
 
   function handleRemove(e: React.MouseEvent, ticker: string) {
     e.stopPropagation();
     removeFromWatchlist(ticker);
-    reload();
   }
 
-  if (items.length === 0) {
+  if (watchlist.length === 0) {
     return (
       <div
         style={{
@@ -145,13 +123,13 @@ export function WatchlistCard({ onSelect, onOpenProject, refreshKey }: Watchlist
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontSize: 16 }}>👁️</span>
           <span style={{ fontSize: 14, fontWeight: 600, color: "#fff" }}>Watchlist</span>
-          <span style={{ fontSize: 11, color: "#666" }}>({items.length})</span>
+          <span style={{ fontSize: 11, color: "#666" }}>({watchlist.length})</span>
         </div>
         {loading && <span style={{ fontSize: 11, color: "#555" }}>refreshing…</span>}
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-        {items.map((item) => {
+        {watchlist.map((item) => {
           const q = quotes[item.ticker];
           const positive = q && q.changePct >= 0;
           const project = projectsByTicker[item.ticker.toUpperCase()];
@@ -256,9 +234,9 @@ export function WatchlistCard({ onSelect, onOpenProject, refreshKey }: Watchlist
         })}
       </div>
 
-      {/* Data saved locally notice */}
+      {/* Sync status notice */}
       <div style={{ marginTop: 10, fontSize: 10, color: "#444", textAlign: "center" }}>
-        Saved locally on this browser
+        {isAuthenticated ? "Synced with your account" : "Saved locally on this browser"}
       </div>
     </div>
   );

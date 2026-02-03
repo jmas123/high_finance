@@ -62,11 +62,15 @@ export function RiskCard({ ticker }: { ticker: string }) {
 
   useEffect(() => {
     if (ticker) fetchRisk();
-  }, [ticker, period, horizon, sims, volMultiplier, includeEarningsShock, drawdownThreshold]);
+  }, [ticker, period, horizon, sims, volMultiplier, includeEarningsShock, drawdownThreshold, targetPriceOffset]);
 
   const m = data?.metrics;
   const p = data?.probabilities;
   const s = data?.scenarios;
+  const closePrice = data?.as_of_close ?? 0;
+
+  // Safe price target calculation (guards against null/undefined close price)
+  const calcPriceTarget = (returnPct: number) => closePrice > 0 ? closePrice * (1 + returnPct) : 0;
 
   return (
     <div
@@ -291,7 +295,7 @@ export function RiskCard({ ticker }: { ticker: string }) {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(5, 1fr)",
+              gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
               gap: 10,
               marginBottom: 16,
             }}
@@ -299,31 +303,31 @@ export function RiskCard({ ticker }: { ticker: string }) {
             <ScenarioCard
               label="Stress (p5)"
               returnPct={s.stress_p5}
-              priceTarget={data.as_of_close * (1 + s.stress_p5)}
+              priceTarget={calcPriceTarget(s.stress_p5)}
               color="#ef4444"
             />
             <ScenarioCard
               label="Bear (p10)"
               returnPct={s.stress_p10}
-              priceTarget={data.as_of_close * (1 + s.stress_p10)}
+              priceTarget={calcPriceTarget(s.stress_p10)}
               color="#f97316"
             />
             <ScenarioCard
               label="Base (p50)"
               returnPct={s.base_p50}
-              priceTarget={data.as_of_close * (1 + s.base_p50)}
+              priceTarget={calcPriceTarget(s.base_p50)}
               color="#3b82f6"
             />
             <ScenarioCard
               label="Bull (p90)"
               returnPct={s.bull_p90}
-              priceTarget={data.as_of_close * (1 + s.bull_p90)}
+              priceTarget={calcPriceTarget(s.bull_p90)}
               color="#22c55e"
             />
             <ScenarioCard
               label="Extreme (p95)"
               returnPct={s.bull_p95}
-              priceTarget={data.as_of_close * (1 + s.bull_p95)}
+              priceTarget={calcPriceTarget(s.bull_p95)}
               color="#10b981"
             />
           </div>
@@ -449,7 +453,7 @@ export function RiskCard({ ticker }: { ticker: string }) {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(6, 1fr)",
+              gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
               gap: 10,
               marginBottom: 16,
             }}
@@ -464,7 +468,7 @@ export function RiskCard({ ticker }: { ticker: string }) {
               hint={volMultiplier !== 1 ? `${volMultiplier}× adjusted` : "σ × √252"}
               accent={volMultiplier > 1.2 ? "amber" : undefined}
             />
-            <Stat label="Current Price" value={fmtPrice(data.as_of_close)} hint={ticker} />
+            <Stat label="Current Price" value={fmtPrice(closePrice)} hint={ticker} />
           </div>
 
           {/* Fan Chart */}
@@ -493,7 +497,7 @@ export function RiskCard({ ticker }: { ticker: string }) {
             <div style={{ padding: 12 }}>
               <FanChart
                 fan={data.monte_carlo.fan}
-                s0={data.as_of_close}
+                s0={closePrice}
                 horizonDays={horizon}
               />
             </div>
@@ -524,7 +528,7 @@ export function RiskCard({ ticker }: { ticker: string }) {
             <div style={{ padding: 12 }}>
               <DistributionChart
                 distribution={data.distribution}
-                currentPrice={data.as_of_close}
+                currentPrice={closePrice}
               />
             </div>
           </div>

@@ -15,9 +15,20 @@ import type {
 } from "./types";
 
 const BASE = "/api/v1";
+const TOKEN_KEY = "hf_access_token";
+
+function getAuthHeaders(): Record<string, string> {
+  const token = localStorage.getItem(TOKEN_KEY);
+  if (token) {
+    return { Authorization: `Bearer ${token}` };
+  }
+  return {};
+}
 
 async function getJSON<T>(path: string): Promise<T> {
-  const res = await fetch(path);
+  const res = await fetch(path, {
+    headers: { ...getAuthHeaders() },
+  });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
@@ -25,7 +36,7 @@ async function getJSON<T>(path: string): Promise<T> {
 async function postJSONBody<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(path, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(await res.text());
@@ -35,7 +46,7 @@ async function postJSONBody<T>(path: string, body: unknown): Promise<T> {
 async function patchJSON<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(path, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(await res.text());
@@ -45,7 +56,7 @@ async function patchJSON<T>(path: string, body: unknown): Promise<T> {
 async function putJSON<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(path, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(await res.text());
@@ -53,7 +64,10 @@ async function putJSON<T>(path: string, body: unknown): Promise<T> {
 }
 
 async function del(path: string): Promise<void> {
-  const res = await fetch(path, { method: "DELETE" });
+  const res = await fetch(path, {
+    method: "DELETE",
+    headers: { ...getAuthHeaders() },
+  });
   if (!res.ok && res.status !== 204) throw new Error(await res.text());
 }
 
@@ -193,5 +207,22 @@ deleteDCFSnapshot: (projectId: number, snapshotId: number) =>
     q.set("tickers", tickers.join(","));
     q.set("days", String(days));
     return getJSON<Record<string, number | null>>(`${BASE}/prices/returns?${q.toString()}`);
+  },
+
+  /**
+   * Export project as full tearsheet Excel file
+   * Returns a Blob that can be downloaded
+   */
+  exportProjectToExcel: async (projectId: number): Promise<Blob> => {
+    const res = await fetch(`${BASE}/projects/${projectId}/export/excel`, {
+      headers: { ...getAuthHeaders() },
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: "Export failed" }));
+      throw new Error(err.detail || "Export failed");
+    }
+
+    return res.blob();
   },
 };

@@ -9,10 +9,10 @@ export function TornadoChart({ sensitivities, baseFV }: { sensitivities: Sensiti
   const pad = { left: 120, right: 30, top: 25, bottom: 15 };
   const chartW = width - pad.left - pad.right;
 
-  const allValues = sensitivities.flatMap(s => [s.fv_at_low, s.fv_at_high]);
-  const minFV = Math.min(...allValues, baseFV);
-  const maxFV = Math.max(...allValues, baseFV);
-  const range = maxFV - minFV;
+  const allValues = sensitivities.flatMap(s => [s.fv_at_low, s.fv_at_high]).filter(v => v != null && Number.isFinite(v));
+  const minFV = allValues.length > 0 ? Math.min(...allValues, baseFV) : baseFV;
+  const maxFV = allValues.length > 0 ? Math.max(...allValues, baseFV) : baseFV;
+  const range = maxFV - minFV || 1; // Prevent division by zero
   const padding = range * 0.1;
 
   const xMin = minFV - padding;

@@ -29,13 +29,17 @@ export function FanChart({
   const xs = fan.map((d) => d.day);
   const ys = fan.flatMap((d) => [d.p5, d.p95]);
 
+  // Guard against empty arrays and division by zero
   const xMin = 0;
-  const xMax = Math.max(...xs);
-  const yMin = Math.min(...ys) * 0.98;
-  const yMax = Math.max(...ys) * 1.02;
+  const xMax = xs.length > 0 ? Math.max(...xs) : 1;
+  const yMin = ys.length > 0 ? Math.min(...ys) * 0.98 : 0;
+  const yMax = ys.length > 0 ? Math.max(...ys) * 1.02 : 1;
 
-  const sx = (x: number) => pad.left + (x / xMax) * chartW;
-  const sy = (y: number) => pad.top + (1 - (y - yMin) / (yMax - yMin)) * chartH;
+  const sx = (x: number) => xMax > 0 ? pad.left + (x / xMax) * chartW : pad.left;
+  const sy = (y: number) => {
+    const range = yMax - yMin;
+    return range > 0 ? pad.top + (1 - (y - yMin) / range) * chartH : pad.top;
+  };
 
   const bandPath = (upper: keyof (typeof fan)[0], lower: keyof (typeof fan)[0]) => {
     const top = fan

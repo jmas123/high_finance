@@ -37,6 +37,35 @@ export function SliderControl({
     }
   };
 
+  // Stepper functions for mobile
+  const increment = () => {
+    const newVal = Math.min(max, draft + step);
+    setDraft(newVal);
+    setValue(newVal);
+  };
+  const decrement = () => {
+    const newVal = Math.max(min, draft - step);
+    setDraft(newVal);
+    setValue(newVal);
+  };
+
+  const stepperBtnStyle = (disabled: boolean) => ({
+    width: 26,
+    height: 26,
+    borderRadius: 6,
+    border: "1px solid #333",
+    background: disabled ? "#1a1a1a" : "#222",
+    color: disabled ? "#444" : "#888",
+    fontSize: 14,
+    fontWeight: 600 as const,
+    cursor: disabled ? "not-allowed" : "pointer",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+    transition: "all 0.15s",
+  });
+
   return (
     <div style={{ padding: 12, borderRadius: 10, border: "1px solid #2a2a2a", background: "rgba(255,255,255,0.02)" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
@@ -46,24 +75,44 @@ export function SliderControl({
         </div>
       </div>
 
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={draft}
-        onChange={(e) => setDraft(Number(e.target.value))}
-        // commit once on release (covers mouse + touch + pen)
-        onPointerUp={() => setValue(draft)}
-        onKeyUp={() => setValue(draft)} // for keyboard arrows
-        style={{
-          width: "100%",
-          marginTop: 10,
-          accentColor: "#3b82f6",
-          cursor: "pointer",
-          touchAction: "pan-y", // allow vertical scroll; still lets slider work
-        }}
-      />
+      {/* Slider with stepper buttons for mobile */}
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 10 }}>
+        <button
+          onClick={decrement}
+          disabled={draft <= min}
+          style={stepperBtnStyle(draft <= min)}
+        >
+          −
+        </button>
+
+        <input
+          type="range"
+          min={min}
+          max={max}
+          step={step}
+          value={draft}
+          onChange={(e) => setDraft(Number(e.target.value))}
+          // commit on release - multiple events for cross-browser/device support
+          onMouseUp={() => setValue(draft)}
+          onTouchEnd={() => setValue(draft)}
+          onPointerUp={() => setValue(draft)}
+          onKeyUp={() => setValue(draft)} // for keyboard arrows
+          style={{
+            flex: 1,
+            accentColor: "#3b82f6",
+            cursor: "pointer",
+            touchAction: "pan-y", // allow vertical scroll; still lets slider work
+          }}
+        />
+
+        <button
+          onClick={increment}
+          disabled={draft >= max}
+          style={stepperBtnStyle(draft >= max)}
+        >
+          +
+        </button>
+      </div>
     </div>
   );
 }

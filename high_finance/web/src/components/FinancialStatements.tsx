@@ -78,7 +78,14 @@ export function FinancialStatements({ data, ticker }: FinancialStatementsProps) 
 
 const statementData =
   data?.[period]?.[activeTab as keyof typeof data.annual] ?? {};
-  const dates = Object.keys(statementData).sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
+  const dates = Object.keys(statementData).sort((a, b) => {
+    const dateA = new Date(a).getTime();
+    const dateB = new Date(b).getTime();
+    // Handle invalid dates by pushing them to the end
+    if (isNaN(dateB)) return -1;
+    if (isNaN(dateA)) return 1;
+    return dateB - dateA;
+  });
   
   const allKeys = new Set<string>();
   dates.forEach(date => {
@@ -273,15 +280,15 @@ const statementData =
           </thead>
           <tbody>
             {displayKeys.map((key, i) => (
-              <tr 
+              <tr
                 key={key}
-                style={{ 
+                style={{
                   background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.02)",
                   borderBottom: "1px solid #222"
                 }}
               >
-                <td style={{ 
-                  padding: "10px 8px", 
+                <td style={{
+                  padding: "10px 8px",
                   fontWeight: 500,
                   position: "sticky",
                   left: 0,
@@ -289,19 +296,22 @@ const statementData =
                 }}>
                   {key}
                 </td>
-                {dates.slice(0, 4).map((date) => (
-                  <td 
-                    key={date} 
-                    style={{ 
-                      padding: "10px 8px", 
-                      textAlign: "right", 
-                      fontFamily: "monospace",
-                      color: statementData[date]?.[key] < 0 ? "#ef4444" : "inherit"
-                    }}
-                  >
-                    {formatValue(statementData[date]?.[key])}
-                  </td>
-                ))}
+                {dates.slice(0, 4).map((date) => {
+                  const value = statementData[date]?.[key];
+                  return (
+                    <td
+                      key={date}
+                      style={{
+                        padding: "10px 8px",
+                        textAlign: "right",
+                        fontFamily: "monospace",
+                        color: value != null && value < 0 ? "#ef4444" : "inherit"
+                      }}
+                    >
+                      {formatValue(value)}
+                    </td>
+                  );
+                })}
               </tr>
             ))}
             
@@ -314,14 +324,14 @@ const statementData =
             )}
             
             {otherKeys.map((key, i) => (
-              <tr 
+              <tr
                 key={key}
-                style={{ 
+                style={{
                   background: (displayKeys.length + i) % 2 === 0 ? "transparent" : "rgba(255,255,255,0.02)",
                   borderBottom: "1px solid #222"
                 }}
               >
-                <td style={{ 
+                <td style={{
                   padding: "10px 8px",
                   position: "sticky",
                   left: 0,
@@ -330,19 +340,22 @@ const statementData =
                 }}>
                   {key}
                 </td>
-                {dates.slice(0, 4).map((date) => (
-                  <td 
-                    key={date} 
-                    style={{ 
-                      padding: "10px 8px", 
-                      textAlign: "right", 
-                      fontFamily: "monospace",
-                      color: statementData[date]?.[key] < 0 ? "#ef4444" : "inherit"
-                    }}
-                  >
-                    {formatValue(statementData[date]?.[key])}
-                  </td>
-                ))}
+                {dates.slice(0, 4).map((date) => {
+                  const value = statementData[date]?.[key];
+                  return (
+                    <td
+                      key={date}
+                      style={{
+                        padding: "10px 8px",
+                        textAlign: "right",
+                        fontFamily: "monospace",
+                        color: value != null && value < 0 ? "#ef4444" : "inherit"
+                      }}
+                    >
+                      {formatValue(value)}
+                    </td>
+                  );
+                })}
               </tr>
             ))}
           </tbody>

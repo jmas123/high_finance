@@ -9,6 +9,8 @@ from typing import List, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import func as sqla_func
 
+from fastapi import HTTPException
+
 from high_finance.db.models.project import (
     Project,
     ProjectThesisBullet,
@@ -19,6 +21,26 @@ from high_finance.db.models.project import (
     ProjectSource,
 )
 from high_finance.db.models.company import Company
+
+
+async def get_project_or_404(db: Session, project_id: int) -> Project:
+    """
+    Get a project by ID, raising 404 if not found.
+
+    Args:
+        db: Database session
+        project_id: Project ID to look up
+
+    Returns:
+        Project instance
+
+    Raises:
+        HTTPException 404 if project not found
+    """
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return project
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
