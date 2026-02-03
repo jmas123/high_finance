@@ -19,9 +19,9 @@ async def get_institutional_holders(ticker: str) -> List[Dict[str, Any]]:
         shares = row.get('Shares', 0)
         value = row.get('Value', 0)
         
-        # Calculate percentage
+        # Calculate percentage (guard against zero shares outstanding)
         pct_held = None
-        if shares_outstanding and shares:
+        if shares_outstanding and shares_outstanding > 0 and shares:
             pct_held = shares / shares_outstanding
         
         # Parse date
@@ -65,10 +65,11 @@ async def get_mutual_fund_holders(ticker: str) -> List[Dict[str, Any]]:
         shares = row.get('Shares', 0)
         value = row.get('Value', 0)
         
+        # Calculate percentage (guard against zero shares outstanding)
         pct_held = None
-        if shares_outstanding and shares:
+        if shares_outstanding and shares_outstanding > 0 and shares:
             pct_held = shares / shares_outstanding
-        
+
         date_reported = row.get('Date Reported')
         if date_reported is not None:
             try:
@@ -77,9 +78,9 @@ async def get_mutual_fund_holders(ticker: str) -> List[Dict[str, Any]]:
                 date_str = str(date_reported)
         else:
             date_str = None
-        
+
         pct_change = row.get('% Change', row.get('pctChange', None))
-        
+
         results.append({
             "holder": row.get('Holder', 'Unknown'),
             "shares": int(shares) if shares and shares == shares else 0,
@@ -88,7 +89,7 @@ async def get_mutual_fund_holders(ticker: str) -> List[Dict[str, Any]]:
             "pct_change": float(pct_change) if pct_change and pct_change == pct_change else None,
             "date_reported": date_str,
         })
-    
+
     return results
 
 

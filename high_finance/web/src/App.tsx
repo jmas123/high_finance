@@ -35,6 +35,10 @@ import {
 // ── Research Projects ────────────────────────────────────────────────────────
 import { ProjectListCard } from "./components/project/ProjectListCard";
 import { ProjectWorkspace } from "./components/project/ProjectWorkSpace";
+import { SaveToProjectButton } from "./components/project/SaveToProjectButton";
+
+// ── Stock Screener ──────────────────────────────────────────────────────────
+import { ScreenerCard } from "./components/screener";
 
 // ── DCF state shape for snapshot wiring ──────────────────────────────────────
 type DCFState = {
@@ -47,6 +51,33 @@ type DCFState = {
   enterprise_value: number | null;
   current_price: number | null;
 } | null;
+
+// ── localStorage keys for persistence ──────────────────────────────────────
+const STORAGE_KEYS = {
+  VIEW: "hf_last_view",
+  PROJECT_ID: "hf_last_project_id",
+};
+
+function loadPersistedView(): "ticker" | "notifications" | "projects" | "project" | "screener" {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEYS.VIEW);
+    if (saved && ["ticker", "notifications", "projects", "project", "screener"].includes(saved)) {
+      return saved as any;
+    }
+  } catch (e) {}
+  return "ticker";
+}
+
+function loadPersistedProjectId(): number | null {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEYS.PROJECT_ID);
+    if (saved) {
+      const id = parseInt(saved, 10);
+      if (!isNaN(id)) return id;
+    }
+  } catch (e) {}
+  return null;
+}
 
 export default function App() {
   const [searchedTicker, setSearchedTicker] = useState("");
@@ -61,8 +92,16 @@ export default function App() {
   const [prices, setPrices] = useState<any[]>([]);
   const [financials, setFinancials] = useState<FinancialStatementsResponse | null>(null);
 
-  // ── View state (extended with projects) ────────────────────────────────────
-  const [view, setView] = useState<"ticker" | "notifications" | "projects" | "project">("ticker");
+  // ── View state (extended with projects and screener) ────────────────────────
+  const [view, setViewState] = useState<"ticker" | "notifications" | "projects" | "project" | "screener">(loadPersistedView);
+
+  // Wrapper to persist view changes
+  const setView = (newView: typeof view) => {
+    setViewState(newView);
+    try {
+      localStorage.setItem(STORAGE_KEYS.VIEW, newView);
+    } catch (e) {}
+  };
 
   // ── Personalization state ──────────────────────────────────────────────────
   const [watchlistRefresh, setWatchlistRefresh] = useState(0);
@@ -71,10 +110,22 @@ export default function App() {
   const [showAddPosition, setShowAddPosition] = useState(false);
 
   // ── Research Projects state ────────────────────────────────────────────────
-  const [activeProjectId, setActiveProjectId] = useState<number | null>(null);
+  const [activeProjectId, setActiveProjectIdState] = useState<number | null>(loadPersistedProjectId);
   const [projectRefresh, setProjectRefresh] = useState(0);
   const [currentDCFState, setCurrentDCFState] = useState<DCFState>(null);
   const [returnToProject, setReturnToProject] = useState<number | null>(null);
+
+  // Wrapper to persist active project ID
+  const setActiveProjectId = (id: number | null) => {
+    setActiveProjectIdState(id);
+    try {
+      if (id !== null) {
+        localStorage.setItem(STORAGE_KEYS.PROJECT_ID, String(id));
+      } else {
+        localStorage.removeItem(STORAGE_KEYS.PROJECT_ID);
+      }
+    } catch (e) {}
+  };
 
   // Determine if current ticker is an ETF
   const isETF = fundamentals?.is_etf === true;
@@ -235,6 +286,12 @@ export default function App() {
     }
   }
 
+  /** Open an existing project from the ticker view */
+  function openExistingProject(projectId: number) {
+    setActiveProjectId(projectId);
+    setView("project");
+  }
+
   return (
     <div
       style={{
@@ -293,7 +350,28 @@ export default function App() {
           </button>
 
           <button
-            onClick={() => setView("projects")}
+            onClick={() => setView("screener")}
+            style={{
+              padding: "8px 12px",
+              borderRadius: 8,
+              border: "1px solid #444",
+              background: view === "screener" ? "#222" : "#111",
+              color: "#fff",
+              cursor: "pointer",
+            }}
+          >
+            Screener
+          </button>
+
+          <button
+            onClick={() => {
+              // Restore last viewed project if one exists, otherwise show list
+              if (activeProjectId) {
+                setView("project");
+              } else {
+                setView("projects");
+              }
+            }}
             style={{
               padding: "8px 12px",
               borderRadius: 8,
@@ -343,6 +421,17 @@ export default function App() {
         )}
 
         {/* ============================================================== */}
+        {/* SCREENER VIEW                                                   */}
+        {/* ============================================================== */}
+        {view === "screener" && !loading && (
+          <ScreenerCard
+            onSelectTicker={(ticker) => {
+              loadTicker(ticker);
+            }}
+          />
+        )}
+
+        {/* ============================================================== */}
         {/* PROJECT LIST VIEW                                               */}
         {/* ============================================================== */}
         {view === "projects" && !loading && (
@@ -386,6 +475,7 @@ export default function App() {
         {view === "ticker" && !company && !loading && (
           <HomeDashboard
             onSelect={loadTicker}
+            onOpenProject={openExistingProject}
             watchlistRefreshKey={watchlistRefresh}
             portfolioRefreshKey={portfolioRefresh}
           />
@@ -449,23 +539,13 @@ export default function App() {
                 💼 Add to Portfolio
               </button>
 
-              {/* ── NEW: Start Project button ──────────────────────────── */}
+              {/* ── Save to Project dropdown ──────────────────────────── */}
               {isStock && (
-                <button
-                  onClick={createProjectFromTicker}
-                  style={{
-                    background: "#3b82f620",
-                    border: "1px solid #3b82f640",
-                    borderRadius: 8,
-                    color: "#3b82f6",
-                    fontSize: 13,
-                    padding: "6px 14px",
-                    cursor: "pointer",
-                    transition: "all 0.15s",
-                  }}
-                >
-                  📋 Start Project
-                </button>
+                <SaveToProjectButton
+                  ticker={searchedTicker}
+                  onCreateNew={createProjectFromTicker}
+                  onOpenProject={openExistingProject}
+                />
               )}
 
               {/* ── Return to Project button (shown when came from project DCF flow) ── */}

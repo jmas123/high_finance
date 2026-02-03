@@ -53,7 +53,12 @@ export function PriceChart({ data, ticker, onPeriodChange }: PriceChartProps) {
         borderColor: "#3d3d3d",
         timeVisible: true, // will be overridden based on period
       },
-      rightPriceScale: { borderColor: "#3d3d3d" },
+      rightPriceScale: {
+        borderColor: "#3d3d3d",
+        autoScale: true,
+        scaleMargins: { top: 0.1, bottom: 0.1 },
+      },
+      autoSize: true,
     });
 
     const candlestickSeries = chart.addSeries(CandlestickSeries, {
@@ -114,6 +119,18 @@ export function PriceChart({ data, ticker, onPeriodChange }: PriceChartProps) {
 
     seriesRef.current.setData(chartData);
     chartRef.current.timeScale().fitContent();
+
+    // Subscribe to visible range changes to ensure price scale auto-adjusts
+    const handleVisibleRangeChange = () => {
+      if (chartRef.current) {
+        chartRef.current.priceScale("right").applyOptions({ autoScale: true });
+      }
+    };
+    chartRef.current.timeScale().subscribeVisibleLogicalRangeChange(handleVisibleRangeChange);
+
+    return () => {
+      chartRef.current?.timeScale().unsubscribeVisibleLogicalRangeChange(handleVisibleRangeChange);
+    };
   }, [data, activePeriod]);
 
   const handlePeriodClick = (period: string) => {

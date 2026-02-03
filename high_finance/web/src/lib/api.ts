@@ -1,10 +1,10 @@
 // 1. Update your imports to include CompsResponse
-import type { 
-  Company, 
-  Fundamentals, 
-  Ownership, 
+import type {
+  Company,
+  Fundamentals,
+  Ownership,
   Leadership,
-  CompsResponse, 
+  CompsResponse,
   FinancialStatementsResponse,
   NewsBundle,
   RiskBundle,
@@ -13,8 +13,11 @@ import type {
   PoliticianPerformance,
   OptionDecaySimulation,
   IVContext,
-  ContractIVResponse
-
+  ContractIVResponse,
+  ScreenerFilters,
+  ScreenerResponse,
+  SavedScreen,
+  SavedScreenCreate,
 } from "./types";
 // import type { OptionDecaySimulation, IVContext, ContractIVResponse } from "./types";
 
@@ -219,12 +222,89 @@ valuation: (ticker: string, params?: Partial<{growth:number;margin:number;tax:nu
     getJSON<OptionDecaySimulation>(
       `${BASE}/options/${encodeURIComponent(ticker)}/decay-simulation/${encodeURIComponent(expiry)}/${strike}?option_type=${optionType}`
     ),
-    
 
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // STOCK SCREENER API
+  // ═══════════════════════════════════════════════════════════════════════════════
 
+  /**
+   * Run stock screener with filters
+   */
+  screener: (filters: ScreenerFilters = {}) => {
+    const q = new URLSearchParams();
+    if (filters.market_cap_min != null) q.set("market_cap_min", String(filters.market_cap_min));
+    if (filters.market_cap_max != null) q.set("market_cap_max", String(filters.market_cap_max));
+    if (filters.pe_ratio_min != null) q.set("pe_ratio_min", String(filters.pe_ratio_min));
+    if (filters.pe_ratio_max != null) q.set("pe_ratio_max", String(filters.pe_ratio_max));
+    if (filters.forward_pe_min != null) q.set("forward_pe_min", String(filters.forward_pe_min));
+    if (filters.forward_pe_max != null) q.set("forward_pe_max", String(filters.forward_pe_max));
+    if (filters.pb_ratio_min != null) q.set("pb_ratio_min", String(filters.pb_ratio_min));
+    if (filters.pb_ratio_max != null) q.set("pb_ratio_max", String(filters.pb_ratio_max));
+    if (filters.ev_to_ebitda_min != null) q.set("ev_to_ebitda_min", String(filters.ev_to_ebitda_min));
+    if (filters.ev_to_ebitda_max != null) q.set("ev_to_ebitda_max", String(filters.ev_to_ebitda_max));
+    if (filters.revenue_growth_min != null) q.set("revenue_growth_min", String(filters.revenue_growth_min));
+    if (filters.revenue_growth_max != null) q.set("revenue_growth_max", String(filters.revenue_growth_max));
+    if (filters.dividend_yield_min != null) q.set("dividend_yield_min", String(filters.dividend_yield_min));
+    if (filters.dividend_yield_max != null) q.set("dividend_yield_max", String(filters.dividend_yield_max));
+    if (filters.price_vs_200ma_min != null) q.set("price_vs_200ma_min", String(filters.price_vs_200ma_min));
+    if (filters.price_vs_200ma_max != null) q.set("price_vs_200ma_max", String(filters.price_vs_200ma_max));
+    if (filters.price_vs_52w_high_min != null) q.set("price_vs_52w_high_min", String(filters.price_vs_52w_high_min));
+    if (filters.price_vs_52w_high_max != null) q.set("price_vs_52w_high_max", String(filters.price_vs_52w_high_max));
+    if (filters.sectors) q.set("sectors", filters.sectors);
+    if (filters.has_insider_buys_90d != null) q.set("has_insider_buys_90d", String(filters.has_insider_buys_90d));
+    if (filters.insider_net_shares_90d_min != null) q.set("insider_net_shares_90d_min", String(filters.insider_net_shares_90d_min));
+    if (filters.congress_net_value_90d_min != null) q.set("congress_net_value_90d_min", String(filters.congress_net_value_90d_min));
+    if (filters.sort_by) q.set("sort_by", filters.sort_by);
+    if (filters.sort_order) q.set("sort_order", filters.sort_order);
+    if (filters.limit != null) q.set("limit", String(filters.limit));
+    if (filters.offset != null) q.set("offset", String(filters.offset));
+    const qs = q.toString();
+    return getJSON<ScreenerResponse>(`${BASE}/screener${qs ? `?${qs}` : ""}`);
+  },
 
+  /**
+   * Get sector counts for filter UI
+   */
+  screenerSectors: () =>
+    getJSON<Record<string, number>>(`${BASE}/screener/sectors`),
 
-    
+  /**
+   * List saved screens for current user
+   */
+  listSavedScreens: (ownerId: string) =>
+    fetch(`${BASE}/screener/saved`, {
+      headers: { "X-Owner-Id": ownerId },
+    }).then(res => {
+      if (!res.ok) throw new Error("Failed to fetch saved screens");
+      return res.json() as Promise<SavedScreen[]>;
+    }),
 
+  /**
+   * Create a saved screen
+   */
+  createSavedScreen: (ownerId: string, data: SavedScreenCreate) =>
+    fetch(`${BASE}/screener/saved`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Owner-Id": ownerId,
+      },
+      body: JSON.stringify(data),
+    }).then(res => {
+      if (!res.ok) throw new Error("Failed to create saved screen");
+      return res.json() as Promise<SavedScreen>;
+    }),
+
+  /**
+   * Delete a saved screen
+   */
+  deleteSavedScreen: (ownerId: string, screenId: number) =>
+    fetch(`${BASE}/screener/saved/${screenId}`, {
+      method: "DELETE",
+      headers: { "X-Owner-Id": ownerId },
+    }).then(res => {
+      if (!res.ok && res.status !== 204) throw new Error("Failed to delete saved screen");
+      return true;
+    }),
 };
 

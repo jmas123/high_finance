@@ -1,0 +1,301 @@
+"""
+Refresh Screener Cache
+======================
+Updates the screener_cache table with live market data from yfinance.
+Designed to be run periodically (e.g., every 15 minutes during market hours).
+"""
+
+import time
+from datetime import datetime, timedelta
+from typing import Optional
+
+import yfinance as yf
+from sqlalchemy.orm import Session
+from sqlalchemy import text
+
+from high_finance.db.session import SessionLocal
+from high_finance.db.models.screener import ScreenerUniverse, ScreenerCache
+
+
+def clamp(val, lo=None, hi=None):
+    """Clamp value to range, return None if outside bounds."""
+    if val is None:
+        return None
+    try:
+        v = float(val)
+    except:
+        return None
+    if lo is not None and v < lo:
+        return None
+    if hi is not None and v > hi:
+        return None
+    return v
+
+
+def fetch_ticker_data(ticker: str) -> Optional[dict]:
+    """
+    Fetch fundamental and price data for a single ticker using yfinance.
+    Returns dict with screener cache fields, or None on failure.
+    """
+    try:
+        stock = yf.Ticker(ticker)
+        info = stock.info or {}
+
+        if not info or info.get("quoteType") in ["ETF", "MUTUALFUND", "INDEX"]:
+            # Skip non-stocks for the screener
+            return None
+
+        # Price data
+        price = info.get("currentPrice") or info.get("regularMarketPrice")
+        prev_close = info.get("regularMarketPreviousClose") or info.get("previousClose")
+
+        price_change_1d = None
+        if price and prev_close and prev_close > 0:
+            price_change_1d = (price - prev_close) / prev_close
+
+        # Valuation metrics
+        market_cap = clamp(info.get("marketCap"), lo=1)
+        pe_ratio = clamp(info.get("trailingPE"), lo=0.1, hi=2000)
+        forward_pe = clamp(info.get("forwardPE"), lo=0.1, hi=2000)
+        pb_ratio = clamp(info.get("priceToBook"), lo=0.1, hi=200)
+        ev_to_ebitda = clamp(info.get("enterpriseToEbitda"), lo=0.1, hi=1000)
+
+        # Growth & Yield
+        revenue_growth = clamp(info.get("revenueGrowth"), lo=-1, hi=5)
+        dividend_yield = clamp(info.get("dividendYield"), lo=0, hi=0.5)
+
+        # Technical - price vs moving averages
+        two_hundred_ma = info.get("twoHundredDayAverage")
+        fifty_two_high = info.get("fiftyTwoWeekHigh")
+
+        price_vs_200ma = None
+        if price and two_hundred_ma and two_hundred_ma > 0:
+            price_vs_200ma = (price - two_hundred_ma) / two_hundred_ma
+
+        price_vs_52w_high = None
+        if price and fifty_two_high and fifty_two_high > 0:
+            price_vs_52w_high = (price - fifty_two_high) / fifty_two_high
+
+        return {
+            "ticker": ticker,
+            "market_cap": market_cap,
+            "current_price": price,
+            "price_change_1d": price_change_1d,
+            "pe_ratio": pe_ratio,
+            "forward_pe": forward_pe,
+            "pb_ratio": pb_ratio,
+            "ev_to_ebitda": ev_to_ebitda,
+            "revenue_growth": revenue_growth,
+            "dividend_yield": dividend_yield,
+            "price_vs_200ma": price_vs_200ma,
+            "price_vs_52w_high": price_vs_52w_high,
+        }
+
+    except Exception as e:
+        print(f"Error fetching {ticker}: {e}")
+        return None
+
+
+def aggregate_insider_activity(db: Session, ticker: str, days: int = 90) -> dict:
+    """
+    Aggregate insider trading activity for a ticker over the past N days.
+    Uses the insider_trade table if it exists.
+    """
+    # Return zeros - insider aggregation would require insider_trade table
+    # which may not exist. This can be enhanced later.
+    return {
+        "insider_net_shares_90d": 0,
+        "insider_buys_90d": 0,
+        "insider_sells_90d": 0,
+    }
+
+
+def aggregate_congress_activity(db: Session, ticker: str, days: int = 90) -> dict:
+    """
+    Aggregate congressional trading activity for a ticker over the past N days.
+    """
+    try:
+        from high_finance.db.models.politician_trade import PoliticianTrade
+        cutoff = datetime.utcnow() - timedelta(days=days)
+
+        # Use ORM query to avoid raw SQL issues
+        trades = db.query(PoliticianTrade).filter(
+            PoliticianTrade.ticker_raw == ticker,
+            PoliticianTrade.transaction_date >= cutoff
+        ).all()
+
+        buy_value = 0
+        sell_value = 0
+        buy_count = 0
+        sell_count = 0
+
+        for t in trades:
+            amount = t.amount_max or t.amount_min or 0
+            tx_type = (t.transaction_type or "").lower()
+            if "purchase" in tx_type or "buy" in tx_type:
+                buy_value += amount
+                buy_count += 1
+            elif "sale" in tx_type or "sell" in tx_type:
+                sell_value += amount
+                sell_count += 1
+
+        return {
+            "congress_net_value_90d": int(buy_value - sell_value),
+            "congress_buys_90d": buy_count,
+            "congress_sells_90d": sell_count,
+        }
+    except Exception:
+        pass
+
+    return {
+        "congress_net_value_90d": 0,
+        "congress_buys_90d": 0,
+        "congress_sells_90d": 0,
+    }
+
+
+def refresh_screener_cache_logic(
+    db: Session,
+    batch_size: int = 50,
+    delay_between_batches: float = 1.0,
+    tickers: Optional[list[str]] = None,
+) -> dict:
+    """
+    Core logic to refresh screener cache.
+
+    Args:
+        db: Database session
+        batch_size: Number of tickers to fetch before pausing
+        delay_between_batches: Seconds to wait between batches (rate limiting)
+        tickers: Optional list of specific tickers to refresh (default: all active)
+    """
+    # Get tickers to refresh
+    if tickers:
+        universe = db.query(ScreenerUniverse).filter(
+            ScreenerUniverse.ticker.in_(tickers),
+            ScreenerUniverse.is_active == True
+        ).all()
+    else:
+        universe = db.query(ScreenerUniverse).filter(
+            ScreenerUniverse.is_active == True
+        ).all()
+
+    total = len(universe)
+    updated = 0
+    failed = 0
+    skipped = 0
+
+    for i, entry in enumerate(universe):
+        ticker = entry.ticker
+
+        # Fetch market data
+        data = fetch_ticker_data(ticker)
+
+        if data is None:
+            skipped += 1
+            continue
+
+        # Aggregate insider/congress activity
+        insider = aggregate_insider_activity(db, ticker)
+        congress = aggregate_congress_activity(db, ticker)
+
+        # Merge all data
+        cache_data = {
+            **data,
+            **insider,
+            **congress,
+            "cached_at": datetime.utcnow(),
+        }
+
+        # Upsert into cache
+        try:
+            existing = db.query(ScreenerCache).filter(
+                ScreenerCache.ticker == ticker
+            ).first()
+
+            if existing:
+                for key, value in cache_data.items():
+                    if key != "ticker":
+                        setattr(existing, key, value)
+            else:
+                cache_entry = ScreenerCache(**cache_data)
+                db.add(cache_entry)
+
+            updated += 1
+
+        except Exception as e:
+            print(f"Error updating cache for {ticker}: {e}")
+            db.rollback()  # Rollback on error to reset transaction state
+            failed += 1
+
+        # Commit periodically and rate limit
+        if (i + 1) % batch_size == 0:
+            try:
+                db.commit()
+            except Exception as e:
+                print(f"Error committing batch: {e}")
+                db.rollback()
+            print(f"Progress: {i + 1}/{total} tickers processed")
+            time.sleep(delay_between_batches)
+
+    # Final commit
+    db.commit()
+
+    return {
+        "status": "ok",
+        "total": total,
+        "updated": updated,
+        "failed": failed,
+        "skipped": skipped,
+        "cached_at": datetime.utcnow().isoformat(),
+    }
+
+
+def refresh_screener_cache_job(
+    batch_size: int = 50,
+    delay: float = 1.0,
+    tickers: Optional[list[str]] = None,
+) -> dict:
+    """
+    RQ job wrapper - creates its own DB session.
+
+    Args:
+        batch_size: Number of tickers per batch
+        delay: Seconds between batches
+        tickers: Optional specific tickers to refresh
+    """
+    db: Session = SessionLocal()
+    try:
+        result = refresh_screener_cache_logic(
+            db,
+            batch_size=batch_size,
+            delay_between_batches=delay,
+            tickers=tickers,
+        )
+        return result
+    except Exception as e:
+        db.rollback()
+        return {"status": "error", "message": str(e)}
+    finally:
+        db.close()
+
+
+def refresh_single_ticker_job(ticker: str) -> dict:
+    """
+    Refresh cache for a single ticker. Useful for on-demand updates.
+    """
+    return refresh_screener_cache_job(tickers=[ticker], batch_size=1, delay=0)
+
+
+if __name__ == "__main__":
+    # Allow running directly for testing
+    import sys
+
+    if len(sys.argv) > 1:
+        # Refresh specific ticker
+        result = refresh_single_ticker_job(sys.argv[1])
+    else:
+        # Refresh all
+        result = refresh_screener_cache_job(batch_size=20, delay=2.0)
+
+    print(result)

@@ -60,11 +60,13 @@ def prep_data(stock_data: pd.DataFrame):
     data['vol_z_20'] = (data['Volume'] - data['Volume'].rolling(20).mean()) / (data['Volume'].rolling(20).std() + 1e-9)
     data['vol_z_10'] = (data['Volume'] - data['Volume'].rolling(10).mean()) / (data['Volume'].rolling(10).std() + 1e-9)
 
-    # RSI
+    # RSI (with safe division for down=0 case)
     change = data['Close'].diff()
     up = change.clip(lower=0).rolling(15).mean()
     down = (-change.clip(upper=0)).rolling(15).mean()
-    rs = up / down
+    # Replace zero down values with small epsilon to avoid division by zero
+    down_safe = down.replace(0, 1e-10)
+    rs = up / down_safe
     data['rsi_14'] = 100 - (100 / (1 + rs))
 
     # MACD
@@ -75,15 +77,19 @@ def prep_data(stock_data: pd.DataFrame):
     data['macd_normalized'] = data['macd'] / data['Close']
     data['macd_signal_normalized'] = data['macd_signal'] / data['Close']
 
-    # Volatility and volume
+    # Volatility and volume (with safe division)
     data['volatility'] = data['ret_1d'].rolling(20).std()
-    data['volume_ratio'] = data['Volume'] / data['Volume'].rolling(20).mean()
+    vol_mean = data['Volume'].rolling(20).mean()
+    # Replace zero mean with small epsilon to avoid division by zero
+    vol_mean_safe = vol_mean.replace(0, 1e-10)
+    data['volume_ratio'] = data['Volume'] / vol_mean_safe
 
-    # High-low spread
-    data['hl_spread'] = (data['High'] - data['Low']) / data['Close']
+    # High-low spread (with safe division)
+    close_safe = data['Close'].replace(0, 1e-10)
+    data['hl_spread'] = (data['High'] - data['Low']) / close_safe
 
-    # Target: next day return
-    data['y'] = data['Close'].shift(-1) / data['Close'] - 1.0
+    # Target: next day return (with safe division)
+    data['y'] = data['Close'].shift(-1) / close_safe - 1.0
 
     data = data.dropna()
 
@@ -153,7 +159,7 @@ def backtest_strategy(y_test, y_pred_test, threshold=0.0005, cost=0.0005):
         "annual_volatility": round(float(annual_vol) * 100, 2),
         "total_return": round(float(total_return) * 100, 2),
         "max_drawdown": round(float(max_dd) * 100, 2),
-        "win_rate": round(float(positive_days / total_days) * 100, 2),
+        "win_rate": round(float(positive_days / total_days) * 100, 2) if total_days > 0 else 0.0,
         "num_trades": int(num_trades),
         "buy_hold_sharpe": round(float(buy_hold_sharpe), 2),
         "buy_hold_return": round(float(buy_hold_total) * 100, 2),

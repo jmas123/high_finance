@@ -20,14 +20,21 @@ export function FairValueRangeBar({
   const allValues = [low, mid, high, current, analystTarget, analystLow, analystHigh].filter(v => v !== null) as number[];
   const min = Math.min(...allValues) * 0.9;
   const max = Math.max(...allValues) * 1.1;
-  
+
   const pos = (v: number) => ((v - min) / (max - min)) * 100;
+
+  // Check if DCF values are clustered (all within 15% of chart width)
+  const dcfSpread = pos(high) - pos(low);
+  const isClustered = dcfSpread < 15;
+
+  // When clustered, show a compact summary instead of overlapping markers
+  const clusterCenter = (pos(low) + pos(high)) / 2;
 
   return (
     <div style={{ padding: "20px 0" }}>
-      <div style={{ 
-        position: "relative", 
-        height: 60, 
+      <div style={{
+        position: "relative",
+        height: isClustered ? 50 : 60,
         background: "linear-gradient(90deg, rgba(239,68,68,0.15) 0%, rgba(59,130,246,0.15) 50%, rgba(34,197,94,0.15) 100%)",
         borderRadius: 8,
       }}>
@@ -36,11 +43,12 @@ export function FairValueRangeBar({
           position: "absolute",
           left: `${pos(low)}%`,
           right: `${100 - pos(high)}%`,
-          top: 20,
+          top: isClustered ? 20 : 20,
           height: 20,
           background: "linear-gradient(90deg, #ef4444 0%, #3b82f6 50%, #22c55e 100%)",
           borderRadius: 6,
           opacity: 0.8,
+          minWidth: 8,
         }} />
 
         {/* Analyst range (if available) */}
@@ -56,30 +64,67 @@ export function FairValueRangeBar({
           }} />
         )}
 
-        {/* Low marker */}
-        <div style={{ position: "absolute", left: `${pos(low)}%`, top: 0, transform: "translateX(-50%)", textAlign: "center" }}>
-          <div style={{ fontSize: 9, opacity: 0.6 }}>BEAR</div>
-          <div style={{ width: 2, height: 40, background: "#ef4444", margin: "2px auto" }} />
-          <div style={{ fontSize: 11, fontWeight: 600, color: "#ef4444" }}>{fmtPx(low)}</div>
-        </div>
+        {isClustered ? (
+          /* Clustered view: single compact label for all DCF values */
+          <div style={{
+            position: "absolute",
+            left: `${Math.max(0, Math.min(clusterCenter, 85))}%`,
+            top: -8,
+            transform: clusterCenter < 15 ? "translateX(0)" : "translateX(-50%)",
+            background: "#1a1a1a",
+            border: "1px solid #333",
+            borderRadius: 6,
+            padding: "6px 10px",
+            fontSize: 10,
+            whiteSpace: "nowrap",
+            zIndex: 5,
+          }}>
+            <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+              <span>
+                <span style={{ color: "#ef4444", fontWeight: 600 }}>Bear</span>
+                <span style={{ opacity: 0.6 }}> {fmtPx(low)}</span>
+              </span>
+              <span style={{ opacity: 0.3 }}>|</span>
+              <span>
+                <span style={{ color: "#3b82f6", fontWeight: 600 }}>Base</span>
+                <span style={{ opacity: 0.6 }}> {fmtPx(mid)}</span>
+              </span>
+              <span style={{ opacity: 0.3 }}>|</span>
+              <span>
+                <span style={{ color: "#22c55e", fontWeight: 600 }}>Bull</span>
+                <span style={{ opacity: 0.6 }}> {fmtPx(high)}</span>
+              </span>
+            </div>
+          </div>
+        ) : (
+          /* Normal view: separate markers */
+          <>
+            {/* Low marker */}
+            <div style={{ position: "absolute", left: `${pos(low)}%`, top: 0, transform: "translateX(-50%)", textAlign: "center" }}>
+              <div style={{ fontSize: 9, opacity: 0.6 }}>BEAR</div>
+              <div style={{ width: 2, height: 40, background: "#ef4444", margin: "2px auto" }} />
+              <div style={{ fontSize: 11, fontWeight: 600, color: "#ef4444" }}>{fmtPx(low)}</div>
+            </div>
 
-        {/* Mid marker */}
-        <div style={{ position: "absolute", left: `${pos(mid)}%`, top: 0, transform: "translateX(-50%)", textAlign: "center" }}>
-          <div style={{ fontSize: 9, opacity: 0.6 }}>BASE</div>
-          <div style={{ width: 3, height: 40, background: "#3b82f6", margin: "2px auto" }} />
-          <div style={{ fontSize: 11, fontWeight: 600, color: "#3b82f6" }}>{fmtPx(mid)}</div>
-        </div>
+            {/* Mid marker */}
+            <div style={{ position: "absolute", left: `${pos(mid)}%`, top: 0, transform: "translateX(-50%)", textAlign: "center" }}>
+              <div style={{ fontSize: 9, opacity: 0.6 }}>BASE</div>
+              <div style={{ width: 3, height: 40, background: "#3b82f6", margin: "2px auto" }} />
+              <div style={{ fontSize: 11, fontWeight: 600, color: "#3b82f6" }}>{fmtPx(mid)}</div>
+            </div>
 
-        {/* High marker */}
-        <div style={{ position: "absolute", left: `${pos(high)}%`, top: 0, transform: "translateX(-50%)", textAlign: "center" }}>
-          <div style={{ fontSize: 9, opacity: 0.6 }}>BULL</div>
-          <div style={{ width: 2, height: 40, background: "#22c55e", margin: "2px auto" }} />
-          <div style={{ fontSize: 11, fontWeight: 600, color: "#22c55e" }}>{fmtPx(high)}</div>
-        </div>
+            {/* High marker */}
+            <div style={{ position: "absolute", left: `${pos(high)}%`, top: 0, transform: "translateX(-50%)", textAlign: "center" }}>
+              <div style={{ fontSize: 9, opacity: 0.6 }}>BULL</div>
+              <div style={{ width: 2, height: 40, background: "#22c55e", margin: "2px auto" }} />
+              <div style={{ fontSize: 11, fontWeight: 600, color: "#22c55e" }}>{fmtPx(high)}</div>
+            </div>
+          </>
+        )}
 
         {/* Current price marker */}
         {current && (
-          <div style={{ position: "absolute", left: `${pos(current)}%`, top: -12, transform: "translateX(-50%)", textAlign: "center", zIndex: 10 }}>
+          <div style={{ position: "absolute", left: `${pos(current)}%`, top: isClustered ? 16 : -12, transform: "translateX(-50%)", textAlign: "center", zIndex: 10 }}>
             <div style={{ fontSize: 9, background: "#fff", color: "#000", padding: "2px 6px", borderRadius: 4, fontWeight: 600 }}>
               NOW: {fmtPx(current)}
             </div>

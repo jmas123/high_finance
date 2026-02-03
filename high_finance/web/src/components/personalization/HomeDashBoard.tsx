@@ -1,24 +1,37 @@
 import { useState, useEffect } from "react";
 import { PortfolioCard } from "./PortfolioCard";
 import { WatchlistCard } from "./WatchlistCard";
+import { projectsApi } from "../project/api";
+import type { ProjectSummary } from "../../lib/types";
 import { getRecentTickers, exportAllData, importAllData, clearAllData } from "./storage";
 
 interface HomeDashboardProps {
   onSelect: (ticker: string) => void;
+  onOpenProject?: (projectId: number) => void;
   watchlistRefreshKey: number;
   portfolioRefreshKey: number;
 }
 
 export function HomeDashboard({
   onSelect,
+  onOpenProject,
   watchlistRefreshKey,
   portfolioRefreshKey,
 }: HomeDashboardProps) {
   const [recentTickers, setRecentTickers] = useState<string[]>([]);
   const [showDataMenu, setShowDataMenu] = useState(false);
+  const [activeProjects, setActiveProjects] = useState<ProjectSummary[]>([]);
 
   useEffect(() => {
     setRecentTickers(getRecentTickers());
+  }, []);
+
+  // Fetch active projects
+  useEffect(() => {
+    projectsApi
+      .listProjects("active")
+      .then((projects) => setActiveProjects(projects.slice(0, 5)))
+      .catch(() => setActiveProjects([]));
   }, []);
 
   function handleExport() {
@@ -130,9 +143,40 @@ export function HomeDashboard({
 
       {/* Two Column: Watchlist + Portfolio */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 16, marginBottom: 20 }}>
-        <WatchlistCard onSelect={onSelect} refreshKey={watchlistRefreshKey} />
+        <WatchlistCard onSelect={onSelect} onOpenProject={onOpenProject} refreshKey={watchlistRefreshKey} />
         <PortfolioCard onSelect={onSelect} refreshKey={portfolioRefreshKey} />
       </div>
+
+      {/* Active Projects */}
+      {activeProjects.length > 0 && (
+        <div
+          style={{
+            background: "#1a1a1a",
+            border: "1px solid #333",
+            borderRadius: 10,
+            padding: 16,
+            marginBottom: 20,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 16 }}>📋</span>
+              <span style={{ fontSize: 14, fontWeight: 600, color: "#fff" }}>Active Research</span>
+              <span style={{ fontSize: 11, color: "#666" }}>({activeProjects.length})</span>
+            </div>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            {activeProjects.map((project) => (
+              <ProjectRow
+                key={project.id}
+                project={project}
+                onOpen={() => onOpenProject?.(project.id)}
+                onOpenTicker={() => onSelect(project.ticker)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Recent Tickers */}
       {recentTickers.length > 0 && (
@@ -195,3 +239,90 @@ const menuItem: React.CSSProperties = {
   cursor: "pointer",
   borderRadius: 4,
 };
+
+const positionColors: Record<string, string> = {
+  LONG: "#22c55e",
+  SHORT: "#ef4444",
+  WATCH: "#f59e0b",
+};
+
+function ProjectRow({
+  project,
+  onOpen,
+  onOpenTicker,
+}: {
+  project: ProjectSummary;
+  onOpen: () => void;
+  onOpenTicker: () => void;
+}) {
+  return (
+    <div
+      onClick={onOpen}
+      style={{
+        display: "grid",
+        gridTemplateColumns: "auto 1fr auto",
+        alignItems: "center",
+        gap: 12,
+        padding: "8px 10px",
+        borderRadius: 6,
+        cursor: "pointer",
+        transition: "background 0.15s",
+      }}
+      onMouseEnter={(e) => (e.currentTarget.style.background = "#252525")}
+      onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+    >
+      {/* Ticker */}
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onOpenTicker();
+        }}
+        style={{
+          fontFamily: "monospace",
+          fontWeight: 600,
+          fontSize: 12,
+          background: "#333",
+          border: "none",
+          padding: "4px 8px",
+          borderRadius: 4,
+          color: "#fff",
+          cursor: "pointer",
+          minWidth: 50,
+          textAlign: "center",
+        }}
+        title={`Open ${project.ticker} analysis`}
+      >
+        {project.ticker}
+      </button>
+
+      {/* Title */}
+      <div
+        style={{
+          fontSize: 13,
+          color: "#ccc",
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+        }}
+      >
+        {project.title}
+      </div>
+
+      {/* Position badge */}
+      {project.position_type && (
+        <span
+          style={{
+            fontSize: 9,
+            fontWeight: 600,
+            padding: "2px 6px",
+            borderRadius: 3,
+            background: `${positionColors[project.position_type] || "#666"}20`,
+            color: positionColors[project.position_type] || "#666",
+          }}
+        >
+          {project.position_type}
+        </span>
+      )}
+    </div>
+  );
+}

@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { api } from "../../lib/api";
+import { projectsApi } from "../project/api";
+import type { ProjectSummary } from "../../lib/types";
 import {
   getWatchlist,
   removeFromWatchlist,
@@ -15,14 +17,17 @@ interface Quote {
 
 interface WatchlistCardProps {
   onSelect: (ticker: string) => void;
+  /** Called when user clicks on a project badge */
+  onOpenProject?: (projectId: number) => void;
   /** Bumped externally whenever the watchlist changes (e.g. user adds from ticker view) */
   refreshKey?: number;
 }
 
-export function WatchlistCard({ onSelect, refreshKey }: WatchlistCardProps) {
+export function WatchlistCard({ onSelect, onOpenProject, refreshKey }: WatchlistCardProps) {
   const [items, setItems] = useState<WatchlistItem[]>([]);
   const [quotes, setQuotes] = useState<Record<string, Quote>>({});
   const [loading, setLoading] = useState(false);
+  const [projectsByTicker, setProjectsByTicker] = useState<Record<string, ProjectSummary>>({});
 
   // Load watchlist from localStorage
   const reload = useCallback(() => {
@@ -31,8 +36,24 @@ export function WatchlistCard({ onSelect, refreshKey }: WatchlistCardProps) {
 
   useEffect(() => {
     reload();
-    api.fundamentals("AAPL").then(console.log);
   }, [reload, refreshKey]);
+
+  // Fetch projects to show indicators
+  useEffect(() => {
+    projectsApi
+      .listProjects()
+      .then((projects) => {
+        const map: Record<string, ProjectSummary> = {};
+        for (const p of projects) {
+          // Store first project for each ticker (most recent due to API sort)
+          if (!map[p.ticker.toUpperCase()]) {
+            map[p.ticker.toUpperCase()] = p;
+          }
+        }
+        setProjectsByTicker(map);
+      })
+      .catch(() => setProjectsByTicker({}));
+  }, [refreshKey]);
 
   // Fetch quotes for all watchlist tickers
   useEffect(() => {
@@ -133,6 +154,7 @@ export function WatchlistCard({ onSelect, refreshKey }: WatchlistCardProps) {
         {items.map((item) => {
           const q = quotes[item.ticker];
           const positive = q && q.changePct >= 0;
+          const project = projectsByTicker[item.ticker.toUpperCase()];
 
           return (
             <div
@@ -151,10 +173,34 @@ export function WatchlistCard({ onSelect, refreshKey }: WatchlistCardProps) {
               onMouseEnter={(e) => (e.currentTarget.style.background = "#252525")}
               onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
             >
-              {/* Ticker + Name */}
+              {/* Ticker + Name + Project Badge */}
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: "#fff" }}>
-                  {item.ticker}
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: "#fff" }}>
+                    {item.ticker}
+                  </span>
+                  {project && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenProject?.(project.id);
+                      }}
+                      title={`Open project: ${project.title}`}
+                      style={{
+                        background: "#3b82f620",
+                        border: "1px solid #3b82f640",
+                        borderRadius: 4,
+                        color: "#3b82f6",
+                        fontSize: 9,
+                        fontWeight: 600,
+                        padding: "1px 5px",
+                        cursor: "pointer",
+                        lineHeight: 1.4,
+                      }}
+                    >
+                      📋
+                    </button>
+                  )}
                 </div>
                 <div
                   style={{

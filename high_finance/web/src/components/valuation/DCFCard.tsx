@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import type { ValuationBundle, Warning, SliderReference } from "../../lib/types";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { ValuationBundle, Warning, SliderReference, ValuationScenarioInputs } from "../../lib/types";
 import { MultiplesTable } from "./MultiplesTable";
 import { FairValueRangeBar } from "./FairValueRangeBar";
 import { TornadoChart } from "./TornadoChart";
@@ -7,6 +7,7 @@ import { SliderWithReferences } from "./SliderWithReference";
 import { Metric } from "./Metric";
 import { ScenarioCard } from "./ScenarioCard";
 import { WarningBadge } from "./Warnings";
+import { DivergenceExplainer } from "./DivergenceExplainer";
 import { fmtMoney, fmtPct, fmtPctSigned, fmtPx } from "../Functions";
 
 // ── NEW: callback shape for project DCF snapshot wiring ──────────────────────
@@ -163,6 +164,13 @@ export function DCFCard({ ticker, onStateChange }: DCFCardProps) {
     return map;
   }, [data?.warnings]);
 
+  // Handler for "Use Market Assumptions" button
+  const handleUseMarketAssumptions = useCallback((assumptions: Partial<ValuationScenarioInputs>) => {
+    if (assumptions.growth !== undefined) setGrowth(assumptions.growth);
+    if (assumptions.margin !== undefined) setMargin(assumptions.margin);
+    if (assumptions.wacc !== undefined) setWacc(assumptions.wacc);
+  }, []);
+
   const upside = data?.upside_downside;
   const fvRange = data?.fair_value_range;
   const analyst = data?.analyst_consensus;
@@ -208,11 +216,11 @@ export function DCFCard({ ticker, onStateChange }: DCFCardProps) {
 
       {/* Analyst consensus badge */}
       {analyst?.target_mean && (
-        <div style={{ 
-          marginTop: 12, 
-          padding: "8px 12px", 
-          background: "rgba(168, 85, 247, 0.1)", 
-          border: "1px solid rgba(168, 85, 247, 0.25)", 
+        <div style={{
+          marginTop: 12,
+          padding: "8px 12px",
+          background: "rgba(168, 85, 247, 0.1)",
+          border: "1px solid rgba(168, 85, 247, 0.25)",
           borderRadius: 8,
           display: "flex",
           justifyContent: "space-between",
@@ -232,6 +240,20 @@ export function DCFCard({ ticker, onStateChange }: DCFCardProps) {
             {analyst.num_analysts} analysts • {analyst.recommendation?.toUpperCase()}
           </div>
         </div>
+      )}
+
+      {/* Divergence Explainer - shows when DCF differs significantly from market */}
+      {!loading && data?.divergence_analysis &&
+       data.divergence_analysis.divergence_tier !== "normal" &&
+       data.fair_value_per_share_est !== null &&
+       data.facts?.current_price && (
+        <DivergenceExplainer
+          divergence={data.divergence_analysis}
+          currentInputs={data.inputs}
+          currentPrice={data.facts.current_price}
+          fairValue={data.fair_value_per_share_est}
+          onUseMarketAssumptions={handleUseMarketAssumptions}
+        />
       )}
 
       {/* Error */}

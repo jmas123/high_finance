@@ -1,3 +1,6 @@
+// Re-export project types for backwards compatibility
+export type { ProjectSummary } from "../components/project/types";
+
 export type Company = {
   id: number;
   name: string;
@@ -20,11 +23,12 @@ export type Politician = {
 export type PoliticianTrade = {
   id: number;
   politician_id: number;
+  politician?: Politician | null;
   company_id: number | null;
   issuer_raw: string | null;
   ticker_raw: string | null;
   transaction_date: string | null;
-  disclosure_date: string | null;
+  disclosure_date: string;
   transaction_type: string | null;
   amount_min: number | null;
   amount_max: number | null;
@@ -450,6 +454,24 @@ export type AnalystConsensus = {
   recommendation_mean: number | null;
 };
 
+// Implied assumptions (what market is pricing in)
+export type ImpliedAssumptions = {
+  implied_growth: number | null;
+  implied_margin: number | null;
+  implied_wacc: number | null;
+  primary_driver: "growth" | "margin" | "wacc" | null;
+  solver_converged: boolean;
+  error?: string;
+};
+
+// Divergence analysis (trust transparency)
+export type DivergenceAnalysis = {
+  divergence_pct: number;
+  divergence_tier: "normal" | "notable" | "extreme";
+  explanation: string | null;
+  implied_assumptions: ImpliedAssumptions;
+};
+
 // Complete enhanced ValuationBundle
 export type ValuationBundle = {
   ticker: string;
@@ -476,6 +498,7 @@ export type ValuationBundle = {
   scenarios: ValuationScenarios;
   fair_value_range: FairValueRange | null;
   analyst_consensus: AnalystConsensus;
+  divergence_analysis: DivergenceAnalysis | null;
   error?: string;
 };
 
@@ -869,3 +892,82 @@ export async function fetchStockMarketContext(ticker: string): Promise<StockMark
   if (!response.ok) throw new Error(`Failed to fetch market context for ${ticker}`);
   return response.json();
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// STOCK SCREENER TYPES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export type ScreenerFilters = {
+  market_cap_min?: number;
+  market_cap_max?: number;
+  pe_ratio_min?: number;
+  pe_ratio_max?: number;
+  forward_pe_min?: number;
+  forward_pe_max?: number;
+  pb_ratio_min?: number;
+  pb_ratio_max?: number;
+  ev_to_ebitda_min?: number;
+  ev_to_ebitda_max?: number;
+  revenue_growth_min?: number;
+  revenue_growth_max?: number;
+  dividend_yield_min?: number;
+  dividend_yield_max?: number;
+  price_vs_200ma_min?: number;
+  price_vs_200ma_max?: number;
+  price_vs_52w_high_min?: number;
+  price_vs_52w_high_max?: number;
+  sectors?: string;
+  has_insider_buys_90d?: boolean;
+  insider_net_shares_90d_min?: number;
+  congress_net_value_90d_min?: number;
+  sort_by?: string;
+  sort_order?: 'asc' | 'desc';
+  limit?: number;
+  offset?: number;
+};
+
+export type ScreenerResult = {
+  ticker: string;
+  company_name: string | null;
+  sector: string | null;
+  industry: string | null;
+  market_cap: number | null;
+  current_price: number | null;
+  price_change_1d: number | null;
+  pe_ratio: number | null;
+  forward_pe: number | null;
+  pb_ratio: number | null;
+  ev_to_ebitda: number | null;
+  revenue_growth: number | null;
+  dividend_yield: number | null;
+  price_vs_200ma: number | null;
+  price_vs_52w_high: number | null;
+  insider_net_shares_90d: number | null;
+  insider_buys_90d: number | null;
+  insider_sells_90d: number | null;
+  congress_net_value_90d: number | null;
+  congress_buys_90d: number | null;
+  congress_sells_90d: number | null;
+};
+
+export type ScreenerResponse = {
+  results: ScreenerResult[];
+  total: number;
+  filters_applied: ScreenerFilters;
+  cached_at: string | null;
+};
+
+export type SavedScreen = {
+  id: number;
+  owner_id: string;
+  name: string;
+  filters: ScreenerFilters;
+  created_at: string;
+  last_run_at: string | null;
+  last_result_count: number | null;
+};
+
+export type SavedScreenCreate = {
+  name: string;
+  filters: ScreenerFilters;
+};

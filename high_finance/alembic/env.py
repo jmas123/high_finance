@@ -3,7 +3,7 @@ from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 from alembic import context
 from high_finance.db.base import Base
-from high_finance.db.models import company, price, investor, holding, person
+from high_finance.db.models import company, price, investor, holding, person, screener
 import os
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

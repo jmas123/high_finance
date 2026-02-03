@@ -290,8 +290,14 @@ class MarketService:
                     ).dropna()
 
                     if meta["yoy"] and len(raw) >= 14:
-                        cur = ((float(raw.iloc[-1]) / float(raw.iloc[-13])) - 1) * 100
-                        prev = ((float(raw.iloc[-2]) / float(raw.iloc[-14])) - 1) * 100
+                        baseline_cur = float(raw.iloc[-13])
+                        baseline_prev = float(raw.iloc[-14])
+                        # Guard against zero baseline values
+                        if baseline_cur > 0 and baseline_prev > 0:
+                            cur = ((float(raw.iloc[-1]) / baseline_cur) - 1) * 100
+                            prev = ((float(raw.iloc[-2]) / baseline_prev) - 1) * 100
+                        else:
+                            continue
                     elif not meta["yoy"] and len(raw) >= 2:
                         cur, prev = float(raw.iloc[-1]), float(raw.iloc[-2])
                     else:
@@ -531,7 +537,10 @@ class MarketService:
                 ]
                 if len(chunk) < 10:
                     continue  # ETF may not have existed yet
-                tr = ((float(chunk.iloc[-1]) / float(chunk.iloc[0])) - 1) * 100
+                start_price = float(chunk.iloc[0])
+                if start_price <= 0:
+                    continue  # Guard against zero/negative starting price
+                tr = ((float(chunk.iloc[-1]) / start_price) - 1) * 100
                 rets.append(tr)
             except Exception:
                 continue

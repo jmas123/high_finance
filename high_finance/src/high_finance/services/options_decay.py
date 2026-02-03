@@ -102,8 +102,12 @@ def calculate_greeks(
 
 def get_moneyness_label(S: float, K: float, option_type: str) -> str:
     """Determine if option is ITM, ATM, or OTM."""
+    # Guard against zero stock price
+    if S <= 0:
+        return "OTM"  # Cannot determine moneyness with invalid price
+
     pct_diff = abs(S - K) / S * 100
-    
+
     if pct_diff < 2:
         return "ATM"
     

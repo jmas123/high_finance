@@ -208,7 +208,7 @@ def analyze_expiry(calls: pd.DataFrame, puts: pd.DataFrame, expiry: str, current
         if atm_call is not None and atm_put is not None:
             straddle_price = (atm_call.get('lastPrice', 0) or 0) + (atm_put.get('lastPrice', 0) or 0)
             expected_move = round(straddle_price, 2)
-            if current_price and current_price > 0:
+            if current_price is not None and current_price > 0:
                 expected_move_pct = round((straddle_price / current_price) * 100, 1)
         
         # ATM IV

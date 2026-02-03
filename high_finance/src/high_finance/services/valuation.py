@@ -697,6 +697,235 @@ def _get_analyst_consensus(info: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# DIVERGENCE ANALYSIS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _compute_implied_assumptions(
+    target_equity_value: float,
+    revenue0: float,
+    net_debt: float,
+    base_inputs: Dict[str, float],
+    years: int = 5,
+    max_iterations: int = 20,
+) -> Dict[str, Any]:
+    """
+    Reverse-solve for growth/margin that would justify a target equity value.
+    Uses binary search to find the implied growth rate (primary driver).
+    """
+    target_ev = target_equity_value + net_debt
+
+    if target_ev <= 0 or revenue0 <= 0:
+        return {
+            "implied_growth": None,
+            "implied_margin": None,
+            "implied_wacc": None,
+            "primary_driver": None,
+            "solver_converged": False,
+            "error": "Invalid target value or revenue",
+        }
+
+    # Solve for implied growth (most common driver of divergence)
+    def ev_at_growth(g: float) -> float:
+        test_inputs = base_inputs.copy()
+        test_inputs["growth"] = g
+        dcf = _dcf(revenue0=revenue0, years=years, **test_inputs)
+        return dcf["enterprise_value"]
+
+    # Binary search for growth that matches target EV
+    low_g, high_g = -0.10, 0.50
+    implied_growth = None
+    converged = False
+
+    for _ in range(max_iterations):
+        mid_g = (low_g + high_g) / 2
+        ev_mid = ev_at_growth(mid_g)
+
+        if abs(ev_mid - target_ev) / target_ev < 0.01:  # 1% tolerance
+            implied_growth = mid_g
+            converged = True
+            break
+
+        if ev_mid < target_ev:
+            low_g = mid_g
+        else:
+            high_g = mid_g
+
+    if not converged:
+        # Check if target is beyond our bounds
+        ev_at_max = ev_at_growth(0.50)
+        if target_ev > ev_at_max:
+            implied_growth = 0.50  # Capped at max
+            converged = True
+        else:
+            implied_growth = (low_g + high_g) / 2  # Best guess
+
+    # Solve for implied margin (secondary)
+    def ev_at_margin(m: float) -> float:
+        test_inputs = base_inputs.copy()
+        test_inputs["margin"] = m
+        dcf = _dcf(revenue0=revenue0, years=years, **test_inputs)
+        return dcf["enterprise_value"]
+
+    low_m, high_m = -0.10, 0.50
+    implied_margin = None
+
+    for _ in range(max_iterations):
+        mid_m = (low_m + high_m) / 2
+        ev_mid = ev_at_margin(mid_m)
+
+        if abs(ev_mid - target_ev) / target_ev < 0.01:
+            implied_margin = mid_m
+            break
+
+        if ev_mid < target_ev:
+            low_m = mid_m
+        else:
+            high_m = mid_m
+
+    if implied_margin is None:
+        ev_at_max = ev_at_margin(0.50)
+        if target_ev > ev_at_max:
+            implied_margin = 0.50
+        else:
+            implied_margin = (low_m + high_m) / 2
+
+    # Solve for implied WACC (inverse relationship)
+    def ev_at_wacc(w: float) -> float:
+        test_inputs = base_inputs.copy()
+        test_inputs["wacc"] = w
+        # Ensure terminal_g < wacc
+        test_inputs["terminal_g"] = min(test_inputs["terminal_g"], w - 0.01)
+        dcf = _dcf(revenue0=revenue0, years=years, **test_inputs)
+        return dcf["enterprise_value"]
+
+    low_w, high_w = 0.05, 0.20
+    implied_wacc = None
+
+    for _ in range(max_iterations):
+        mid_w = (low_w + high_w) / 2
+        ev_mid = ev_at_wacc(mid_w)
+
+        if abs(ev_mid - target_ev) / target_ev < 0.01:
+            implied_wacc = mid_w
+            break
+
+        # WACC has inverse relationship with EV
+        if ev_mid > target_ev:
+            low_w = mid_w
+        else:
+            high_w = mid_w
+
+    if implied_wacc is None:
+        implied_wacc = (low_w + high_w) / 2
+
+    # Determine primary driver (largest gap from base)
+    growth_gap = abs((implied_growth or 0) - base_inputs["growth"])
+    margin_gap = abs((implied_margin or 0) - base_inputs["margin"])
+    wacc_gap = abs((implied_wacc or 0) - base_inputs["wacc"])
+
+    if growth_gap >= margin_gap and growth_gap >= wacc_gap:
+        primary_driver = "growth"
+    elif margin_gap >= wacc_gap:
+        primary_driver = "margin"
+    else:
+        primary_driver = "wacc"
+
+    return {
+        "implied_growth": implied_growth,
+        "implied_margin": implied_margin,
+        "implied_wacc": implied_wacc,
+        "primary_driver": primary_driver,
+        "solver_converged": converged,
+    }
+
+
+def _compute_divergence_analysis(
+    dcf_fair_value: Optional[float],
+    current_price: Optional[float],
+    base_inputs: Dict[str, float],
+    implied_assumptions: Dict[str, Any],
+    net_income: Optional[float],
+) -> Optional[Dict[str, Any]]:
+    """
+    Compute divergence tier and generate explanation for large gaps.
+    """
+    if not dcf_fair_value or not current_price or current_price <= 0:
+        return None
+
+    divergence_pct = (dcf_fair_value - current_price) / current_price
+    abs_divergence = abs(divergence_pct)
+
+    # Determine tier
+    if abs_divergence <= 0.30:
+        tier = "normal"
+    elif abs_divergence <= 0.50:
+        tier = "notable"
+    else:
+        tier = "extreme"
+
+    # Generate explanation
+    explanation_parts = []
+    primary = implied_assumptions.get("primary_driver")
+
+    if tier in ("notable", "extreme"):
+        if divergence_pct < 0:
+            direction = "below"
+            view_type = "more conservative than"
+        else:
+            direction = "above"
+            view_type = "more optimistic than"
+
+        explanation_parts.append(
+            f"Your DCF fair value is {abs(divergence_pct)*100:.0f}% {direction} market price."
+        )
+
+        if primary == "growth":
+            model_growth = base_inputs["growth"]
+            implied_growth = implied_assumptions.get("implied_growth")
+            if implied_growth is not None:
+                growth_diff = (implied_growth - model_growth) * 100
+                if implied_growth > 0.50:
+                    explanation_parts.append(
+                        f"To justify the market price, growth would need to exceed 50% "
+                        f"(vs your {model_growth*100:.0f}%). Market is pricing in exceptional growth."
+                    )
+                else:
+                    explanation_parts.append(
+                        f"Your assumptions imply {model_growth*100:.0f}% growth vs "
+                        f"market-implied {implied_growth*100:.0f}% ({growth_diff:+.0f}pp gap)."
+                    )
+        elif primary == "margin":
+            model_margin = base_inputs["margin"]
+            implied_margin = implied_assumptions.get("implied_margin")
+            if implied_margin is not None:
+                explanation_parts.append(
+                    f"Your margin assumption ({model_margin*100:.0f}%) differs from "
+                    f"market-implied ({implied_margin*100:.0f}%)."
+                )
+        elif primary == "wacc":
+            model_wacc = base_inputs["wacc"]
+            implied_wacc = implied_assumptions.get("implied_wacc")
+            if implied_wacc is not None:
+                explanation_parts.append(
+                    f"Your discount rate ({model_wacc*100:.1f}%) differs from "
+                    f"market-implied ({implied_wacc*100:.1f}%)."
+                )
+
+        # Add context for negative earnings
+        if net_income is not None and net_income <= 0:
+            explanation_parts.append(
+                "Note: Company has negative earnings. Market may be pricing speculative future value."
+            )
+
+    return {
+        "divergence_pct": divergence_pct,
+        "divergence_tier": tier,
+        "explanation": " ".join(explanation_parts) if explanation_parts else None,
+        "implied_assumptions": implied_assumptions,
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # MAIN BUNDLE
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -852,6 +1081,25 @@ async def get_valuation_bundle(
 
     analyst_consensus = _get_analyst_consensus(info)
 
+    # Compute divergence analysis for trust transparency
+    divergence_analysis = None
+    if current_price and current_price > 0 and shares and shares > 0:
+        target_equity = current_price * shares
+        implied_assumptions = _compute_implied_assumptions(
+            target_equity_value=target_equity,
+            revenue0=revenue0,
+            net_debt=net_debt,
+            base_inputs=base_inputs,
+            years=5,
+        )
+        divergence_analysis = _compute_divergence_analysis(
+            dcf_fair_value=fair_value_per_share,
+            current_price=current_price,
+            base_inputs=base_inputs,
+            implied_assumptions=implied_assumptions,
+            net_income=net_income,
+        )
+
     benchmarks = SECTOR_BENCHMARKS.get(sector, DEFAULT_BENCHMARKS)
 
     return {
@@ -884,4 +1132,5 @@ async def get_valuation_bundle(
         "scenarios": scenarios,
         "fair_value_range": fair_value_range,
         "analyst_consensus": analyst_consensus,
+        "divergence_analysis": divergence_analysis,
     }

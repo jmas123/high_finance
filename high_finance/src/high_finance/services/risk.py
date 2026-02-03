@@ -29,8 +29,15 @@ def _max_drawdown(closes: List[float]) -> float:
     arr = np.array(closes, dtype=float)
     if len(arr) < 2:
         return 0.0
+    # Filter out non-positive values that would cause division issues
+    arr = arr[arr > 0]
+    if len(arr) < 2:
+        return 0.0
     peak = np.maximum.accumulate(arr)
-    dd = arr / peak - 1.0
+    # Guard against zero peak (shouldn't happen with positive filter, but be safe)
+    with np.errstate(divide='ignore', invalid='ignore'):
+        dd = arr / peak - 1.0
+        dd = np.where(np.isfinite(dd), dd, 0.0)
     return float(np.min(dd))
 
 
