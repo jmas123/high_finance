@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { createChart, CandlestickSeries } from "lightweight-charts";
-import type { IChartApi, ISeriesApi } from "lightweight-charts";
+import type { IChartApi, ISeriesApi, UTCTimestamp } from "lightweight-charts";
 
 interface PriceData {
-  date: string;
-  timestamp: number;
+  date: string;       // "YYYY-MM-DD" or "YYYY-MM-DDTHH:mm:ss"
+  timestamp: number;  // unix seconds (your backend returns seconds ✅)
   open: number;
   high: number;
   low: number;
@@ -27,6 +27,7 @@ const PERIODS = [
   { label: "5Y", value: "5y" },
   { label: "MAX", value: "max" },
 ];
+
 export function PriceChart({ data, ticker, onPeriodChange }: PriceChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -47,16 +48,12 @@ export function PriceChart({ data, ticker, onPeriodChange }: PriceChartProps) {
         vertLines: { color: "#2d2d2d" },
         horzLines: { color: "#2d2d2d" },
       },
-      crosshair: {
-        mode: 1,
-      },
+      crosshair: { mode: 1 },
       timeScale: {
         borderColor: "#3d3d3d",
-        timeVisible: true,
+        timeVisible: true, // will be overridden based on period
       },
-      rightPriceScale: {
-        borderColor: "#3d3d3d",
-      },
+      rightPriceScale: { borderColor: "#3d3d3d" },
     });
 
     const candlestickSeries = chart.addSeries(CandlestickSeries, {
@@ -76,7 +73,6 @@ export function PriceChart({ data, ticker, onPeriodChange }: PriceChartProps) {
         chart.applyOptions({ width: chartContainerRef.current.clientWidth });
       }
     };
-
     window.addEventListener("resize", handleResize);
 
     return () => {
@@ -85,19 +81,40 @@ export function PriceChart({ data, ticker, onPeriodChange }: PriceChartProps) {
     };
   }, []);
 
-    useEffect(() => {
-    if (seriesRef.current && data.length > 0) {
-        const chartData = data.map((d) => ({
-        time: d.timestamp as any,  // Use Unix timestamp
+  useEffect(() => {
+    if (!seriesRef.current || !chartRef.current) return;
+    if (!data || data.length === 0) {
+      seriesRef.current.setData([]);
+      return;
+    }
+
+    const intraday = activePeriod === "1d" || activePeriod === "5d";
+
+    // IMPORTANT: daily uses BusinessDay string to avoid weekend/time gaps
+    const chartData = data
+      .slice()
+      .sort((a, b) => a.timestamp - b.timestamp)
+      .map((d) => ({
+        time: intraday
+          ? (d.timestamp as UTCTimestamp)
+          : d.date.slice(0, 10), // "YYYY-MM-DD"
         open: d.open,
         high: d.high,
         low: d.low,
         close: d.close,
-        }));
-        seriesRef.current.setData(chartData);
-        chartRef.current?.timeScale().fitContent();
-    }
-    }, [data]);
+      }));
+
+    // Toggle time formatting on x-axis
+    chartRef.current.applyOptions({
+      timeScale: {
+        timeVisible: intraday,
+        secondsVisible: false,
+      },
+    });
+
+    seriesRef.current.setData(chartData);
+    chartRef.current.timeScale().fitContent();
+  }, [data, activePeriod]);
 
   const handlePeriodClick = (period: string) => {
     setActivePeriod(period);
