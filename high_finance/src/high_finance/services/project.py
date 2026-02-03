@@ -38,6 +38,7 @@ def _project_summary_dict(p: Project) -> dict:
 
     return {
         "id": p.id,
+        "owner_id": p.owner_id,
         "ticker": p.ticker,
         "title": p.title,
         "status": p.status,
@@ -60,8 +61,11 @@ async def list_projects(
     db: Session,
     status: Optional[str] = None,
     ticker: Optional[str] = None,
+    owner_id: Optional[str] = None,
 ) -> List[dict]:
     q = db.query(Project)
+    if owner_id:
+        q = q.filter(Project.owner_id == owner_id)
     if status:
         q = q.filter(Project.status == status)
     if ticker:
@@ -74,12 +78,13 @@ async def get_project(db: Session, project_id: int) -> Optional[Project]:
     return db.query(Project).filter(Project.id == project_id).first()
 
 
-async def create_project(db: Session, ticker: str, title: str, **kwargs) -> Project:
+async def create_project(db: Session, ticker: str, title: str, owner_id: Optional[str] = None, **kwargs) -> Project:
     ticker = ticker.upper()
     company_id = _resolve_company(db, ticker)
     p = Project(
         ticker=ticker,
         company_id=company_id,
+        owner_id=owner_id,
         title=title,
         summary=kwargs.get("summary"),
         conviction=kwargs.get("conviction"),

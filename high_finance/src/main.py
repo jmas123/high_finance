@@ -1,5 +1,17 @@
-from fastapi import FastAPI
+"""
+High Finance API
+================
+"""
+
+import logging
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from slowapi.errors import RateLimitExceeded
+from starlette.middleware.base import BaseHTTPMiddleware
+
+from high_finance.core.config import settings
+from high_finance.core.rate_limit import limiter, rate_limit_exceeded_handler
 from high_finance.api.v1.routes import (
     companies, fundamentals, ownership, leadership,
     prices, financials, predictions, search, politicians,
@@ -7,16 +19,54 @@ from high_finance.api.v1.routes import (
     project, screener
 )
 
-app = FastAPI()
+# Configure logging
+logging.basicConfig(
+    level=logging.DEBUG if settings.DEBUG else logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Add security headers to all responses."""
+
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+        return response
+
+
+app = FastAPI(
+    title="High Finance API",
+    description="Research platform for investors and finance students",
+    version="1.0.0",
+    docs_url="/docs" if settings.DEBUG else None,
+    redoc_url="/redoc" if settings.DEBUG else None,
 )
 
+# Rate limiter
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
+
+# Security headers
+app.add_middleware(SecurityHeadersMiddleware)
+
+# CORS - use explicit origin whitelist
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.allowed_origins_list,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Owner-Id", "X-Request-ID"],
+    expose_headers=["X-Request-ID", "X-RateLimit-Limit", "X-RateLimit-Remaining"],
+    max_age=600,
+)
+
+# Routes
 app.include_router(companies.router, prefix="/api/v1/companies", tags=["companies"])
 app.include_router(fundamentals.router, prefix="/api/v1/fundamentals", tags=["fundamentals"])
 app.include_router(ownership.router, prefix="/api/v1/ownership", tags=["ownership"])
@@ -39,10 +89,28 @@ app.include_router(project.router, prefix="/api/v1/projects", tags=["projects"])
 app.include_router(screener.router, prefix="/api/v1/screener", tags=["screener"])
 
 
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Prevent leaking internal details in production."""
+    logger.exception(f"Unhandled exception: {exc}")
 
+    if settings.DEBUG:
+        return JSONResponse(
+            status_code=500,
+            content={"error": "internal_server_error", "message": str(exc), "type": type(exc).__name__},
+        )
 
+    return JSONResponse(
+        status_code=500,
+        content={"error": "internal_server_error", "message": "An unexpected error occurred."},
+    )
 
 
 @app.get("/")
 async def root():
     return {"message": "Welcome to the Finance Research Platform API!"}
+
+
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy"}

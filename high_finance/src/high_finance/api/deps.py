@@ -1,9 +1,36 @@
-from sqlalchemy.ext.asyncio import AsyncSession
-from fastapi import Depends, HTTPException, status
-from high_finance.db.session import get_db  # <-- correct location
+"""
+API Dependencies
+================
+Common dependencies for FastAPI routes.
+"""
 
-async def get_database_session() -> AsyncSession:
-    db: AsyncSession = Depends(get_db)
-    if db is None:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database connection error")
-    return db
+from typing import Generator, Optional
+
+from sqlalchemy.orm import Session
+
+from high_finance.db.session import SessionLocal
+from high_finance.core.security import (
+    get_current_user,
+    get_current_user_optional,
+    User,
+)
+
+
+def get_db() -> Generator[Session, None, None]:
+    """
+    Database session dependency.
+    Yields a database session and ensures it's closed after use.
+    """
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+__all__ = [
+    "get_db",
+    "get_current_user",
+    "get_current_user_optional",
+    "User",
+]

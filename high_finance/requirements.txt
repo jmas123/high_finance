@@ -33,3 +33,6 @@ pyyaml
 scipy
 vaderSentiment
 fredapi
+python-jose[cryptography]
+passlib[bcrypt]
+slowapi

@@ -27,6 +27,7 @@ class Project(Base):
     __tablename__ = "projects"
 
     id            = Column(Integer, primary_key=True, index=True)
+    owner_id      = Column(String, index=True, nullable=True)    # User ID who owns this project
     ticker        = Column(String, index=True, nullable=False)
     company_id    = Column(Integer, ForeignKey("companies.id"), nullable=True)
     title         = Column(String, nullable=False)               # e.g. "AAPL – AI Hardware Cycle"

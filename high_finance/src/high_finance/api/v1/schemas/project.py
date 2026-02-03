@@ -184,6 +184,7 @@ class ProjectUpdate(BaseModel):
 class ProjectSummaryOut(BaseModel):
     """Lightweight shape for list views."""
     id: int
+    owner_id: Optional[str] = None
     ticker: str
     title: str
     status: str
@@ -199,6 +200,7 @@ class ProjectSummaryOut(BaseModel):
 class ProjectDetailOut(BaseModel):
     """Full shape with all child collections."""
     id: int
+    owner_id: Optional[str] = None
     ticker: str
     title: str
     summary: Optional[str]
