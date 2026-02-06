@@ -130,6 +130,8 @@ export interface ProjectWorkspaceProps {
   } | null;
   /** Called after user imports currentDCF so parent can clear it */
   onDCFImported?: () => void;
+  /** Called after project is deleted – parent should navigate away */
+  onProjectDeleted?: () => void;
 }
 
 export const defaultDCFInputs = {

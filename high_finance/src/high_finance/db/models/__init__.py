@@ -22,3 +22,5 @@ from .screener import ScreenerUniverse, ScreenerCache, SavedScreen
 from .user import User
 from .user_data import WatchlistItem, PortfolioPosition
 from .job_execution import JobExecution
+from .peer_group import PeerGroup
+from .chart_drawing import ChartDrawing

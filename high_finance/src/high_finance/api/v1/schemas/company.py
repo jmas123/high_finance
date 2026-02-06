@@ -1,9 +1,20 @@
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 
+
 class CompTemplate(BaseModel):
     label: str
     metrics: List[str]
+
+
+class MetricStats(BaseModel):
+    """Full statistics for a single metric across peers."""
+    mean: Optional[float] = None
+    median: Optional[float] = None
+    p25: Optional[float] = None
+    p75: Optional[float] = None
+    min: Optional[float] = None
+    max: Optional[float] = None
 
 class CompanyFundamentals(BaseModel):
     ticker: str
@@ -44,6 +55,8 @@ class CompanyFundamentals(BaseModel):
     revenue: Optional[float] = None
     profit_margin: Optional[float] = None
     beta: Optional[float] = None
+    net_debt_est: Optional[float] = None
+    fetched_at: Optional[str] = None
 
     # ✅ ETF-specific fields (all optional; filled only for ETFs/funds)
     total_assets: Optional[float] = None
@@ -72,7 +85,14 @@ class ComparableAnalysis(BaseModel):
     peers: List[CompanyFundamentals]
 
     template: CompTemplate
-    averages: Dict[str, Optional[float]]
+    averages: Dict[str, Optional[float]]  # Legacy (keep for backwards compat)
 
+    # NEW: Full statistics per metric
+    statistics: Dict[str, MetricStats] = {}
+
+    # NEW: Implied price at peer median for each valuation metric
+    implied_prices: Dict[str, Optional[float]] = {}
+
+    # Legacy fields
     average_pe: Optional[float] = None
     average_ev_ebitda: Optional[float] = None

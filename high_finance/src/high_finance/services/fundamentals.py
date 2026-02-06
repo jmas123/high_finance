@@ -1,3 +1,5 @@
+import statistics
+from datetime import datetime, timezone
 import yfinance as yf
 from sqlalchemy import func
 from high_finance.db.models import Company
@@ -68,14 +70,14 @@ def pick_comp_template(sector: str | None, industry: str | None, is_profitable: 
     if "financial" in s or "bank" in i or "capital markets" in i or "insurance" in i:
         return {
             "label": "Financials",
-            "metrics": ["market_cap", "pe_ratio", "pb_ratio", "roe", "revenue_growth"]
+            "metrics": ["market_cap", "forward_pe", "pe_ratio", "pb_ratio", "roe", "revenue_growth"]
         }
 
     # Utilities
     if "utilities" in s:
         return {
             "label": "Utilities",
-            "metrics": ["market_cap", "pe_ratio", "ev_to_ebitda", "dividend_yield", "revenue_growth"]
+            "metrics": ["market_cap", "forward_pe", "pe_ratio", "ev_to_ebitda", "dividend_yield", "revenue_growth"]
         }
 
     # Tech / Comm Services: if not profitable, EV/Sales is often better than P/E
@@ -87,27 +89,27 @@ def pick_comp_template(sector: str | None, industry: str | None, is_profitable: 
             }
         return {
             "label": "Tech / Comm Services",
-            "metrics": ["market_cap", "ev_to_sales", "ev_to_ebitda", "pe_ratio", "revenue_growth"]
+            "metrics": ["market_cap", "forward_pe", "ev_to_sales", "ev_to_ebitda", "pe_ratio", "revenue_growth"]
         }
 
     # Healthcare sometimes has loss-makers too; keep EV/Sales available
     if "healthcare" in s:
         return {
             "label": "Healthcare",
-            "metrics": ["market_cap", "ev_to_sales", "ev_to_ebitda", "pe_ratio", "revenue_growth"]
+            "metrics": ["market_cap", "forward_pe", "ev_to_sales", "ev_to_ebitda", "pe_ratio", "revenue_growth"]
         }
 
     # Industrials / Energy / Materials / Consumer
     if any(x in s for x in ["industrials", "energy", "materials", "consumer discretionary", "consumer staples"]):
         return {
             "label": "Corporates",
-            "metrics": ["market_cap", "ev_to_ebitda", "pe_ratio", "revenue_growth"]
+            "metrics": ["market_cap", "forward_pe", "ev_to_ebitda", "pe_ratio", "revenue_growth"]
         }
 
     # Default
     return {
         "label": "Corporates",
-        "metrics": ["market_cap", "ev_to_ebitda", "pe_ratio", "revenue_growth"]
+        "metrics": ["market_cap", "forward_pe", "ev_to_ebitda", "pe_ratio", "revenue_growth"]
     }
 
 
@@ -132,7 +134,12 @@ def get_etf_fundamentals(info: dict) -> dict:
     }
 
 
-async def get_company_fundamentals(ticker: str, db, fetch_peers: bool = False):
+async def get_company_fundamentals(
+    ticker: str,
+    db,
+    fetch_peers: bool = False,
+    peer_tickers: list[str] | None = None,
+):
     stock = yf.Ticker(ticker)
     info = stock.info or {}
 
@@ -312,8 +319,16 @@ async def get_company_fundamentals(ticker: str, db, fetch_peers: bool = False):
 
     revenue = clamp(info.get("totalRevenue"), lo=1)
 
+    # Net debt calculation (needed for EV-based implied prices)
+    total_debt = clamp(info.get("totalDebt"), lo=0) or 0
+    cash_and_equiv = clamp(info.get("totalCash"), lo=0) or 0
+    net_debt_est = total_debt - cash_and_equiv
+
     # Choose template
     comp_template = pick_comp_template(sector, industry, is_profitable)
+
+    # Data freshness timestamp
+    fetched_at = datetime.now(timezone.utc).isoformat()
 
     # DB update (keep your existing behavior)
     company = db.query(Company).filter(Company.ticker == ticker).first()
@@ -372,7 +387,9 @@ async def get_company_fundamentals(ticker: str, db, fetch_peers: bool = False):
         "fifty_two_week_low": fifty_two_week_low,
         "fifty_day_avg": fifty_day_avg,
         "two_hundred_day_avg": two_hundred_day_avg,
-        
+        "net_debt_est": net_debt_est,
+        "fetched_at": fetched_at,
+
         # Extreme-value flags
         "pe_extreme": is_extreme(pe_ratio, "pe_ratio"),
         "forward_pe_extreme": is_extreme(forward_pe, "forward_pe"),
@@ -396,31 +413,55 @@ async def get_company_fundamentals(ticker: str, db, fetch_peers: bool = False):
     if not fetch_peers:
         return data
 
-    # Peer selection (same as you had)
-    current_mcap = market_cap or 0
-    peers_query = db.query(Company).filter(
-        Company.industry == industry,
-        Company.ticker != ticker,
-        Company.market_cap.isnot(None)
-    ).order_by(func.abs(Company.market_cap - current_mcap)).limit(5)
-    peers_list = peers_query.all()
-
-    if len(peers_list) < 5:
-        existing = [p.ticker for p in peers_list] + [ticker]
-        needed = 5 - len(peers_list)
-        sector_peers = db.query(Company).filter(
-            Company.sector == sector,
-            Company.ticker.notin_(existing),
-            Company.market_cap.isnot(None)
-        ).order_by(func.abs(Company.market_cap - current_mcap)).limit(needed).all()
-        peers_list.extend(sector_peers)
-
+    # Peer selection: Use custom peers if provided, otherwise auto-select
     peers_data = []
-    for peer in peers_list:
-        try:
-            peers_data.append(await get_company_fundamentals(peer.ticker, db, fetch_peers=False))
-        except:
-            continue
+
+    if peer_tickers:
+        # Custom peer list provided - fetch each one
+        for peer_ticker in peer_tickers:
+            if peer_ticker.upper() == ticker.upper():
+                continue  # Skip target ticker if accidentally included
+            try:
+                peer_data = await get_company_fundamentals(peer_ticker.upper(), db, fetch_peers=False)
+                if peer_data:
+                    peers_data.append(peer_data)
+            except Exception:
+                # Peer ticker not found or error - include stub with status
+                peers_data.append({
+                    "ticker": peer_ticker.upper(),
+                    "name": None,
+                    "status": "not_found",
+                    "market_cap": None,
+                    "pe_ratio": None,
+                    "ev_to_ebitda": None,
+                    "ev_to_sales": None,
+                    "revenue_growth": None,
+                })
+    else:
+        # Auto-select peers by industry/sector proximity
+        current_mcap = market_cap or 0
+        peers_query = db.query(Company).filter(
+            Company.industry == industry,
+            Company.ticker != ticker,
+            Company.market_cap.isnot(None)
+        ).order_by(func.abs(Company.market_cap - current_mcap)).limit(5)
+        peers_list = peers_query.all()
+
+        if len(peers_list) < 5:
+            existing = [p.ticker for p in peers_list] + [ticker]
+            needed = 5 - len(peers_list)
+            sector_peers = db.query(Company).filter(
+                Company.sector == sector,
+                Company.ticker.notin_(existing),
+                Company.market_cap.isnot(None)
+            ).order_by(func.abs(Company.market_cap - current_mcap)).limit(needed).all()
+            peers_list.extend(sector_peers)
+
+        for peer in peers_list:
+            try:
+                peers_data.append(await get_company_fundamentals(peer.ticker, db, fetch_peers=False))
+            except:
+                continue
 
     # Averages for whatever the template asks for
     metrics = comp_template["metrics"]
@@ -431,9 +472,88 @@ async def get_company_fundamentals(ticker: str, db, fetch_peers: bool = False):
 
     averages = {m: avg(m) for m in metrics}
 
+    # ── NEW: Compute full statistics (mean, median, p25, p75, min, max) ──
+    def compute_stats(metric: str) -> dict:
+        vals = [p.get(metric) for p in peers_data if isinstance(p.get(metric), (int, float))]
+        if not vals:
+            return {"mean": None, "median": None, "p25": None, "p75": None, "min": None, "max": None}
+        sorted_vals = sorted(vals)
+        n = len(sorted_vals)
+        return {
+            "mean": sum(vals) / n,
+            "median": statistics.median(vals),
+            "p25": sorted_vals[n // 4] if n >= 4 else sorted_vals[0],
+            "p75": sorted_vals[(3 * n) // 4] if n >= 4 else sorted_vals[-1],
+            "min": sorted_vals[0],
+            "max": sorted_vals[-1],
+        }
+
+    stats = {m: compute_stats(m) for m in metrics}
+
+    # ── NEW: Compute implied prices based on peer median multiples ──
+    def compute_implied_price(metric: str, peer_median: float | None, target_data: dict) -> float | None:
+        """Given peer median multiple, what would target be worth?"""
+        if peer_median is None or peer_median <= 0:
+            return None
+
+        shares = target_data.get("shares_outstanding")
+        if shares is None:
+            mcap = target_data.get("market_cap") or 0
+            curr_price = target_data.get("current_price") or 0
+            shares = mcap / curr_price if curr_price > 0 else None
+
+        if metric == "pe_ratio":
+            eps_val = target_data.get("eps")
+            if eps_val and eps_val > 0:
+                return peer_median * eps_val
+
+        if metric == "forward_pe":
+            # Forward EPS = current price / forward PE
+            fwd_pe = target_data.get("forward_pe")
+            curr_price = target_data.get("current_price")
+            if fwd_pe and fwd_pe > 0 and curr_price and curr_price > 0:
+                forward_eps = curr_price / fwd_pe
+                return peer_median * forward_eps
+
+        if metric == "ev_to_ebitda":
+            ebitda_val = target_data.get("ebitda")
+            if ebitda_val and ebitda_val > 0 and shares:
+                implied_ev = peer_median * ebitda_val
+                net_debt = target_data.get("net_debt_est", 0) or 0
+                return (implied_ev - net_debt) / shares if shares > 0 else None
+
+        if metric == "ev_to_sales":
+            revenue_val = target_data.get("revenue")
+            if revenue_val and revenue_val > 0 and shares:
+                implied_ev = peer_median * revenue_val
+                net_debt = target_data.get("net_debt_est", 0) or 0
+                return (implied_ev - net_debt) / shares if shares > 0 else None
+
+        return None
+
+    # Need EBITDA, shares_outstanding for implied calculations
+    # (net_debt_est is already in data dict)
+    target_ebitda = clamp(info.get("ebitda"), lo=1)
+    target_shares = clamp(info.get("sharesOutstanding"), lo=1)
+
+    # Add extras to data for implied price calculation
+    target_with_extras = {
+        **data,
+        "ebitda": target_ebitda,
+        "shares_outstanding": target_shares,
+    }
+
+    implied_prices = {}
+    valuation_metrics = ["pe_ratio", "forward_pe", "ev_to_ebitda", "ev_to_sales"]
+    for m in valuation_metrics:
+        if m in stats:
+            implied_prices[m] = compute_implied_price(m, stats[m].get("median"), target_with_extras)
+
     return {
         "target": data,
         "peers": peers_data,
         "template": comp_template,
         "averages": averages,
+        "statistics": stats,
+        "implied_prices": implied_prices,
     }

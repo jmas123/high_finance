@@ -58,13 +58,27 @@ export type CompTemplate = {
   metrics: string[];
 };
 
+export type MetricStats = {
+  mean: number | null;
+  median: number | null;
+  p25: number | null;
+  p75: number | null;
+  min: number | null;
+  max: number | null;
+};
 
 export type CompsResponse = {
   target: Fundamentals;
   peers: Fundamentals[];
 
   template: CompTemplate;
-  averages: Record<string, number | null>;
+  averages: Record<string, number | null>;  // legacy
+
+  // NEW: Full statistics per metric
+  statistics: Record<string, MetricStats>;
+
+  // NEW: Implied price at peer median for each valuation metric
+  implied_prices: Record<string, number | null>;
 
   // legacy fields (can stay optional)
   average_pe?: number | null;
@@ -724,6 +738,8 @@ export type Fundamentals = {
   fifty_two_week_low?: number | null;
   fifty_day_avg?: number | null;
   two_hundred_day_avg?: number | null;
+  net_debt_est?: number | null;
+  fetched_at?: string | null;
   comp_template?: CompTemplate | null;
 
   // ETF-specific metrics
@@ -987,3 +1003,64 @@ export type ExportInputs = {
   tax?: number;
   terminal_g?: number;
 };
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PEER GROUP TYPES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export type PeerGroup = {
+  id: number;
+  user_id: string;
+  ticker: string | null;  // null = user-level group
+  name: string;
+  peer_tickers: string[];
+  is_default: boolean;
+  created_at: string;
+  updated_at: string | null;
+};
+
+export type PeerGroupList = {
+  items: PeerGroup[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+export type PeerGroupCreate = {
+  ticker?: string | null;
+  name: string;
+  peer_tickers: string[];
+  is_default?: boolean;
+};
+
+export type PeerGroupUpdate = {
+  name?: string;
+  peer_tickers?: string[];
+  is_default?: boolean;
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PORTFOLIO PERFORMANCE TYPES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export interface BenchmarkPerformance {
+  name: string;
+  returns: Record<string, number | null>;
+  sparkline: number[];
+}
+
+export interface RiskMetrics {
+  beta: number | null;  // Beta vs SPY
+  sharpe: number | null;  // Sharpe ratio (annualized)
+}
+
+export interface PortfolioPerformanceResponse {
+  portfolio: {
+    returns: Record<string, number | null>;
+    sparkline: number[];
+  };
+  benchmarks: Record<string, BenchmarkPerformance>;
+  periods: string[];
+  outperformance: Record<string, number>;
+  risk_metrics?: RiskMetrics;
+}

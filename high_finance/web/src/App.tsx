@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Routes, Route, useNavigate, useParams, useLocation, Link } from "react-router-dom";
 import { api } from "./lib/api";
 import { projectsApi } from "./components/project/api";
-import { PriceChart } from "./components/PriceChart";
+import { PriceChartWithDrawings } from "./components/chart";
 import { CompanyHeader } from "./components/CompanyHeader";
 import { FundamentalsCard } from "./components/FundamentalsCard";
 import { EarningsCard } from "./components/earnings/EarningsCard";
@@ -39,6 +39,9 @@ import { SaveToProjectButton } from "./components/project/SaveToProjectButton";
 
 // ── Stock Screener ──────────────────────────────────────────────────────────
 import { ScreenerCard } from "./components/screener";
+
+// ── Calendar ────────────────────────────────────────────────────────────────
+import { CalendarPopupButton } from "./components/calendar";
 
 // ── DCF state shape for snapshot wiring ──────────────────────────────────────
 type DCFState = {
@@ -89,7 +92,7 @@ export default function App() {
           padding: 24,
         }}
       >
-        {/* Header with Search + Auth */}
+        {/* Header with Search + Calendar + Auth */}
         <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 24 }}>
           <div style={{ flex: 1 }}>
             <SearchBar
@@ -97,6 +100,10 @@ export default function App() {
               loading={false}
             />
           </div>
+          {/* Calendar Button */}
+          <CalendarPopupButton
+            onTickerClick={(ticker) => navigate(`/quote/${ticker.toUpperCase()}`)}
+          />
           {/* Auth Button */}
           {authLoading ? (
             <div style={{ fontSize: 13, color: "#666" }}>...</div>
@@ -365,6 +372,7 @@ function ProjectView() {
 function TickerView() {
   const { ticker: urlTicker } = useParams<{ ticker: string }>();
   const navigate = useNavigate();
+  const { isAuthenticated } = useAuth();
   const {
     addToWatchlist,
     removeFromWatchlist,
@@ -694,7 +702,12 @@ function TickerView() {
             padding: 16,
           }}
         >
-          <PriceChart data={prices} ticker={ticker} onPeriodChange={loadPrices} />
+          <PriceChartWithDrawings
+              data={prices}
+              ticker={ticker}
+              onPeriodChange={loadPrices}
+              isAuthenticated={isAuthenticated}
+            />
         </div>
       )}
 
@@ -739,9 +752,25 @@ function TickerView() {
           </div>
 
           {/* Comps Table */}
-          {comps && (
+          {comps && ticker && (
             <div style={{ marginBottom: 16 }}>
-              <CompsTable data={comps} />
+              <CompsTable
+                data={comps}
+                ticker={ticker}
+                isAuthenticated={isAuthenticated}
+                onRefetch={async (peerGroupId, peerTickers) => {
+                  try {
+                    const newComps = await api.comps(ticker, {
+                      peer_group_id: peerGroupId ?? undefined,
+                      peers: peerTickers ?? undefined,
+                    });
+                    if (newComps) setComps(newComps);
+                  } catch (e) {
+                    console.error("Failed to refetch comps:", e);
+                  }
+                }}
+                onTickerClick={(t) => navigate(`/quote/${t.toUpperCase()}`)}
+              />
             </div>
           )}
 

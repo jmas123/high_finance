@@ -31,8 +31,10 @@ from high_finance.core.rate_limit import limiter
 from high_finance.services.export_excel import (
     generate_project_tearsheet,
     generate_ticker_export,
+    generate_financials_export,
     sanitize_filename,
 )
+from high_finance.services.financials import get_financial_statements
 from high_finance.services.project import get_project_or_404
 
 logger = logging.getLogger(__name__)
@@ -204,6 +206,70 @@ async def export_ticker_excel(
     filename = f"{safe_ticker}_DCF_{date.today().isoformat()}.xlsx"
 
     logger.info(f"Export: user={user_id} ticker={ticker_upper} type=dcf")
+
+    return StreamingResponse(
+        excel_bytes,
+        media_type=EXCEL_MIME,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/export/financials/{ticker}/excel")
+@limiter.limit("10/minute")
+async def export_financials_excel(
+    request: Request,
+    ticker: str = Path(
+        ...,
+        min_length=1,
+        max_length=5,
+        pattern=r"^[A-Za-z]{1,5}$",
+        description="Stock ticker symbol (1-5 letters)",
+    ),
+    user: Optional[User] = Depends(get_current_user_optional),
+    db: Session = Depends(get_db),
+):
+    """
+    Export financial statements as an Excel file.
+
+    Generates a 6-tab workbook:
+    - Income Statement (Annual)
+    - Income Statement (Quarterly)
+    - Balance Sheet (Annual)
+    - Balance Sheet (Quarterly)
+    - Cash Flow (Annual)
+    - Cash Flow (Quarterly)
+
+    Authentication is optional (allows anonymous exports).
+    """
+    user_id = user.id if user else "anonymous"
+    ticker_upper = ticker.upper()
+
+    try:
+        # Get financial statements
+        financials = await get_financial_statements(ticker_upper)
+
+        if not financials:
+            raise HTTPException(404, f"No financial data found for {ticker_upper}")
+
+        # Generate with timeout
+        excel_bytes = await asyncio.wait_for(
+            generate_financials_export(ticker_upper, financials),
+            timeout=EXPORT_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        logger.warning(f"Financials export timeout: ticker={ticker_upper} user={user_id}")
+        raise HTTPException(504, "Export timed out.")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Financials export failed: ticker={ticker_upper} error={e}")
+        raise HTTPException(422, "Unable to generate export. Please try again.")
+
+    # Generate safe filename
+    safe_ticker = sanitize_filename(ticker)
+    filename = f"{safe_ticker}_Financials_{date.today().isoformat()}.xlsx"
+
+    logger.info(f"Export: user={user_id} ticker={ticker_upper} type=financials")
 
     return StreamingResponse(
         excel_bytes,

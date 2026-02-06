@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { projectsApi } from "./api";
 import type { ProjectPeer } from "./types";
-import { cardStyle, sectionHeader, inputStyle, smallBtnStyle } from "./sharedStyles";
+import { cardStyle, sectionHeader, inputStyle } from "./sharedStyles";
+import { TickerSearchInput } from "../common/TickerSearchInput";
 
 interface PeerSetSectionProps {
   projectId: number;
@@ -10,21 +11,18 @@ interface PeerSetSectionProps {
 }
 
 export function PeerSetSection({ projectId, peers, onUpdate }: PeerSetSectionProps) {
-  const [newTicker, setNewTicker] = useState("");
   const [days, setDays] = useState(30);
   const [returnsByTicker, setReturnsByTicker] = useState<Record<string, number | null>>({});
   const [returnsLoading, setReturnsLoading] = useState(false);
   const [returnsError, setReturnsError] = useState<string | null>(null);
 
-  async function addPeer() {
-    const t = newTicker.trim().toUpperCase();
+  async function addPeer(tickerToAdd: string) {
+    const t = tickerToAdd.trim().toUpperCase();
     if (!t) return;
     if (peers.some((p) => p.ticker === t)) {
-      setNewTicker("");
       return;
     }
     await projectsApi.addPeer(projectId, t);
-    setNewTicker("");
     onUpdate();
   }
 
@@ -169,21 +167,13 @@ export function PeerSetSection({ projectId, peers, onUpdate }: PeerSetSectionPro
         })}
 
         {/* Inline add */}
-        <div style={{ display: "flex", gap: 4 }}>
-          <input
-            placeholder="Add ticker…"
-            value={newTicker}
-            onChange={(e) => setNewTicker(e.target.value.toUpperCase())}
-            onKeyDown={(e) => e.key === "Enter" && addPeer()}
-            style={{ ...inputStyle, width: 90, fontFamily: "monospace" }}
+        <div style={{ width: 160 }}>
+          <TickerSearchInput
+            onSelect={(ticker) => addPeer(ticker)}
+            placeholder="Search ticker…"
+            clearOnSelect={true}
+            style={{ ...inputStyle, fontFamily: "monospace" }}
           />
-          <button
-            onClick={addPeer}
-            disabled={!newTicker.trim()}
-            style={{ ...smallBtnStyle, opacity: newTicker.trim() ? 1 : 0.4 }}
-          >
-            +
-          </button>
         </div>
       </div>
 

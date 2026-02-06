@@ -1,7 +1,7 @@
 """
 User Data – API Routes
 ======================
-Endpoints for authenticated user's watchlist and portfolio.
+Endpoints for authenticated user's watchlist, portfolio, and peer groups.
 
 Watchlist:
     GET    /api/v1/me/watchlist         - List watchlist items
@@ -13,15 +13,23 @@ Portfolio:
     POST   /api/v1/me/portfolio         - Add/update position
     PUT    /api/v1/me/portfolio/{ticker} - Update position
     DELETE /api/v1/me/portfolio/{ticker} - Remove position
+
+Peer Groups:
+    GET    /api/v1/me/peer-groups       - List peer groups (optionally filter by ticker)
+    POST   /api/v1/me/peer-groups       - Create a peer group
+    PUT    /api/v1/me/peer-groups/{id}  - Update a peer group
+    DELETE /api/v1/me/peer-groups/{id}  - Delete a peer group
 """
 
-from typing import List
+from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from high_finance.db.session import get_db
 from high_finance.db.models.user_data import WatchlistItem, PortfolioPosition
+from high_finance.db.models.peer_group import PeerGroup
 from high_finance.core.security import get_current_user, User
 from high_finance.api.v1.schemas.user_data import (
     WatchlistItemCreate,
@@ -29,6 +37,12 @@ from high_finance.api.v1.schemas.user_data import (
     PortfolioPositionCreate,
     PortfolioPositionUpdate,
     PortfolioPositionOut,
+)
+from high_finance.api.v1.schemas.peer_group import (
+    PeerGroupCreate,
+    PeerGroupUpdate,
+    PeerGroupResponse,
+    PeerGroupList,
 )
 
 router = APIRouter()
@@ -217,3 +231,221 @@ async def remove_position(
 
     db.commit()
     return None
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PEER GROUPS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+MAX_PEER_GROUPS_PER_USER = 50
+
+
+@router.get("/peer-groups", response_model=PeerGroupList)
+async def list_peer_groups(
+    ticker: Optional[str] = Query(None, max_length=10, description="Filter by ticker (optional)"),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    List peer groups for the current user.
+
+    Optionally filter by ticker to get groups relevant to a specific company.
+    Returns both ticker-specific groups and user-level groups (ticker=NULL).
+    """
+    query = db.query(PeerGroup).filter(PeerGroup.user_id == user.id)
+
+    if ticker:
+        ticker = ticker.upper()
+        # Return ticker-specific groups OR user-level groups (ticker IS NULL)
+        query = query.filter(
+            (PeerGroup.ticker == ticker) | (PeerGroup.ticker.is_(None))
+        )
+
+    total = query.count()
+    groups = query.order_by(
+        PeerGroup.is_default.desc(),  # Default groups first
+        PeerGroup.updated_at.desc()
+    ).offset(offset).limit(limit).all()
+
+    return PeerGroupList(
+        items=groups,
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.post("/peer-groups", response_model=PeerGroupResponse, status_code=status.HTTP_201_CREATED)
+async def create_peer_group(
+    data: PeerGroupCreate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Create a new peer group.
+
+    - If `ticker` is provided, the group is ticker-specific.
+    - If `ticker` is NULL, the group is a user-level reusable group.
+    - The target ticker cannot be in the peer_tickers list.
+    - Maximum 50 peer groups per user.
+    """
+    # Check user limit
+    count = db.query(func.count(PeerGroup.id)).filter(
+        PeerGroup.user_id == user.id
+    ).scalar()
+
+    if count >= MAX_PEER_GROUPS_PER_USER:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Maximum {MAX_PEER_GROUPS_PER_USER} peer groups allowed per user",
+        )
+
+    # Validate target ticker not in peers
+    if data.ticker and data.ticker.upper() in data.peer_tickers:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot include target ticker in peer group",
+        )
+
+    # Check for duplicate name
+    existing = db.query(PeerGroup).filter(
+        PeerGroup.user_id == user.id,
+        PeerGroup.ticker == data.ticker,
+        PeerGroup.name == data.name,
+    ).first()
+
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"A peer group named '{data.name}' already exists",
+        )
+
+    # If setting as default, unset other defaults for this ticker
+    if data.is_default:
+        db.query(PeerGroup).filter(
+            PeerGroup.user_id == user.id,
+            PeerGroup.ticker == data.ticker,
+            PeerGroup.is_default == True,
+        ).update({"is_default": False})
+
+    group = PeerGroup(
+        user_id=user.id,
+        ticker=data.ticker,
+        name=data.name,
+        peer_tickers=data.peer_tickers,
+        is_default=data.is_default,
+    )
+    db.add(group)
+    db.commit()
+    db.refresh(group)
+    return group
+
+
+@router.put("/peer-groups/{group_id}", response_model=PeerGroupResponse)
+async def update_peer_group(
+    group_id: int,
+    data: PeerGroupUpdate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Update an existing peer group."""
+    group = db.query(PeerGroup).filter(
+        PeerGroup.id == group_id,
+        PeerGroup.user_id == user.id,
+    ).first()
+
+    if not group:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Peer group not found",
+        )
+
+    # Validate target ticker not in peers
+    new_peers = data.peer_tickers if data.peer_tickers is not None else group.peer_tickers
+    if group.ticker and group.ticker.upper() in new_peers:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot include target ticker in peer group",
+        )
+
+    # Check for duplicate name if changing name
+    if data.name and data.name != group.name:
+        existing = db.query(PeerGroup).filter(
+            PeerGroup.user_id == user.id,
+            PeerGroup.ticker == group.ticker,
+            PeerGroup.name == data.name,
+            PeerGroup.id != group_id,
+        ).first()
+
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"A peer group named '{data.name}' already exists",
+            )
+
+    # Update fields
+    if data.name is not None:
+        group.name = data.name
+    if data.peer_tickers is not None:
+        group.peer_tickers = data.peer_tickers
+
+    # Handle default flag
+    if data.is_default is not None:
+        if data.is_default and not group.is_default:
+            # Unset other defaults for this ticker
+            db.query(PeerGroup).filter(
+                PeerGroup.user_id == user.id,
+                PeerGroup.ticker == group.ticker,
+                PeerGroup.is_default == True,
+                PeerGroup.id != group_id,
+            ).update({"is_default": False})
+        group.is_default = data.is_default
+
+    db.commit()
+    db.refresh(group)
+    return group
+
+
+@router.delete("/peer-groups/{group_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_peer_group(
+    group_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Delete a peer group."""
+    result = db.query(PeerGroup).filter(
+        PeerGroup.id == group_id,
+        PeerGroup.user_id == user.id,
+    ).delete()
+
+    if result == 0:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Peer group not found",
+        )
+
+    db.commit()
+    return None
+
+
+@router.get("/peer-groups/{group_id}", response_model=PeerGroupResponse)
+async def get_peer_group(
+    group_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get a single peer group by ID."""
+    group = db.query(PeerGroup).filter(
+        PeerGroup.id == group_id,
+        PeerGroup.user_id == user.id,
+    ).first()
+
+    if not group:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Peer group not found",
+        )
+
+    return group

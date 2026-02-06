@@ -23,6 +23,7 @@ export function ProjectWorkspace({
   onOpenDCF,
   currentDCF,
   onDCFImported,
+  onProjectDeleted,
 }: ProjectWorkspaceProps) {
   const [project, setProject] = useState<ProjectDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -33,6 +34,10 @@ export function ProjectWorkspace({
   // Export state
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+
+  // Delete state
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   // Editing states
   const [editingTitle, setEditingTitle] = useState(false);
@@ -154,6 +159,27 @@ export function ProjectWorkspace({
     }
   }
 
+  // Delete project
+  async function handleDeleteProject() {
+    if (!project) return;
+    setDeleting(true);
+    try {
+      await projectsApi.deleteProject(project.id);
+      setShowDeleteConfirm(false);
+      // Notify parent and navigate back
+      if (onProjectDeleted) {
+        onProjectDeleted();
+      } else {
+        onBack();
+      }
+    } catch (err: any) {
+      setError(err.message || "Failed to delete project");
+      setShowDeleteConfirm(false);
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   // Render
   if (loading && !project) {
     return (
@@ -247,6 +273,21 @@ export function ProjectWorkspace({
               }}
             >
               {project.status === "active" ? "● Active" : "○ Archived"}
+            </button>
+            <button
+              onClick={() => setShowDeleteConfirm(true)}
+              style={{
+                background: "#ef444415",
+                border: "1px solid #ef444440",
+                borderRadius: 6,
+                color: "#ef4444",
+                fontSize: 11,
+                padding: "4px 10px",
+                cursor: "pointer",
+              }}
+              title="Delete project"
+            >
+              🗑
             </button>
           </div>
         </div>
@@ -442,6 +483,77 @@ export function ProjectWorkspace({
         sources={project.sources}
         onUpdate={reload}
       />
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0, 0, 0, 0.7)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+          }}
+          onClick={() => !deleting && setShowDeleteConfirm(false)}
+        >
+          <div
+            style={{
+              background: "#1a1a1a",
+              border: "1px solid #333",
+              borderRadius: 12,
+              padding: 24,
+              maxWidth: 400,
+              width: "90%",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 12 }}>
+              Delete Project?
+            </div>
+            <div style={{ fontSize: 13, color: "#888", marginBottom: 20 }}>
+              Are you sure you want to delete <strong style={{ color: "#fff" }}>{project.title}</strong>?
+              This will permanently remove all thesis bullets, catalysts, risks, DCF snapshots, and sources.
+              This action cannot be undone.
+            </div>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={deleting}
+                style={{
+                  background: "#222",
+                  border: "1px solid #444",
+                  borderRadius: 6,
+                  color: "#aaa",
+                  fontSize: 13,
+                  padding: "8px 16px",
+                  cursor: deleting ? "not-allowed" : "pointer",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteProject}
+                disabled={deleting}
+                style={{
+                  background: "#ef4444",
+                  border: "none",
+                  borderRadius: 6,
+                  color: "#fff",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  padding: "8px 16px",
+                  cursor: deleting ? "not-allowed" : "pointer",
+                  opacity: deleting ? 0.6 : 1,
+                }}
+              >
+                {deleting ? "Deleting..." : "Delete Project"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

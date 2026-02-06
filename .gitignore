@@ -19,7 +19,7 @@ Thumbs.db
 *.swp
 *.swo
 *~
-
+/docs
 # Python
 __pycache__/
 **/__pycache__/

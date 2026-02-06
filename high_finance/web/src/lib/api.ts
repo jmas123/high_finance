@@ -19,7 +19,12 @@ import type {
   SavedScreen,
   SavedScreenCreate,
   ExportInputs,
+  PortfolioPerformanceResponse,
 } from "./types";
+import type {
+  CalendarEventsRequest,
+  CalendarEventsResponse,
+} from "../components/calendar/types";
 // import type { OptionDecaySimulation, IVContext, ContractIVResponse } from "./types";
 
 const BASE = "/api/v1";
@@ -45,6 +50,27 @@ async function postJSON<T>(path: string): Promise<T> {
   return res.json();
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// CHART DRAWINGS API
+// ═══════════════════════════════════════════════════════════════════════════════
+
+import type {
+  ChartDrawing,
+  ChartDrawingCreate,
+  ChartDrawingUpdate,
+  ChartDrawingList,
+  BatchDrawingCreate,
+  BatchDrawingResponse,
+} from "../components/chart/types/drawing";
+
+class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
 export const api = {
   company: (ticker: string) =>
     getJSON<Company>(`${BASE}/companies/${encodeURIComponent(ticker)}`),
@@ -53,11 +79,34 @@ export const api = {
   fundamentals: (ticker: string) =>
     getJSON<Fundamentals>(`${BASE}/fundamentals/${encodeURIComponent(ticker)}`),
 
-  // === NEW COMPS METHOD ===
-  // This assumes you added the route GET /api/v1/companies/{ticker}/comps in your backend
-  comps: (ticker: string) =>
-    getJSON<CompsResponse>(`${BASE}/companies/${encodeURIComponent(ticker)}/comps`),
-  // ========================
+  // === COMPS METHOD ===
+  // Supports custom peer groups and ad-hoc peer lists
+  // Sends auth headers when using peer_group_id (required by backend)
+  comps: async (
+    ticker: string,
+    options?: {
+      peer_group_id?: number;
+      peers?: string[];
+    }
+  ): Promise<CompsResponse> => {
+    const params = new URLSearchParams();
+    if (options?.peer_group_id != null) {
+      params.set("peer_group_id", String(options.peer_group_id));
+    }
+    if (options?.peers && options.peers.length > 0) {
+      params.set("peers", options.peers.join(","));
+    }
+    const qs = params.toString();
+    const url = `${BASE}/companies/${encodeURIComponent(ticker)}/comps${qs ? `?${qs}` : ""}`;
+
+    // Include auth headers (required when using peer_group_id)
+    const res = await fetch(url, {
+      headers: getAuthHeaders(),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  },
+  // ====================
 
   ownership: (ticker: string) =>
     getJSON<any>(`${BASE}/ownership/${encodeURIComponent(ticker)}`),
@@ -346,6 +395,180 @@ valuation: (ticker: string, params?: Partial<{growth:number;margin:number;tax:nu
     }
 
     return res.blob();
+  },
+
+  /**
+   * Export financials as Excel file
+   * Returns a Blob that can be downloaded
+   */
+  exportFinancialsToExcel: async (ticker: string): Promise<Blob> => {
+    const url = `${BASE}/export/financials/${encodeURIComponent(ticker.toUpperCase())}/excel`;
+
+    const res = await fetch(url, {
+      headers: getAuthHeaders(),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: "Export failed" }));
+      throw new Error(err.detail || "Export failed");
+    }
+
+    return res.blob();
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // CALENDAR API
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Get calendar events for specified tickers within date range
+   */
+  calendarEvents: (request: CalendarEventsRequest): Promise<CalendarEventsResponse> =>
+    fetch(`${BASE}/calendar/events`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify(request),
+    }).then((res) => {
+      if (!res.ok) throw new Error("Failed to fetch calendar events");
+      return res.json();
+    }),
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // PORTFOLIO PERFORMANCE API
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  portfolio: {
+    /**
+     * Get portfolio performance compared to benchmarks
+     * Returns returns and sparklines for each period
+     */
+    getPerformance: async (
+      positions: Array<{ ticker: string; shares: number; avg_cost: number }>,
+      benchmarks?: string[]
+    ): Promise<PortfolioPerformanceResponse> => {
+      const res = await fetch(`${BASE}/portfolio/performance`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeaders(),
+        },
+        body: JSON.stringify({
+          positions,
+          benchmarks: benchmarks || ["SPY", "QQQ", "GLD", "BTC-USD"],
+        }),
+      });
+      if (!res.ok) {
+        throw new Error("Failed to fetch portfolio performance");
+      }
+      return res.json();
+    },
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // CHART DRAWINGS API
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  drawings: {
+    /**
+     * List all drawings for a ticker
+     */
+    list: async (ticker: string, includeHidden = false): Promise<ChartDrawingList> => {
+      const params = new URLSearchParams();
+      if (includeHidden) params.set("include_hidden", "true");
+      const qs = params.toString();
+      const res = await fetch(
+        `${BASE}/drawings/${encodeURIComponent(ticker)}${qs ? `?${qs}` : ""}`,
+        { headers: getAuthHeaders() }
+      );
+      if (!res.ok) {
+        throw new ApiError(await res.text(), res.status);
+      }
+      return res.json();
+    },
+
+    /**
+     * Create a new drawing
+     */
+    create: async (data: ChartDrawingCreate): Promise<ChartDrawing> => {
+      const res = await fetch(`${BASE}/drawings`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeaders(),
+        },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        throw new ApiError(await res.text(), res.status);
+      }
+      return res.json();
+    },
+
+    /**
+     * Update a drawing (with optimistic concurrency)
+     */
+    update: async (id: number, data: ChartDrawingUpdate): Promise<ChartDrawing> => {
+      const res = await fetch(`${BASE}/drawings/${id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeaders(),
+        },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        throw new ApiError(await res.text(), res.status);
+      }
+      return res.json();
+    },
+
+    /**
+     * Delete a single drawing (soft delete)
+     */
+    delete: async (id: number): Promise<void> => {
+      const res = await fetch(`${BASE}/drawings/${id}`, {
+        method: "DELETE",
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok && res.status !== 204) {
+        throw new ApiError(await res.text(), res.status);
+      }
+    },
+
+    /**
+     * Delete all drawings for a ticker (soft delete)
+     */
+    deleteAll: async (ticker: string): Promise<{ deleted: number }> => {
+      const res = await fetch(`${BASE}/drawings/${encodeURIComponent(ticker)}/all`, {
+        method: "DELETE",
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) {
+        throw new ApiError(await res.text(), res.status);
+      }
+      return res.json();
+    },
+
+    /**
+     * Batch create multiple drawings
+     */
+    batchCreate: async (data: BatchDrawingCreate): Promise<BatchDrawingResponse> => {
+      const res = await fetch(`${BASE}/drawings/batch`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeaders(),
+        },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        throw new ApiError(await res.text(), res.status);
+      }
+      return res.json();
+    },
   },
 };
 

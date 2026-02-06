@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { api } from "../lib/api";
 import type { FinancialStatementsResponse } from "../lib/types";
 
@@ -73,8 +73,14 @@ export function FinancialStatements({ data, ticker }: FinancialStatementsProps) 
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [period, setPeriod] = useState<"quarterly" | "annual">("quarterly");
+  const [maxColumns, setMaxColumns] = useState<4 | 8>(8);
 
-  
+  // Auto-adjust column count when period changes
+  useEffect(() => {
+    setMaxColumns(period === "annual" ? 4 : 8);
+  }, [period]);
+
+
 
 const statementData =
   data?.[period]?.[activeTab as keyof typeof data.annual] ?? {};
@@ -86,7 +92,19 @@ const statementData =
     if (isNaN(dateA)) return 1;
     return dateB - dateA;
   });
-  
+
+  // Limit to user preference OR available data, whichever is smaller
+  const visibleDates = dates.slice(0, Math.min(maxColumns, dates.length));
+  const actualColumnCount = visibleDates.length;
+
+  // Count metrics per date to detect sparse columns
+  const metricsPerDate: Record<string, number> = {};
+  dates.forEach(date => {
+    metricsPerDate[date] = Object.keys(statementData[date] || {}).length;
+  });
+  const maxMetrics = Math.max(...Object.values(metricsPerDate), 1);
+  const SPARSE_THRESHOLD = 0.3; // Column is sparse if it has <30% of max metrics
+
   const allKeys = new Set<string>();
   dates.forEach(date => {
     Object.keys(statementData[date] || {}).forEach(key => allKeys.add(key));
@@ -95,6 +113,8 @@ const statementData =
   const keyMetrics = KEY_METRICS[activeTab] || [];
   const displayKeys = keyMetrics.filter(k => allKeys.has(k));
   const otherKeys = Array.from(allKeys).filter(k => !keyMetrics.includes(k)).sort();
+
+  const [exporting, setExporting] = useState(false);
 
   async function handleAnalyze() {
     setAnalyzing(true);
@@ -106,6 +126,25 @@ const statementData =
       setAnalysisError(e?.message ?? "Failed to generate analysis");
     } finally {
       setAnalyzing(false);
+    }
+  }
+
+  async function handleExport() {
+    setExporting(true);
+    try {
+      const blob = await api.exportFinancialsToExcel(ticker);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${ticker}_Financials.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      setAnalysisError(e?.message ?? "Failed to export");
+    } finally {
+      setExporting(false);
     }
   }
 
@@ -174,6 +213,37 @@ const statementData =
             </button>
             </div>
 
+          <div style={{ display: "flex", gap: 4, marginLeft: 8 }}>
+            <button
+              onClick={() => setMaxColumns(4)}
+              style={{
+                padding: "6px 10px",
+                fontSize: 13,
+                cursor: "pointer",
+                background: maxColumns === 4 ? "#3b82f6" : "#2d2d2d",
+                color: "#fff",
+                border: "none",
+                borderRadius: 4,
+              }}
+            >
+              4 cols
+            </button>
+            <button
+              onClick={() => setMaxColumns(8)}
+              style={{
+                padding: "6px 10px",
+                fontSize: 13,
+                cursor: "pointer",
+                background: maxColumns === 8 ? "#3b82f6" : "#2d2d2d",
+                color: "#fff",
+                border: "none",
+                borderRadius: 4,
+              }}
+            >
+              8 cols
+            </button>
+          </div>
+
           <button
             onClick={handleAnalyze}
             disabled={analyzing}
@@ -193,6 +263,27 @@ const statementData =
           >
             <span>✨</span>
             {analyzing ? "Analyzing..." : analysis ? "Re-analyze" : "AI Analysis"}
+          </button>
+
+          <button
+            onClick={handleExport}
+            disabled={exporting}
+            style={{
+              padding: "6px 12px",
+              fontSize: 13,
+              cursor: exporting ? "wait" : "pointer",
+              background: "#059669",
+              color: "#fff",
+              border: "none",
+              borderRadius: 4,
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              opacity: exporting ? 0.7 : 1,
+            }}
+          >
+            <span>📥</span>
+            {exporting ? "Exporting..." : "Export Excel"}
           </button>
         </div>
       </div>
@@ -256,26 +347,41 @@ const statementData =
                 position: "sticky",
                 left: 0,
                 background: "#1a1a1a",
-                minWidth: 200
+                minWidth: 180
               }}>
                 Metric
               </th>
-              {dates.slice(0, 4).map((date) => (
-                <th 
-                  key={date} 
-                  style={{ 
-                    textAlign: "right", 
-                    padding: "10px 8px", 
-                    opacity: 0.6, 
-                    fontWeight: 500, 
-                    fontSize: 11, 
-                    textTransform: "uppercase",
-                    minWidth: 100
-                  }}
-                >
-                  {formatDate(date, period)}
-                </th>
-              ))}
+              {visibleDates.map((date) => {
+                const isSparse = metricsPerDate[date] / maxMetrics < SPARSE_THRESHOLD;
+                return (
+                  <th
+                    key={date}
+                    style={{
+                      textAlign: "right",
+                      padding: "10px 8px",
+                      opacity: isSparse ? 0.4 : 0.6,
+                      fontWeight: 500,
+                      fontSize: 11,
+                      textTransform: "uppercase",
+                      minWidth: 85
+                    }}
+                  >
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+                      <span>{formatDate(date, period)}</span>
+                      {isSparse && (
+                        <span style={{
+                          fontSize: 9,
+                          color: "#f59e0b",
+                          textTransform: "none",
+                          fontWeight: 400
+                        }}>
+                          Limited data
+                        </span>
+                      )}
+                    </div>
+                  </th>
+                );
+              })}
             </tr>
           </thead>
           <tbody>
@@ -296,7 +402,7 @@ const statementData =
                 }}>
                   {key}
                 </td>
-                {dates.slice(0, 4).map((date) => {
+                {visibleDates.map((date) => {
                   const value = statementData[date]?.[key];
                   return (
                     <td
@@ -314,10 +420,10 @@ const statementData =
                 })}
               </tr>
             ))}
-            
+
             {displayKeys.length > 0 && otherKeys.length > 0 && (
               <tr>
-                <td colSpan={5} style={{ padding: "8px", opacity: 0.4, fontSize: 11, textTransform: "uppercase" }}>
+                <td colSpan={actualColumnCount + 1} style={{ padding: "8px", opacity: 0.4, fontSize: 11, textTransform: "uppercase" }}>
                   Other Metrics
                 </td>
               </tr>
@@ -340,7 +446,7 @@ const statementData =
                 }}>
                   {key}
                 </td>
-                {dates.slice(0, 4).map((date) => {
+                {visibleDates.map((date) => {
                   const value = statementData[date]?.[key];
                   return (
                     <td

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { api } from "../../lib/api";
 import { useUserData, type PortfolioPosition } from "../../lib/userData";
 import { useAuth } from "../../lib/auth";
+import { PortfolioBenchmarkTable } from "./PortfolioBenchmarkTable";
 
 interface LivePosition extends PortfolioPosition {
   currentPrice: number;
@@ -160,6 +161,21 @@ export function PortfolioCard({ onSelect }: PortfolioCardProps) {
   const [selectedName, setSelectedName] = useState("");
   const [formShares, setFormShares] = useState("");
   const [formCost, setFormCost] = useState("");
+
+  // Benchmark selection (persisted to localStorage)
+  const [selectedBenchmarks, setSelectedBenchmarks] = useState<string[]>(() => {
+    try {
+      const stored = localStorage.getItem("hf_benchmarks");
+      return stored ? JSON.parse(stored) : ["SPY", "QQQ", "GLD", "BTC-USD"];
+    } catch {
+      return ["SPY", "QQQ", "GLD", "BTC-USD"];
+    }
+  });
+
+  // Persist benchmark selection
+  useEffect(() => {
+    localStorage.setItem("hf_benchmarks", JSON.stringify(selectedBenchmarks));
+  }, [selectedBenchmarks]);
 
   // Fetch live prices
   useEffect(() => {
@@ -587,6 +603,24 @@ export function PortfolioCard({ onSelect }: PortfolioCardProps) {
           </tbody>
         </table>
       </div>
+
+      {/* Benchmark Comparison Section */}
+      {live.length > 0 && (
+        <div
+          style={{
+            marginTop: 16,
+            borderTop: "1px solid #2a2a2a",
+            paddingTop: 16,
+            position: "relative",
+          }}
+        >
+          <PortfolioBenchmarkTable
+            positions={portfolio}
+            selectedBenchmarks={selectedBenchmarks}
+            onBenchmarksChange={setSelectedBenchmarks}
+          />
+        </div>
+      )}
 
       <div style={{ marginTop: 10, fontSize: 10, color: "#444", textAlign: "center" }}>
         {isAuthenticated ? "Synced with your account" : "Saved locally on this browser"}

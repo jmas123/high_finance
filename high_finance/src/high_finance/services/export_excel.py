@@ -723,3 +723,328 @@ async def generate_ticker_export(
     logger.info(f"Generated ticker export for {ticker} user={user_id}")
 
     return _workbook_to_bytes(wb)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# COMPS EXPORT FUNCTIONS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _sanitize_cell_value(value: Any) -> Any:
+    """
+    Prevent formula injection by prefixing dangerous characters.
+    Excel interprets cells starting with =, +, -, @, tab, or CR as formulas.
+    """
+    if isinstance(value, str) and value and value[0] in ('=', '+', '-', '@', '\t', '\r'):
+        return "'" + value
+    return value
+
+
+def _format_metric_value(metric: str, value: Optional[float]) -> str:
+    """Format a metric value appropriately based on metric type."""
+    if value is None:
+        return "—"
+
+    # Market cap - format as large number
+    if metric == "market_cap":
+        return _format_large_number(value)
+
+    # Percentage metrics
+    percent_metrics = {"revenue_growth", "roe", "dividend_yield", "gross_margins", "profit_margin"}
+    if metric in percent_metrics:
+        return f"{value * 100:.1f}%"
+
+    # Ratio/multiple metrics
+    return f"{value:.2f}x"
+
+
+def _metric_label(metric: str) -> str:
+    """Convert metric key to display label."""
+    labels = {
+        "market_cap": "Market Cap",
+        "pe_ratio": "P/E Ratio",
+        "forward_pe": "Forward P/E",
+        "pb_ratio": "P/B Ratio",
+        "roe": "ROE",
+        "ev_to_ebitda": "EV/EBITDA",
+        "ev_to_sales": "EV/Sales",
+        "revenue_growth": "Revenue Growth",
+        "gross_margins": "Gross Margin",
+        "dividend_yield": "Dividend Yield",
+        "profit_margin": "Profit Margin",
+        "beta": "Beta",
+    }
+    return labels.get(metric, metric.replace("_", " ").title())
+
+
+def _create_comps_sheet(
+    wb: Workbook,
+    target: Dict,
+    peers: List[Dict],
+    statistics: Dict,
+    implied_prices: Dict,
+    template: Dict,
+):
+    """Create Comparable Analysis tab."""
+    ws = wb.active
+    ws.title = "Comparable Analysis"
+
+    row = 1
+
+    # Header
+    target_ticker = target.get("ticker", "Unknown")
+    target_name = target.get("name") or target_ticker
+    ws.cell(row=row, column=1, value=f"{target_ticker} Comparable Analysis").font = Font(bold=True, size=16)
+    row += 1
+    ws.cell(row=row, column=1, value=f"Generated: {datetime.now().strftime('%B %d, %Y')}").font = Font(italic=True, color="666666")
+    row += 1
+    ws.cell(row=row, column=1, value=f"Industry: {target.get('industry', 'N/A')} | Sector: {target.get('sector', 'N/A')}").font = Font(color="888888")
+    row += 2
+
+    # Get metrics from template
+    metrics = template.get("metrics", ["market_cap", "pe_ratio", "revenue_growth"])
+
+    # Build header row
+    headers = ["Company", "Ticker"] + [_metric_label(m) for m in metrics]
+    _add_header_row(ws, row, headers)
+    row += 1
+
+    # Combine target + peers and sort by market cap
+    all_companies = [target] + [p for p in peers if p.get("status") != "not_found"]
+    all_companies.sort(key=lambda c: c.get("market_cap") or 0, reverse=True)
+
+    # Data rows
+    for company in all_companies:
+        is_target = company.get("ticker") == target_ticker
+        ticker = _sanitize_cell_value(company.get("ticker", ""))
+        name = _sanitize_cell_value(company.get("name") or ticker)
+
+        # Company name
+        cell = ws.cell(row=row, column=1, value=name)
+        if is_target:
+            cell.font = BOLD_FONT
+            cell.fill = PatternFill(start_color="E8F5E9", end_color="E8F5E9", fill_type="solid")
+
+        # Ticker
+        cell = ws.cell(row=row, column=2, value=ticker)
+        if is_target:
+            cell.font = BOLD_FONT
+            cell.fill = PatternFill(start_color="E8F5E9", end_color="E8F5E9", fill_type="solid")
+
+        # Metrics
+        for col_idx, metric in enumerate(metrics, start=3):
+            value = company.get(metric)
+            cell = ws.cell(row=row, column=col_idx, value=_format_metric_value(metric, value))
+            cell.alignment = Alignment(horizontal="right")
+            cell.border = THIN_BORDER
+            if is_target:
+                cell.fill = PatternFill(start_color="E8F5E9", end_color="E8F5E9", fill_type="solid")
+
+        row += 1
+
+    # Separator
+    row += 1
+
+    # Statistics section
+    ws.cell(row=row, column=1, value="Peer Statistics").font = BOLD_FONT
+    row += 1
+
+    # Median row
+    ws.cell(row=row, column=1, value="Peer Median")
+    ws.cell(row=row, column=2, value="—")
+    for col_idx, metric in enumerate(metrics, start=3):
+        stats = statistics.get(metric, {})
+        median = stats.get("median")
+        cell = ws.cell(row=row, column=col_idx, value=_format_metric_value(metric, median))
+        cell.alignment = Alignment(horizontal="right")
+        cell.fill = GREEN_FILL
+        cell.border = THIN_BORDER
+    row += 1
+
+    # Mean row
+    ws.cell(row=row, column=1, value="Peer Mean")
+    ws.cell(row=row, column=2, value="—")
+    for col_idx, metric in enumerate(metrics, start=3):
+        stats = statistics.get(metric, {})
+        mean = stats.get("mean")
+        cell = ws.cell(row=row, column=col_idx, value=_format_metric_value(metric, mean))
+        cell.alignment = Alignment(horizontal="right")
+        cell.border = THIN_BORDER
+    row += 1
+
+    # 25th-75th range row
+    ws.cell(row=row, column=1, value="25th - 75th Percentile")
+    ws.cell(row=row, column=2, value="—")
+    for col_idx, metric in enumerate(metrics, start=3):
+        stats = statistics.get(metric, {})
+        p25 = stats.get("p25")
+        p75 = stats.get("p75")
+        if p25 is not None and p75 is not None:
+            range_str = f"{_format_metric_value(metric, p25)} – {_format_metric_value(metric, p75)}"
+        else:
+            range_str = "—"
+        cell = ws.cell(row=row, column=col_idx, value=range_str)
+        cell.alignment = Alignment(horizontal="right")
+        cell.font = Font(color="666666", size=10)
+        cell.border = THIN_BORDER
+    row += 2
+
+    # Implied valuation section
+    if implied_prices and any(v is not None for v in implied_prices.values()):
+        ws.cell(row=row, column=1, value="Implied Valuation at Peer Median").font = BOLD_FONT
+        row += 1
+
+        current_price = target.get("current_price")
+        if current_price:
+            ws.cell(row=row, column=1, value="Current Price")
+            ws.cell(row=row, column=2, value=_format_currency(current_price))
+            row += 1
+
+        for method, implied_price in implied_prices.items():
+            if implied_price is not None:
+                label = _metric_label(method)
+                ws.cell(row=row, column=1, value=f"Implied @ {label}")
+                cell = ws.cell(row=row, column=2, value=_format_currency(implied_price))
+                cell.fill = LIGHT_BLUE_FILL
+                cell.border = THIN_BORDER
+
+                # Calculate upside if current price available
+                if current_price and current_price > 0:
+                    upside = (implied_price - current_price) / current_price
+                    upside_str = f"{upside*100:+.1f}%"
+                    cell = ws.cell(row=row, column=3, value=upside_str)
+                    cell.font = Font(color="22C55E" if upside >= 0 else "EF4444", bold=True)
+
+                row += 1
+
+    row += 2
+
+    # Methodology note
+    ws.cell(row=row, column=1, value="Methodology").font = BOLD_FONT
+    row += 1
+    ws.cell(row=row, column=1, value="Data Source: Yahoo Finance via yfinance").font = Font(color="888888", size=10)
+    row += 1
+    ws.cell(row=row, column=1, value=f"Template: {template.get('label', 'Standard')}").font = Font(color="888888", size=10)
+    row += 1
+    ws.cell(row=row, column=1, value=f"Peer Count: {len(peers)} companies").font = Font(color="888888", size=10)
+
+    # Freeze header row
+    ws.freeze_panes = "A7"
+
+    _auto_width_columns(ws)
+
+
+async def generate_financials_export(ticker: str, financials: Dict) -> BytesIO:
+    """
+    Generate a comprehensive financials Excel export.
+
+    Creates tabs for each financial statement (quarterly and annual):
+    - Income Statement (Annual)
+    - Income Statement (Quarterly)
+    - Balance Sheet (Annual)
+    - Balance Sheet (Quarterly)
+    - Cash Flow (Annual)
+    - Cash Flow (Quarterly)
+    """
+    wb = Workbook()
+
+    # Remove default sheet
+    wb.remove(wb.active)
+
+    statement_configs = [
+        ("Income Statement", "income_statement"),
+        ("Balance Sheet", "balance_sheet"),
+        ("Cash Flow", "cash_flow"),
+    ]
+
+    period_configs = [
+        ("Annual", "annual"),
+        ("Quarterly", "quarterly"),
+    ]
+
+    for statement_label, statement_key in statement_configs:
+        for period_label, period_key in period_configs:
+            sheet_name = f"{statement_label} ({period_label})"
+            ws = wb.create_sheet(sheet_name)
+
+            data = financials.get(period_key, {}).get(statement_key, {})
+
+            if not data:
+                ws.cell(row=1, column=1, value=f"No {statement_label.lower()} data available")
+                continue
+
+            # Sort dates (most recent first)
+            dates = sorted(data.keys(), reverse=True)
+
+            # Get all metrics
+            all_metrics = set()
+            for date_data in data.values():
+                all_metrics.update(date_data.keys())
+            metrics = sorted(all_metrics)
+
+            # Header row
+            row = 1
+            ws.cell(row=row, column=1, value=f"{ticker} - {statement_label} ({period_label})").font = Font(bold=True, size=14)
+            row += 1
+            ws.cell(row=row, column=1, value=f"Generated: {datetime.now().strftime('%B %d, %Y')}").font = Font(italic=True, color="666666")
+            row += 2
+
+            # Column headers (dates)
+            _add_header_row(ws, row, ["Metric"] + dates)
+            row += 1
+
+            # Data rows
+            for metric in metrics:
+                ws.cell(row=row, column=1, value=metric)
+                for col_idx, date in enumerate(dates, start=2):
+                    value = data.get(date, {}).get(metric)
+                    if value is not None:
+                        cell = ws.cell(row=row, column=col_idx, value=_format_large_number(value))
+                        if value < 0:
+                            cell.font = RED_FONT
+                        cell.border = THIN_BORDER
+                        cell.alignment = Alignment(horizontal="right")
+                    else:
+                        ws.cell(row=row, column=col_idx, value="—").font = Font(color="888888")
+                row += 1
+
+            # Freeze panes (header row + metric column)
+            ws.freeze_panes = "B5"
+            _auto_width_columns(ws)
+
+    logger.info(f"Generated financials export for {ticker}")
+
+    return _workbook_to_bytes(wb)
+
+
+async def generate_comps_export(
+    target: Dict,
+    peers: List[Dict],
+    statistics: Dict,
+    implied_prices: Dict,
+    template: Dict,
+    format: str = "xlsx",
+) -> BytesIO:
+    """
+    Generate comparable analysis Excel export.
+
+    Args:
+        target: Target company fundamentals
+        peers: List of peer company fundamentals
+        statistics: Statistics per metric (mean, median, p25, p75, min, max)
+        implied_prices: Implied price at peer median for each valuation metric
+        template: Comp template with label and metrics list
+        format: Export format ("xlsx" or "csv")
+
+    Returns:
+        BytesIO containing the Excel file
+    """
+    if format not in ("xlsx", "csv"):
+        raise ValueError(f"Unsupported export format: {format}")
+
+    wb = Workbook()
+
+    _create_comps_sheet(wb, target, peers, statistics, implied_prices, template)
+
+    logger.info(f"Generated comps export for {target.get('ticker')} with {len(peers)} peers")
+
+    return _workbook_to_bytes(wb)
