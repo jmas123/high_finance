@@ -67,6 +67,15 @@ interface PriceChartWithDrawingsProps {
   ticker: string;
   onPeriodChange: (period: string) => void;
   isAuthenticated: boolean;
+  /**
+   * Called when user scrolls to the left edge of loaded data.
+   * Parent should fetch more historical data and prepend it.
+   * @param earliestDate - The earliest date in current data (YYYY-MM-DD)
+   * @returns Promise that resolves when loading is complete
+   */
+  onLoadMore?: (earliestDate: string) => Promise<void>;
+  /** Whether more historical data is currently being loaded */
+  isLoadingMore?: boolean;
 }
 
 const PERIODS = [
@@ -100,6 +109,8 @@ export function PriceChartWithDrawings({
   ticker,
   onPeriodChange,
   isAuthenticated,
+  onLoadMore,
+  isLoadingMore = false,
 }: PriceChartWithDrawingsProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -280,16 +291,25 @@ export function PriceChartWithDrawings({
 
     const intraday = isIntradayPeriod(activePeriod);
 
-    const chartData = data
-      .slice()
-      .sort((a, b) => a.timestamp - b.timestamp)
-      .map((d) => ({
-        time: intraday ? (d.timestamp as UTCTimestamp) : d.date.slice(0, 10),
-        open: d.open,
-        high: d.high,
-        low: d.low,
-        close: d.close,
-      }));
+    // Sort by timestamp first
+    const sortedData = data.slice().sort((a, b) => a.timestamp - b.timestamp);
+
+    // Deduplicate by time value - lightweight-charts requires strictly unique, ascending times
+    // When switching timeframes, API may return duplicates or multiple intraday candles
+    // collapse to the same date string. Keep the last entry for each time (most recent data).
+    const seen = new Map<string | number, typeof sortedData[0]>();
+    for (const d of sortedData) {
+      const timeKey = intraday ? d.timestamp : d.date.slice(0, 10);
+      seen.set(timeKey, d); // Last one wins (overwrites earlier duplicates)
+    }
+
+    const chartData = Array.from(seen.values()).map((d) => ({
+      time: intraday ? (d.timestamp as UTCTimestamp) : d.date.slice(0, 10),
+      open: d.open,
+      high: d.high,
+      low: d.low,
+      close: d.close,
+    }));
 
     chartRef.current.applyOptions({
       timeScale: {
@@ -304,6 +324,69 @@ export function PriceChartWithDrawings({
     // Resize overlay canvas after chart update
     setTimeout(resizeOverlayCanvas, 0);
   }, [data, activePeriod, resizeOverlayCanvas]);
+
+  // Infinite scroll - load more historical data when scrolling to the left edge
+  const loadMoreTriggeredRef = useRef(false);
+  const lastDataTimestampRef = useRef<number | null>(null);
+
+  // Reset ONLY when period changes (user explicitly selects new timeframe)
+  // Do NOT reset on data.length change - that causes infinite loops
+  useEffect(() => {
+    loadMoreTriggeredRef.current = false;
+    lastDataTimestampRef.current = null;
+  }, [activePeriod, ticker]);
+
+  useEffect(() => {
+    if (!chartRef.current || !onLoadMore) return;
+    // Don't enable infinite scroll for intraday periods
+    if (isIntradayPeriod(activePeriod)) return;
+    if (data.length === 0) return;
+
+    const chart = chartRef.current;
+
+    // Find the earliest date in the data
+    const sortedData = [...data].sort((a, b) => a.timestamp - b.timestamp);
+    const earliestTimestamp = sortedData[0]?.timestamp;
+    const earliestDate = sortedData[0]?.date.slice(0, 10);
+    if (!earliestDate || !earliestTimestamp) return;
+
+    // Track if this is genuinely new/different data (for reset logic)
+    // Only allow new triggers if we loaded MORE historical data (earlier timestamp)
+    if (lastDataTimestampRef.current === null) {
+      // First load for this period - record the earliest timestamp
+      lastDataTimestampRef.current = earliestTimestamp;
+    } else if (earliestTimestamp < lastDataTimestampRef.current) {
+      // We loaded older data - update the ref and allow new triggers
+      lastDataTimestampRef.current = earliestTimestamp;
+      loadMoreTriggeredRef.current = false;
+    }
+
+    const handleVisibleRangeChange = (range: { from: number; to: number } | null) => {
+      if (!range || loadMoreTriggeredRef.current || isLoadingMore) return;
+
+      const totalBars = data.length;
+      const visibleBars = range.to - range.from;
+
+      // KEY FIX: Only trigger if user has zoomed in or scrolled
+      // (visible range is smaller than total data)
+      // This prevents triggering when fitContent() shows all data
+      const hasScrolledOrZoomed = visibleBars < totalBars - 10;
+      if (!hasScrolledOrZoomed) return;
+
+      // Trigger when within 5 bars of the start AND user has scrolled left
+      const THRESHOLD = 5;
+      if (range.from <= THRESHOLD) {
+        loadMoreTriggeredRef.current = true;
+        onLoadMore(earliestDate);
+      }
+    };
+
+    chart.timeScale().subscribeVisibleLogicalRangeChange(handleVisibleRangeChange);
+
+    return () => {
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(handleVisibleRangeChange);
+    };
+  }, [data, activePeriod, onLoadMore, isLoadingMore, ticker]);
 
   // Update overlay indicators (SMA, EMA, Bollinger Bands)
   useEffect(() => {
@@ -893,6 +976,25 @@ export function PriceChartWithDrawings({
             }}
           >
             Loading drawings...
+          </div>
+        )}
+
+        {/* Loading More Historical Data Indicator */}
+        {isLoadingMore && (
+          <div
+            style={{
+              position: "absolute",
+              top: 8,
+              left: 8,
+              background: "rgba(59, 130, 246, 0.9)",
+              padding: "4px 10px",
+              borderRadius: 4,
+              fontSize: 11,
+              color: "#fff",
+              zIndex: 20,
+            }}
+          >
+            Loading history...
           </div>
         )}
       </div>

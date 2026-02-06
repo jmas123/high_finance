@@ -117,6 +117,15 @@ export const api = {
   prices: (ticker: string, period: string = "1y") =>
     getJSON<any[]>(`${BASE}/prices/${encodeURIComponent(ticker)}?period=${period}`),
 
+  /**
+   * Fetch price history for a specific date range.
+   * Used for infinite scroll / loading more historical data.
+   */
+  pricesByDateRange: (ticker: string, start: string, end: string) =>
+    getJSON<any[]>(
+      `${BASE}/prices/${encodeURIComponent(ticker)}?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`
+    ),
+
   financials: (ticker: string) =>
   getJSON<FinancialStatementsResponse>(
     `${BASE}/financials/${encodeURIComponent(ticker)}`

@@ -70,8 +70,22 @@ async def read_prices(
         default="1y",
         pattern="^(1d|5d|1mo|3mo|6mo|1y|2y|5y|10y|ytd|max)$",
     ),
+    start: Optional[str] = Query(
+        default=None,
+        description="Start date in YYYY-MM-DD format. If provided with end, overrides period.",
+    ),
+    end: Optional[str] = Query(
+        default=None,
+        description="End date in YYYY-MM-DD format. If provided with start, overrides period.",
+    ),
 ):
-    prices = await get_price_history(ticker, period)
+    """
+    Fetch price history for a ticker.
+
+    If both start and end are provided, fetches data for that date range.
+    Otherwise, uses the period parameter.
+    """
+    prices = await get_price_history(ticker, period, start=start, end=end)
     if not prices:
         raise HTTPException(status_code=404, detail="Price data not found")
     return prices

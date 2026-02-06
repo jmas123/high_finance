@@ -482,6 +482,62 @@ function TickerView() {
     }
   }
 
+  // State for infinite scroll loading
+  const [isLoadingMorePrices, setIsLoadingMorePrices] = useState(false);
+
+  /**
+   * Load more historical price data (infinite scroll).
+   * Fetches ~6 months of data ending at the earliestDate and prepends it.
+   */
+  async function loadMorePrices(earliestDate: string): Promise<void> {
+    if (!ticker || isLoadingMorePrices) return;
+
+    setIsLoadingMorePrices(true);
+    try {
+      // Parse the earliest date and calculate a range ~6 months before it
+      const endDate = new Date(earliestDate);
+      endDate.setDate(endDate.getDate() - 1); // End one day before current data starts
+
+      const startDate = new Date(endDate);
+      startDate.setMonth(startDate.getMonth() - 6); // Fetch ~6 months of additional data
+
+      const startStr = startDate.toISOString().slice(0, 10);
+      const endStr = endDate.toISOString().slice(0, 10);
+
+      const olderPrices = await api.pricesByDateRange(ticker, startStr, endStr);
+
+      if (olderPrices && olderPrices.length > 0) {
+        // Prepend older data to existing prices
+        // Use a Map to deduplicate by date (in case of overlap)
+        const merged = new Map<string, any>();
+
+        // Add older data first
+        for (const p of olderPrices) {
+          const key = p.date?.slice(0, 10) ?? p.timestamp;
+          merged.set(key, p);
+        }
+
+        // Add existing data (will overwrite any duplicates)
+        for (const p of prices) {
+          const key = p.date?.slice(0, 10) ?? p.timestamp;
+          merged.set(key, p);
+        }
+
+        // Convert back to array and sort by timestamp
+        const mergedArray = Array.from(merged.values()).sort(
+          (a, b) => a.timestamp - b.timestamp
+        );
+
+        setPrices(mergedArray);
+      }
+    } catch (e: any) {
+      console.error("Failed to load more prices:", e);
+      // Don't show error to user - infinite scroll failures are non-critical
+    } finally {
+      setIsLoadingMorePrices(false);
+    }
+  }
+
   // ── Personalization handlers ─────────────────────────────────────────────
   const inWatchlist = ticker ? isInWatchlist(ticker) : false;
 
@@ -707,6 +763,8 @@ function TickerView() {
               ticker={ticker}
               onPeriodChange={loadPrices}
               isAuthenticated={isAuthenticated}
+              onLoadMore={loadMorePrices}
+              isLoadingMore={isLoadingMorePrices}
             />
         </div>
       )}

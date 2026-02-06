@@ -1,24 +1,42 @@
 import yfinance as yf
 import math
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
-async def get_price_history(ticker: str, period: str = "1y") -> List[Dict[str, Any]]:
+async def get_price_history(
+    ticker: str,
+    period: str = "1y",
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+) -> List[Dict[str, Any]]:
     """
     Fetch price history for a ticker.
-    
-    Periods: 1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, ytd, max
+
+    Args:
+        ticker: Stock ticker symbol
+        period: Time period (1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, ytd, max)
+        start: Start date in YYYY-MM-DD format (overrides period if both start/end provided)
+        end: End date in YYYY-MM-DD format (overrides period if both start/end provided)
     """
     stock = yf.Ticker(ticker)
-    
-    # Use smaller intervals for short periods
-    if period == "1d":
+
+    # Determine interval based on period or date range
+    use_date_range = start is not None and end is not None
+
+    if use_date_range:
+        # For date ranges, always use daily interval
+        interval = "1d"
+    elif period == "1d":
         interval = "15m"
     elif period == "5d":
         interval = "1h"
     else:
         interval = "1d"
-    
-    hist = stock.history(period=period, interval=interval)
+
+    # Fetch history using either date range or period
+    if use_date_range:
+        hist = stock.history(start=start, end=end, interval=interval)
+    else:
+        hist = stock.history(period=period, interval=interval)
     
     if hist.empty:
         return []

@@ -49,11 +49,22 @@ export function useIndicators(
   configs: IndicatorConfig[],
   isIntraday: boolean
 ): UseIndicatorsReturn {
-  // Sort data by timestamp for calculations
+  // Sort and deduplicate data for calculations
+  // lightweight-charts requires strictly unique, ascending time values
   const sortedData = useMemo(() => {
     if (!priceData || priceData.length === 0) return [];
-    return [...priceData].sort((a, b) => a.timestamp - b.timestamp);
-  }, [priceData]);
+    const sorted = [...priceData].sort((a, b) => a.timestamp - b.timestamp);
+
+    // Deduplicate by time value that will be used in chart
+    // - Intraday: use timestamp directly
+    // - Daily: use date string (YYYY-MM-DD) since multiple intraday points collapse to same day
+    const seen = new Map<string | number, typeof sorted[0]>();
+    for (const d of sorted) {
+      const key = isIntraday ? d.timestamp : d.date.slice(0, 10);
+      seen.set(key, d); // Last one wins
+    }
+    return Array.from(seen.values());
+  }, [priceData, isIntraday]);
 
   // Get individual configs with proper typing
   const smaConfig = useMemo(
