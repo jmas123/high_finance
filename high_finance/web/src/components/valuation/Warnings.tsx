@@ -1,5 +1,7 @@
+import { memo } from "react";
 import type { Warning } from "../../lib/types";
-export function WarningBadge({ warning }: { warning: Warning }) {
+
+export const WarningBadge = memo(function WarningBadge({ warning }: { warning: Warning }) {
   const colors = {
     info: { bg: "rgba(59, 130, 246, 0.15)", border: "rgba(59, 130, 246, 0.3)", text: "#60a5fa" },
     warning: { bg: "rgba(245, 158, 11, 0.15)", border: "rgba(245, 158, 11, 0.3)", text: "#fbbf24" },
@@ -23,5 +25,4 @@ export function WarningBadge({ warning }: { warning: Warning }) {
       )}
     </div>
   );
-}
-
+});

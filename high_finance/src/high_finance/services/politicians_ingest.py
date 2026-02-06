@@ -109,12 +109,12 @@ def _ensure_politician(db: Session, row: Dict[str, Any]) -> Politician:
         db.add(pol)
         db.flush()
     else:
-        # light update (don’t wipe existing)
-        pol.party = pol.party or party
-        pol.chamber = pol.chamber or chamber
-        pol.state = pol.state or state
-        pol.district = pol.district or (str(district) if district is not None else None)
-        pol.bioguide_id = pol.bioguide_id or bioguide_id
+        # light update — prefer fresh API data over stale DB values
+        pol.party = party or pol.party
+        pol.chamber = chamber or pol.chamber
+        pol.state = state or pol.state
+        pol.district = (str(district) if district is not None else None) or pol.district
+        pol.bioguide_id = bioguide_id or pol.bioguide_id
 
     return pol
 

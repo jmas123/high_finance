@@ -35,7 +35,11 @@ def build_trade_context(db: Session, trade: PoliticianTrade) -> dict:
     company = trade.company
     
 
-    c_tags = company_domains(getattr(company, "sector", None), getattr(company, "industry", None)) if company else set()
+    c_tags = company_domains(
+        getattr(company, "sector", None),
+        getattr(company, "industry", None),
+        getattr(company, "sic_code", None),
+    ) if company else set()
 
     memberships = (
         db.query(CommitteeMembership)

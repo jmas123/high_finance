@@ -60,12 +60,23 @@ function pillStyle(type: string) {
   } as const;
 }
 
-export function InsiderTradingCard({ ticker }: { ticker: string }) {
+interface InsiderTradingCardProps {
+  ticker: string;
+  initialData?: InsiderSummary | null;
+}
+
+export function InsiderTradingCard({ ticker, initialData }: InsiderTradingCardProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [summary, setSummary] = useState<InsiderSummary | null>(null);
+  const [summary, setSummary] = useState<InsiderSummary | null>(initialData ?? null);
 
   useEffect(() => {
+    // Skip fetch if we have initial data from bundle (even if null means no data)
+    if (initialData !== undefined) {
+      setSummary(initialData);
+      return;
+    }
+
     let mounted = true;
 
     async function load() {
@@ -84,7 +95,7 @@ export function InsiderTradingCard({ ticker }: { ticker: string }) {
 
     load();
     return () => { mounted = false; };
-  }, [ticker]);
+  }, [ticker, initialData]);
 
   const sentiment = useMemo(() => {
     if (!summary) return null;

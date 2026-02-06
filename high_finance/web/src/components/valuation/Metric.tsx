@@ -1,5 +1,6 @@
-import { useState } from "react";
-export function Metric({ label, value, hint, accent, tooltip }: { 
+import { memo, useState } from "react";
+
+export const Metric = memo(function Metric({ label, value, hint, accent, tooltip }: { 
   label: string; 
   value: string; 
   hint?: string;
@@ -85,4 +86,4 @@ export function Metric({ label, value, hint, accent, tooltip }: {
       )}
     </div>
   );
-}
+});

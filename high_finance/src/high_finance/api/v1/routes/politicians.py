@@ -7,6 +7,7 @@ from high_finance.api.v1.schemas.politician import PoliticianOut, PoliticianTrad
 from high_finance.services.politicians import (
     get_politician_trades,
     search_politicians,
+    ensure_company_trades_fresh,
 )
 
 from high_finance.api.v1.schemas.politician import PoliticianTradeWithPoliticianOut
@@ -33,6 +34,7 @@ def trades(politician_id: int, limit: int = 100, db: Session = Depends(get_db)):
     response_model=List[PoliticianTradeWithPoliticianOut],
 )
 def company_politician_trades(ticker: str, limit: int = 50, include_performance: bool = True, db: Session = Depends(get_db)):
+    ensure_company_trades_fresh(db, ticker)
     trades = get_company_politician_trades(db, ticker, limit=limit)
 
     results = []

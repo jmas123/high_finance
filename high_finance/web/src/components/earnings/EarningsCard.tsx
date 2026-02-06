@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { api } from "../../lib/api";
 
 type EarningsHistory = {
@@ -44,27 +44,46 @@ function daysUntil(dateStr: string): number {
   return Math.ceil((target.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
 }
 
-export function EarningsCard({ ticker }: { ticker: string }) {
+interface EarningsCardProps {
+  ticker: string;
+  initialData?: EarningsData | null;
+}
+
+export function EarningsCard({ ticker, initialData }: EarningsCardProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [data, setData] = useState<EarningsData | null>(null);
+  const [data, setData] = useState<EarningsData | null>(initialData ?? null);
   const [history, setHistory] = useState<EarningsHistory[]>([]);
+  const fetchingRef = useRef<string | null>(null); // Prevents StrictMode double-fetch
 
   useEffect(() => {
+    if (!ticker) return;
+
+    // Prevent StrictMode double-fetch
+    if (fetchingRef.current === ticker) return;
+    fetchingRef.current = ticker;
+
     let mounted = true;
 
     async function load() {
-      if (!ticker) return;
       setLoading(true);
       setError(null);
       try {
-        const [earningsData, historyData] = await Promise.all([
-          api.earnings(ticker),
-          api.earningsHistory(ticker),
-        ]);
-        if (mounted) {
-          setData(earningsData);
-          setHistory(historyData);
+        // If we have initial data from bundle (even if null), only fetch history
+        if (initialData !== undefined) {
+          setData(initialData);
+          const historyData = await api.earningsHistory(ticker);
+          if (mounted) setHistory(historyData);
+        } else {
+          // Fetch both if no initial data
+          const [earningsData, historyData] = await Promise.all([
+            api.earnings(ticker),
+            api.earningsHistory(ticker),
+          ]);
+          if (mounted) {
+            setData(earningsData);
+            setHistory(historyData);
+          }
         }
       } catch (e: any) {
         if (mounted) setError(e?.message ?? "Failed to load earnings");
@@ -75,7 +94,7 @@ export function EarningsCard({ ticker }: { ticker: string }) {
 
     load();
     return () => { mounted = false; };
-  }, [ticker]);
+  }, [ticker, initialData]);
 
   // Calculate historical stats
   const beatRate = history.length > 0 

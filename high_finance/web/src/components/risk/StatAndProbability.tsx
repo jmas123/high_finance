@@ -1,4 +1,6 @@
-export function Stat({
+import { memo } from "react";
+
+export const Stat = memo(function Stat({
   label,
   value,
   hint,
@@ -57,9 +59,9 @@ export function Stat({
       )}
     </div>
   );
-}
+});
 
-export function ProbabilityBar({
+export const ProbabilityBar = memo(function ProbabilityBar({
   label,
   probability,
   color = "#3b82f6",
@@ -110,4 +112,4 @@ export function ProbabilityBar({
       </div>
     </div>
   );
-}
+});

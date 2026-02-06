@@ -261,14 +261,16 @@ async def get_iv_context(ticker: str) -> Dict[str, Any]:
                 try:
                     chain = stock.option_chain(expiry)
                     calls = chain.calls
-                    
+
                     if not calls.empty:
                         # Find ATM call
                         calls['distance'] = abs(calls['strike'] - current_price)
                         atm_call = calls.loc[calls['distance'].idxmin()]
-                        
+
                         atm_iv = atm_call.get('impliedVolatility', None)
-                        if atm_iv and not pd.isna(atm_iv):
+                        # Check if IV is valid (not NaN and not unreasonably low)
+                        # IV below 15% is almost never realistic for individual stocks
+                        if atm_iv and not pd.isna(atm_iv) and atm_iv >= 0.15:
                             days_to_exp = (datetime.strptime(expiry, "%Y-%m-%d") - datetime.now()).days
                             iv_by_expiry.append({
                                 "expiry": expiry,
@@ -279,13 +281,17 @@ async def get_iv_context(ticker: str) -> Dict[str, Any]:
                             })
                 except Exception:
                     continue
-            
+
             result["iv_by_expiry"] = iv_by_expiry
-            
-            # Set ATM IV from nearest expiry
+
+            # Set ATM IV from nearest expiry with valid IV
             if iv_by_expiry:
                 result["atm_iv"] = iv_by_expiry[0]["atm_iv"]
                 result["suggested_iv"] = iv_by_expiry[0]["atm_iv"]
+            elif result["hv_20"] and result["hv_20"] >= 0.10:
+                # Fall back to historical volatility if no valid option IV
+                result["suggested_iv"] = result["hv_20"]
+                result["atm_iv"] = result["hv_20"]
         
         # Fallback to HV if no IV available
         if result["suggested_iv"] is None or result["suggested_iv"] <= 0:
@@ -308,7 +314,7 @@ async def get_contract_iv(
 ) -> Dict[str, Any]:
     """
     Get the implied volatility for a specific contract.
-    
+
     Returns:
         - iv: The contract's implied volatility (decimal)
         - iv_pct: IV as percentage
@@ -317,34 +323,58 @@ async def get_contract_iv(
         - last_price: Last traded price
         - volume: Today's volume
         - open_interest: Open interest
+        - iv_source: 'contract', 'hv', or None
     """
     stock = yf.Ticker(ticker)
-    
+
     try:
         chain = stock.option_chain(expiry)
-        
+
         if option_type == 'call':
             df = chain.calls
         else:
             df = chain.puts
-        
+
         # Find the contract
         contract = df[df['strike'] == strike]
-        
+
         if contract.empty:
             # Try to find closest strike
             df['distance'] = abs(df['strike'] - strike)
             contract = df.loc[[df['distance'].idxmin()]]
-        
+
         if contract.empty:
             return {"error": "Contract not found", "iv": None}
-        
+
         row = contract.iloc[0]
-        
+
         iv = row.get('impliedVolatility', None)
-        if pd.isna(iv):
-            iv = None
-        
+        iv_source = 'contract'
+
+        # Check if IV is valid (not NaN and not unreasonably low)
+        # IV below 15% (0.15) is almost never realistic for individual stocks
+        # Even "boring" stocks like utilities have 15-20% IV
+        if pd.isna(iv) or iv < 0.15:
+            # Try to get historical volatility as fallback
+            try:
+                hist = stock.history(period="3mo")
+                if not hist.empty:
+                    hist['returns'] = hist['Close'].pct_change()
+                    hv_20 = hist['returns'].rolling(20).std() * (252 ** 0.5)
+                    hv_value = hv_20.iloc[-1]
+                    if not pd.isna(hv_value) and hv_value > 0.10:
+                        iv = float(hv_value)
+                        iv_source = 'hv'
+                    else:
+                        iv = 0.25  # Default fallback: 25%
+                        iv_source = 'default'
+                else:
+                    iv = 0.25
+                    iv_source = 'default'
+            except:
+                iv = 0.25
+                iv_source = 'default'
+
         return {
             "strike": row['strike'],
             "iv": round(iv, 4) if iv else None,
@@ -354,8 +384,9 @@ async def get_contract_iv(
             "last_price": row.get('lastPrice', 0) or 0,
             "volume": int(row.get('volume', 0) or 0),
             "open_interest": int(row.get('openInterest', 0) or 0),
+            "iv_source": iv_source,
         }
-        
+
     except Exception as e:
         return {"error": str(e), "iv": None}
 

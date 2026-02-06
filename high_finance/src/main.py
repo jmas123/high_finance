@@ -16,7 +16,8 @@ from high_finance.api.v1.routes import (
     companies, fundamentals, ownership, leadership,
     prices, financials, predictions, search, politicians,
     insider, institutional, earnings, options, news, risk, valuation, notifications, market,
-    project, screener, auth, user_data, export, admin, calendar, chart_drawing, portfolio_performance
+    project, screener, auth, user_data, export, admin, calendar, chart_drawing, portfolio_performance,
+    private_companies, ticker_bundle
 )
 
 # Configure logging
@@ -94,6 +95,8 @@ app.include_router(admin.router, prefix="/api/v1/admin", tags=["admin"])
 app.include_router(calendar.router, prefix="/api/v1/calendar", tags=["calendar"])
 app.include_router(chart_drawing.router, prefix="/api/v1/drawings", tags=["drawings"])
 app.include_router(portfolio_performance.router, prefix="/api/v1/portfolio", tags=["portfolio"])
+app.include_router(private_companies.router, prefix="/api/v1/private-companies", tags=["private-companies"])
+app.include_router(ticker_bundle.router, prefix="/api/v1/ticker", tags=["ticker-bundle"])
 
 
 @app.exception_handler(Exception)

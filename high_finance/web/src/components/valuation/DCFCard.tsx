@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import type { ValuationBundle, Warning, SliderReference, ValuationScenarioInputs } from "../../lib/types";
 import { MultiplesTable } from "./MultiplesTable";
 import { FairValueRangeBar } from "./FairValueRangeBar";
@@ -61,9 +61,11 @@ interface DCFCardProps {
   ticker: string;
   /** Optional callback – reports current DCF state to parent (for Research Projects snapshot) */
   onStateChange?: (state: DCFStateReport | null) => void;
+  /** Initial data from bundle - used if no saved inputs in localStorage */
+  initialData?: ValuationBundle | null;
 }
 
-export function DCFCard({ ticker, onStateChange }: DCFCardProps) {
+export function DCFCard({ ticker, onStateChange, initialData }: DCFCardProps) {
   const [growth, setGrowth] = useState<number | null>(null);
   const [margin, setMargin] = useState<number | null>(null);
   const [tax, setTax] = useState<number | null>(null);
@@ -75,6 +77,8 @@ export function DCFCard({ ticker, onStateChange }: DCFCardProps) {
   const [err, setErr] = useState<string | null>(null);
   const [initialized, setInitialized] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
+  const [skipNextUpdate, setSkipNextUpdate] = useState(false); // Prevents double-fetch after init
+  const fetchingRef = useRef<string | null>(null); // Prevents StrictMode double-fetch
 
   const [activeTab, setActiveTab] = useState<"dcf" | "multiples" | "sensitivity">("dcf");
 
@@ -118,9 +122,13 @@ export function DCFCard({ ticker, onStateChange }: DCFCardProps) {
     });
   }, [data, growth, margin, tax, wacc, terminalG, initialized]);
 
-  // Initial load - check localStorage first, then fall back to smart defaults
+  // Initial load - check localStorage first, then fall back to bundle or smart defaults
   useEffect(() => {
     if (!ticker) return;
+
+    // Prevent StrictMode double-fetch
+    if (fetchingRef.current === ticker) return;
+    fetchingRef.current = ticker;
 
     let mounted = true;
     async function loadInitial() {
@@ -132,8 +140,9 @@ export function DCFCard({ ticker, onStateChange }: DCFCardProps) {
       const saved = loadSavedInputs(ticker);
 
       try {
-        // If we have saved inputs, use them; otherwise get smart defaults
-        let url = `/api/v1/valuation/${encodeURIComponent(ticker)}`;
+        let json: ValuationBundle;
+
+        // If we have saved inputs, need to refetch with those params
         if (saved) {
           const q = new URLSearchParams({
             growth: String(saved.growth),
@@ -142,12 +151,18 @@ export function DCFCard({ ticker, onStateChange }: DCFCardProps) {
             wacc: String(saved.wacc),
             terminal_g: String(saved.terminal_g),
           });
-          url += `?${q.toString()}`;
+          const res = await fetch(`/api/v1/valuation/${encodeURIComponent(ticker)}?${q.toString()}`);
+          if (!res.ok) throw new Error(await res.text());
+          json = (await res.json()) as ValuationBundle;
+        } else if (initialData) {
+          // Use bundle data if available and no saved inputs
+          json = initialData;
+        } else {
+          // Fetch with smart defaults
+          const res = await fetch(`/api/v1/valuation/${encodeURIComponent(ticker)}`);
+          if (!res.ok) throw new Error(await res.text());
+          json = (await res.json()) as ValuationBundle;
         }
-
-        const res = await fetch(url);
-        if (!res.ok) throw new Error(await res.text());
-        const json = (await res.json()) as ValuationBundle;
 
         if (mounted) {
           setData(json);
@@ -168,6 +183,7 @@ export function DCFCard({ ticker, onStateChange }: DCFCardProps) {
             setLastSaved(new Date());
           }
           setInitialized(true);
+          setSkipNextUpdate(true); // Prevent subsequent useEffect from refetching immediately
         }
       } catch (e: any) {
         if (mounted) setErr(e?.message ?? "Failed to load valuation");
@@ -177,11 +193,17 @@ export function DCFCard({ ticker, onStateChange }: DCFCardProps) {
     }
     loadInitial();
     return () => { mounted = false; };
-  }, [ticker]);
+  }, [ticker, initialData]);
 
   // Subsequent updates when sliders change - also saves to localStorage
   useEffect(() => {
     if (!ticker || !initialized || growth === null) return;
+
+    // Skip the first run after initialization (we just loaded data)
+    if (skipNextUpdate) {
+      setSkipNextUpdate(false);
+      return;
+    }
 
     let mounted = true;
     async function update() {

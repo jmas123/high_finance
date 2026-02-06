@@ -54,13 +54,24 @@ function formatPercentChange(value: number | null | undefined): string {
   return `${pct > 0 ? "+" : ""}${pct.toFixed(1)}%`;
 }
 
-export function InstitutionalFlowCard({ ticker }: { ticker: string }) {
+interface InstitutionalFlowCardProps {
+  ticker: string;
+  initialData?: FlowData | null;
+}
+
+export function InstitutionalFlowCard({ ticker, initialData }: InstitutionalFlowCardProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [data, setData] = useState<FlowData | null>(null);
+  const [data, setData] = useState<FlowData | null>(initialData ?? null);
   const [activeTab, setActiveTab] = useState<"top" | "increasing" | "decreasing" | "funds">("top");
 
   useEffect(() => {
+    // Skip fetch if we have initial data from bundle (even if null)
+    if (initialData !== undefined) {
+      setData(initialData);
+      return;
+    }
+
     let mounted = true;
 
     async function load() {
@@ -79,7 +90,7 @@ export function InstitutionalFlowCard({ ticker }: { ticker: string }) {
 
     load();
     return () => { mounted = false; };
-  }, [ticker]);
+  }, [ticker, initialData]);
 
   const tabs = [
     { key: "top", label: "Top Holders" },

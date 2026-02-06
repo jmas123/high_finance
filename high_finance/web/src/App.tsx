@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, lazy, Suspense, useRef } from "react";
 import { Routes, Route, useNavigate, useParams, useLocation, Link } from "react-router-dom";
 import { api } from "./lib/api";
 import { projectsApi } from "./components/project/api";
@@ -9,11 +9,14 @@ import { EarningsCard } from "./components/earnings/EarningsCard";
 import { NewsCard } from "./components/NewsCard";
 import { RiskCard } from "./components/risk/RiskCard";
 import { OptionsFlowCard } from "./components/options/OptionsFlowCard";
-import { OptionDecaySimulator } from "./components/options/OptionsDecaySimulator";
+// Lazy load heavy components for better initial load time
+const OptionDecaySimulator = lazy(() =>
+  import("./components/options/OptionsDecaySimulator").then(m => ({ default: m.OptionDecaySimulator }))
+);
 import { DCFCard } from "./components/valuation/DCFCard";
 import { NotificationsCard } from "./components/notifications/NotificationsCard";
 import { CompsTable } from "./components/CompsTableCard";
-import type { CompsResponse, FinancialStatementsResponse } from "./lib/types";
+import type { CompsResponse, FinancialStatementsResponse, RiskBundle, ValuationBundle, NewsBundle, IVContext, PoliticianTradeWithContext } from "./lib/types";
 import { LeadershipTable } from "./components/LeadershipTable";
 import { FinancialStatements } from "./components/FinancialStatements";
 import { PredictionCard } from "./components/PredictionCard";
@@ -37,11 +40,137 @@ import { ProjectListCard } from "./components/project/ProjectListCard";
 import { ProjectWorkspace } from "./components/project/ProjectWorkSpace";
 import { SaveToProjectButton } from "./components/project/SaveToProjectButton";
 
-// ── Stock Screener ──────────────────────────────────────────────────────────
-import { ScreenerCard } from "./components/screener";
+// ── Stock Screener (lazy loaded) ────────────────────────────────────────────
+const ScreenerCard = lazy(() =>
+  import("./components/screener").then(m => ({ default: m.ScreenerCard }))
+);
 
 // ── Calendar ────────────────────────────────────────────────────────────────
 import { CalendarPopupButton } from "./components/calendar";
+
+// ── Private Companies ─────────────────────────────────────────────────────
+import { PrivateCompanyList } from "./components/private/PrivateCompanyList";
+import { PrivateCompanyProfileView } from "./components/private/PrivateCompanyProfile";
+
+// ── Loading fallback for lazy components ─────────────────────────────────────
+const LoadingSpinner = () => (
+  <div style={styles.loadingSpinner}>
+    <div style={{ fontSize: 32, marginBottom: 12 }}>⏳</div>
+    <div style={{ fontSize: 14 }}>Loading...</div>
+  </div>
+);
+
+// ── Static styles extracted outside components to prevent recreation ─────────
+const styles = {
+  // Layout
+  appContainer: {
+    width: "100%",
+    minHeight: "100vh",
+    background: "#111",
+    color: "#fff",
+    fontFamily: "system-ui, -apple-system, sans-serif",
+  } as const,
+  contentWrapper: {
+    maxWidth: 1200,
+    margin: "0 auto",
+    padding: 24,
+  } as const,
+  loadingSpinner: {
+    textAlign: "center" as const,
+    padding: 60,
+    opacity: 0.6,
+  },
+  // Header
+  headerRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: 16,
+    marginBottom: 24,
+  } as const,
+  searchContainer: { flex: 1 } as const,
+  authLoading: { fontSize: 13, color: "#666" } as const,
+  authRow: { display: "flex", alignItems: "center", gap: 10 } as const,
+  authEmail: { fontSize: 13, color: "#888" } as const,
+  signOutBtn: {
+    padding: "8px 14px",
+    background: "#222",
+    border: "1px solid #444",
+    borderRadius: 8,
+    color: "#fff",
+    fontSize: 13,
+    cursor: "pointer",
+  } as const,
+  signInBtn: {
+    padding: "8px 14px",
+    background: "#3b82f6",
+    border: "none",
+    borderRadius: 8,
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: 500,
+    cursor: "pointer",
+  } as const,
+  // Navigation tabs
+  navRow: { display: "flex", gap: 10, marginBottom: 16 } as const,
+  // Cards & sections
+  cardContainer: {
+    marginBottom: 20,
+    background: "#1a1a1a",
+    border: "1px solid #333",
+    borderRadius: 10,
+    padding: 16,
+  } as const,
+  gridTwoCol: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: 16,
+    marginBottom: 16,
+  } as const,
+  // Error
+  errorBanner: {
+    marginBottom: 20,
+    padding: 12,
+    background: "#3b1818",
+    border: "1px solid #7f1d1d",
+    borderRadius: 8,
+  } as const,
+  // Loading state
+  tickerLoading: {
+    textAlign: "center" as const,
+    padding: 80,
+    opacity: 0.6,
+  },
+  // ETF badge
+  etfBadge: {
+    display: "inline-block",
+    padding: "4px 12px",
+    background: "#3b82f6",
+    borderRadius: 999,
+    fontSize: 12,
+    fontWeight: 600,
+    marginBottom: 12,
+  } as const,
+  // Lazy loading fallback
+  lazyFallback: {
+    marginBottom: 20,
+    padding: 40,
+    background: "#1a1a1a",
+    borderRadius: 10,
+    textAlign: "center" as const,
+    opacity: 0.5,
+  },
+};
+
+// Nav link styles (function because active state varies)
+const getNavLinkStyle = (isActive: boolean) => ({
+  padding: "8px 12px",
+  borderRadius: 8,
+  border: "1px solid #444",
+  background: isActive ? "#222" : "#111",
+  color: "#fff",
+  cursor: "pointer",
+  textDecoration: "none",
+});
 
 // ── DCF state shape for snapshot wiring ──────────────────────────────────────
 type DCFState = {
@@ -70,31 +199,18 @@ export default function App() {
     if (location.pathname === "/screener") return "screener";
     if (location.pathname.startsWith("/projects")) return "projects";
     if (location.pathname === "/signals") return "signals";
+    if (location.pathname.startsWith("/private")) return "private";
     return "dashboard";
   };
 
   const activeTab = getActiveTab();
 
   return (
-    <div
-      style={{
-        width: "100%",
-        minHeight: "100vh",
-        background: "#111",
-        color: "#fff",
-        fontFamily: "system-ui, -apple-system, sans-serif",
-      }}
-    >
-      <div
-        style={{
-          maxWidth: 1200,
-          margin: "0 auto",
-          padding: 24,
-        }}
-      >
+    <div style={styles.appContainer}>
+      <div style={styles.contentWrapper}>
         {/* Header with Search + Calendar + Auth */}
-        <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 24 }}>
-          <div style={{ flex: 1 }}>
+        <div style={styles.headerRow}>
+          <div style={styles.searchContainer}>
             <SearchBar
               onSelect={(ticker) => navigate(`/quote/${ticker.toUpperCase()}`)}
               loading={false}
@@ -106,116 +222,53 @@ export default function App() {
           />
           {/* Auth Button */}
           {authLoading ? (
-            <div style={{ fontSize: 13, color: "#666" }}>...</div>
+            <div style={styles.authLoading}>...</div>
           ) : isAuthenticated && user ? (
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <span style={{ fontSize: 13, color: "#888" }}>{user.email}</span>
-              <button
-                onClick={logout}
-                style={{
-                  padding: "8px 14px",
-                  background: "#222",
-                  border: "1px solid #444",
-                  borderRadius: 8,
-                  color: "#fff",
-                  fontSize: 13,
-                  cursor: "pointer",
-                }}
-              >
+            <div style={styles.authRow}>
+              <span style={styles.authEmail}>{user.email}</span>
+              <button onClick={logout} style={styles.signOutBtn}>
                 Sign Out
               </button>
             </div>
           ) : (
-            <button
-              onClick={() => setShowAuthModal(true)}
-              style={{
-                padding: "8px 14px",
-                background: "#3b82f6",
-                border: "none",
-                borderRadius: 8,
-                color: "#fff",
-                fontSize: 13,
-                fontWeight: 500,
-                cursor: "pointer",
-              }}
-            >
+            <button onClick={() => setShowAuthModal(true)} style={styles.signInBtn}>
               Sign In
             </button>
           )}
         </div>
 
         {/* ── Navigation Tabs ───────────────────────────────────────────── */}
-        <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
-          <Link
-            to="/"
-            style={{
-              padding: "8px 12px",
-              borderRadius: 8,
-              border: "1px solid #444",
-              background: activeTab === "dashboard" ? "#222" : "#111",
-              color: "#fff",
-              cursor: "pointer",
-              textDecoration: "none",
-            }}
-          >
+        <div style={styles.navRow}>
+          <Link to="/" style={getNavLinkStyle(activeTab === "dashboard")}>
             Dashboard
           </Link>
-
-          <Link
-            to="/screener"
-            style={{
-              padding: "8px 12px",
-              borderRadius: 8,
-              border: "1px solid #444",
-              background: activeTab === "screener" ? "#222" : "#111",
-              color: "#fff",
-              cursor: "pointer",
-              textDecoration: "none",
-            }}
-          >
+          <Link to="/screener" style={getNavLinkStyle(activeTab === "screener")}>
             Screener
           </Link>
-
-          <Link
-            to="/projects"
-            style={{
-              padding: "8px 12px",
-              borderRadius: 8,
-              border: "1px solid #444",
-              background: activeTab === "projects" ? "#222" : "#111",
-              color: "#fff",
-              cursor: "pointer",
-              textDecoration: "none",
-            }}
-          >
+          <Link to="/projects" style={getNavLinkStyle(activeTab === "projects")}>
             Projects
           </Link>
-
-          <Link
-            to="/signals"
-            style={{
-              padding: "8px 12px",
-              borderRadius: 8,
-              border: "1px solid #444",
-              background: activeTab === "signals" ? "#222" : "#111",
-              color: "#fff",
-              cursor: "pointer",
-              textDecoration: "none",
-            }}
-          >
+          <Link to="/signals" style={getNavLinkStyle(activeTab === "signals")}>
             Signals
+          </Link>
+          <Link to="/private" style={getNavLinkStyle(activeTab === "private")}>
+            Private Cos
           </Link>
         </div>
 
-        {/* ── Routes ─────────────────────────────────────────────────────── */}
-        <Routes>
-          <Route path="/" element={<DashboardView />} />
-          <Route path="/quote/:ticker" element={<TickerView />} />
-          <Route path="/screener" element={<ScreenerView />} />
-          <Route path="/projects" element={<ProjectsListView />} />
-          <Route path="/projects/:projectId" element={<ProjectView />} />
-          <Route path="/signals" element={<SignalsView />} />
-        </Routes>
+        {/* ── Routes (wrapped in Suspense for lazy loading) ─────────────── */}
+        <Suspense fallback={<LoadingSpinner />}>
+          <Routes>
+            <Route path="/" element={<DashboardView />} />
+            <Route path="/quote/:ticker" element={<TickerView />} />
+            <Route path="/screener" element={<ScreenerView />} />
+            <Route path="/projects" element={<ProjectsListView />} />
+            <Route path="/projects/:projectId" element={<ProjectView />} />
+            <Route path="/signals" element={<SignalsView />} />
+            <Route path="/private" element={<PrivateCompanyList />} />
+            <Route path="/private/:slug" element={<PrivateCompanyProfileView />} />
+          </Routes>
+        </Suspense>
       </div>
 
       {/* Auth Modal */}
@@ -390,6 +443,24 @@ function TickerView() {
   const [prices, setPrices] = useState<any[]>([]);
   const [financials, setFinancials] = useState<FinancialStatementsResponse | null>(null);
 
+  // Bundle data - component-specific (fetched in single request to avoid connection limits)
+  const [riskData, setRiskData] = useState<RiskBundle | null>(null);
+  const [valuationData, setValuationData] = useState<ValuationBundle | null>(null);
+  const [institutionalFlow, setInstitutionalFlow] = useState<any | null>(null);
+  const [insiderTrades, setInsiderTrades] = useState<any[]>([]);
+  const [insiderSummary, setInsiderSummary] = useState<any | null>(null);
+  const [politicianTrades, setPoliticianTrades] = useState<PoliticianTradeWithContext[]>([]);
+  const [optionsOverview, setOptionsOverview] = useState<any | null>(null);
+  const [ivContext, setIvContext] = useState<IVContext | null>(null);
+  const [earningsData, setEarningsData] = useState<any | null>(null);
+  const [newsData, setNewsData] = useState<NewsBundle | null>(null);
+  const [predictionData, setPredictionData] = useState<any | null>(null);
+
+  // Market context (shared)
+  const [macroIndicators, setMacroIndicators] = useState<any | null>(null);
+  const [sectorsData, setSectorsData] = useState<any | null>(null);
+  const [rateImpact, setRateImpact] = useState<any | null>(null);
+
   const [showAddPosition, setShowAddPosition] = useState(false);
 
   // Check if we came from a project (for return button)
@@ -405,6 +476,9 @@ function TickerView() {
 
   const ticker = urlTicker?.toUpperCase() || "";
 
+  // Track in-flight request to prevent double fetches in StrictMode
+  const fetchingRef = useRef<string | null>(null);
+
   // Determine if current ticker is an ETF
   const isETF = fundamentals?.is_etf === true;
   const sector = fundamentals?.sector;
@@ -412,54 +486,92 @@ function TickerView() {
   const isStock = fundamentals && !isETF && !isMutualFund;
 
   // Load ticker data when URL param changes
+  // Uses bundled API endpoint to fetch ALL data in ONE request (avoids browser connection limit)
   const loadTicker = useCallback(async (t: string) => {
     if (!t) return;
+
+    // Prevent duplicate fetches (React StrictMode double-invokes effects)
+    if (fetchingRef.current === t) return;
+    fetchingRef.current = t;
 
     setLoading(true);
     setError(null);
     setShowAddPosition(false);
 
+    // Reset all state
     setCompany(null);
     setFundamentals(null);
     setLeadership([]);
     setPrices([]);
     setFinancials(null);
     setComps(null);
+    setRiskData(null);
+    setValuationData(null);
+    setInstitutionalFlow(null);
+    setInsiderTrades([]);
+    setInsiderSummary(null);
+    setPoliticianTrades([]);
+    setOptionsOverview(null);
+    setIvContext(null);
+    setEarningsData(null);
+    setNewsData(null);
+    setPredictionData(null);
+    setMacroIndicators(null);
+    setSectorsData(null);
+    setRateImpact(null);
 
     try {
-      // Always load these (work for both stocks and ETFs)
-      const [c, f, p] = await Promise.all([
-        api.company(t),
-        api.fundamentals(t),
-        api.prices(t, "1y"),
-      ]);
+      // Single request fetches ALL data - backend runs parallel fetches internally
+      const bundle = await api.tickerBundle(t, "1y");
 
-      setCompany(c);
-      setFundamentals(f);
-      setPrices(p);
+      // Check for critical failures
+      if (!bundle.company && !bundle.fundamentals) {
+        throw new Error("Ticker not found");
+      }
+
+      // Core data
+      setCompany(bundle.company);
+      setFundamentals(bundle.fundamentals);
+      setPrices(bundle.prices || []);
 
       // ── Personalization tracking ───────────────────────────────────────────
       addRecentTicker(t);
 
-      // Only load stock-specific data if NOT an ETF
-      const isEtfOrFund = f?.is_etf || f?.is_mutual_fund;
-
+      // Only set stock-specific data if NOT an ETF
+      const isEtfOrFund = bundle.fundamentals?.is_etf || bundle.fundamentals?.is_mutual_fund;
       if (!isEtfOrFund) {
-        // Load stock-specific data
-        const [l, fin, cmp] = await Promise.all([
-          api.leadership(t).catch(() => []),
-          api.financials(t).catch(() => null),
-          api.comps(t).catch(() => null),
-        ]);
+        setLeadership(bundle.leadership || []);
+        setFinancials(bundle.financials);
+        setComps(bundle.comps);
+      }
 
-        setLeadership(l);
-        setFinancials(fin);
-        setComps(cmp);
+      // Component data (from mega-bundle)
+      setRiskData(bundle.risk);
+      setValuationData(bundle.valuation);
+      setInstitutionalFlow(bundle.institutional_flow);
+      setInsiderTrades(bundle.insider_trades || []);
+      setInsiderSummary(bundle.insider_summary);
+      setPoliticianTrades(bundle.politician_trades || []);
+      setOptionsOverview(bundle.options_overview);
+      setIvContext(bundle.iv_context);
+      setEarningsData(bundle.earnings);
+      setNewsData(bundle.news);
+      setPredictionData(bundle.prediction);
+
+      // Market context
+      setMacroIndicators(bundle.macro_indicators);
+      setSectorsData(bundle.sectors);
+      setRateImpact(bundle.rate_impact);
+
+      // Log any partial failures for debugging
+      if (Object.keys(bundle.errors).length > 0) {
+        console.warn("Partial load failures:", bundle.errors);
       }
     } catch (e: any) {
       setError(e?.message ?? "Unknown error");
     } finally {
       setLoading(false);
+      fetchingRef.current = null;
     }
   }, []);
 
@@ -586,13 +698,7 @@ function TickerView() {
   // ── Loading State ─────────────────────────────────────────────────────────
   if (loading) {
     return (
-      <div
-        style={{
-          textAlign: "center",
-          padding: 80,
-          opacity: 0.6,
-        }}
-      >
+      <div style={styles.tickerLoading}>
         <div style={{ fontSize: 48, marginBottom: 20 }}>⏳</div>
         <div style={{ fontSize: 18 }}>Loading {ticker}...</div>
       </div>
@@ -603,16 +709,7 @@ function TickerView() {
     return (
       <div style={{ padding: 40, textAlign: "center", color: "#888" }}>
         {error ? (
-          <div
-            style={{
-              marginBottom: 20,
-              padding: 12,
-              background: "#3b1818",
-              border: "1px solid #7f1d1d",
-              borderRadius: 8,
-              textAlign: "left",
-            }}
-          >
+          <div style={{ ...styles.errorBanner, textAlign: "left" }}>
             <b>Error:</b> {error}
           </div>
         ) : (
@@ -625,35 +722,13 @@ function TickerView() {
   return (
     <>
       {error && (
-        <div
-          style={{
-            marginBottom: 20,
-            padding: 12,
-            background: "#3b1818",
-            border: "1px solid #7f1d1d",
-            borderRadius: 8,
-          }}
-        >
+        <div style={styles.errorBanner}>
           <b>Error:</b> {error}
         </div>
       )}
 
       {/* ETF Badge */}
-      {isETF && (
-        <div
-          style={{
-            display: "inline-block",
-            padding: "4px 12px",
-            background: "#3b82f6",
-            borderRadius: 999,
-            fontSize: 12,
-            fontWeight: 600,
-            marginBottom: 12,
-          }}
-        >
-          📊 ETF
-        </div>
-      )}
+      {isETF && <div style={styles.etfBadge}>📊 ETF</div>}
 
       <CompanyHeader company={company} fundamentals={fundamentals} prices={prices} />
 
@@ -780,33 +855,20 @@ function TickerView() {
           </div>
 
           {/* DCF + Risk (side by side) */}
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: 16,
-              marginBottom: 16,
-            }}
-          >
+          <div style={styles.gridTwoCol}>
             <DCFCard
               key={`dcf-${ticker}`}
               ticker={ticker}
               onStateChange={handleDCFStateChange}
+              initialData={valuationData}
             />
-            <RiskCard key={`risk-${ticker}`} ticker={ticker} />
+            <RiskCard key={`risk-${ticker}`} ticker={ticker} initialData={riskData} />
           </div>
 
           {/* Fundamentals + Institutional Flow */}
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: 16,
-              marginBottom: 16,
-            }}
-          >
+          <div style={styles.gridTwoCol}>
             <FundamentalsCard data={fundamentals} />
-            <InstitutionalFlowCard key={`inst-${ticker}`} ticker={ticker} />
+            <InstitutionalFlowCard key={`inst-${ticker}`} ticker={ticker} initialData={institutionalFlow} />
           </div>
 
           {/* Comps Table */}
@@ -832,15 +894,7 @@ function TickerView() {
             </div>
           )}
 
-          <div
-            style={{
-              marginBottom: 20,
-              background: "#1a1a1a",
-              border: "1px solid #333",
-              borderRadius: 10,
-              padding: 20,
-            }}
-          >
+          <div style={{ ...styles.cardContainer, padding: 20 }}>
             <BroaderMarketContext
               ticker={ticker}
               sector={sector}
@@ -851,16 +905,9 @@ function TickerView() {
           </div>
 
           {/* Insider + Politicians */}
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: 16,
-              marginBottom: 16,
-            }}
-          >
-            <InsiderTradingCard key={`insider-${ticker}`} ticker={ticker} />
-            <PoliticianTradesCard key={`pol-${ticker}`} ticker={ticker} />
+          <div style={styles.gridTwoCol}>
+            <InsiderTradingCard key={`insider-${ticker}`} ticker={ticker} initialData={insiderSummary} />
+            <PoliticianTradesCard key={`pol-${ticker}`} ticker={ticker} initialData={politicianTrades} />
           </div>
 
           {/* Leadership */}
@@ -868,7 +915,7 @@ function TickerView() {
 
           {/* Earnings */}
           <div style={{ marginBottom: 20 }}>
-            <EarningsCard key={`earnings-${ticker}`} ticker={ticker} />
+            <EarningsCard key={`earnings-${ticker}`} ticker={ticker} initialData={earningsData} />
           </div>
         </>
       )}
@@ -885,7 +932,7 @@ function TickerView() {
 
           {/* Risk Card - Works for ETFs too */}
           <div style={{ marginBottom: 20 }}>
-            <RiskCard key={`risk-${ticker}`} ticker={ticker} />
+            <RiskCard key={`risk-${ticker}`} ticker={ticker} initialData={riskData} />
           </div>
         </>
       )}
@@ -895,17 +942,22 @@ function TickerView() {
       {/* ==================== */}
 
       {/* News - Works for both */}
-      <NewsCard ticker={ticker} />
+      <NewsCard ticker={ticker} initialData={newsData} />
 
       {/* Options - Works for both (most ETFs have options) */}
       <div style={{ marginBottom: 20 }}>
-        <OptionsFlowCard key={`options-${ticker}`} ticker={ticker} />
+        <OptionsFlowCard key={`options-${ticker}`} ticker={ticker} initialData={optionsOverview} />
       </div>
 
-      {/* Option Decay Simulator - Works for both */}
-      <div style={{ marginBottom: 20 }}>
-        <OptionDecaySimulator key={`decay-${ticker}`} ticker={ticker} />
-      </div>
+      {/* Option Decay Simulator - Works for both (lazy loaded) */}
+      <Suspense fallback={<div style={styles.lazyFallback}>Loading decay simulator...</div>}>
+        <div style={{ marginBottom: 20 }}>
+          <OptionDecaySimulator
+            key={`decay-${ticker}`}
+            ticker={ticker}
+          />
+        </div>
+      </Suspense>
 
       {/* Financial Statements - Stock only */}
       {isStock && financials && (

@@ -193,12 +193,23 @@ function formatMoney(value: number | null | undefined): string {
 }
 
 // ===== MAIN COMPONENT =====
-export function OptionsFlowCard({ ticker }: { ticker: string }) {
+interface OptionsFlowCardProps {
+  ticker: string;
+  initialData?: OptionsData | null;
+}
+
+export function OptionsFlowCard({ ticker, initialData }: OptionsFlowCardProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [data, setData] = useState<OptionsData | null>(null);
+  const [data, setData] = useState<OptionsData | null>(initialData ?? null);
 
   useEffect(() => {
+    // Skip fetch if we have initial data from bundle (even if null)
+    if (initialData !== undefined) {
+      setData(initialData);
+      return;
+    }
+
     let mounted = true;
 
     async function load() {
@@ -217,7 +228,7 @@ export function OptionsFlowCard({ ticker }: { ticker: string }) {
 
     load();
     return () => { mounted = false; };
-  }, [ticker]);
+  }, [ticker, initialData]);
 
   // Determine sentiment
   const sentiment = data?.put_call_ratio

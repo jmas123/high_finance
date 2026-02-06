@@ -41,12 +41,23 @@ function timeAgo(dateStr: string | null): string {
   return `${Math.floor(diff / 86400)}d ago`;
 }
 
-export function NewsCard({ ticker }: { ticker: string }) {
+interface NewsCardProps {
+  ticker: string;
+  initialData?: NewsResponse | null;
+}
+
+export function NewsCard({ ticker, initialData }: NewsCardProps) {
   const [loading, setLoading] = useState(false);
-  const [data, setData] = useState<NewsResponse | null>(null);
+  const [data, setData] = useState<NewsResponse | null>(initialData ?? null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // Skip fetch if we have initial data from bundle (even if empty)
+    if (initialData !== undefined && initialData !== null) {
+      setData(initialData);
+      return;
+    }
+
     let mounted = true;
     async function load() {
       setLoading(true);
@@ -64,7 +75,7 @@ export function NewsCard({ ticker }: { ticker: string }) {
     return () => {
       mounted = false;
     };
-  }, [ticker]);
+  }, [ticker, initialData]);
 
   const sentiment = sentimentLabel(data?.avg_headline_sentiment ?? null);
 

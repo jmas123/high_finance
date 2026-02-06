@@ -16,7 +16,9 @@ function formatAmount(min?: number | null, max?: number | null) {
 
 function formatDate(s?: string | null) {
   if (!s) return "—";
-  return s;
+  const d = new Date(s + "T00:00:00"); // Avoid timezone shift
+  if (isNaN(d.getTime())) return s;
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
 function pillStyle(bg: string) {
@@ -47,15 +49,36 @@ function hitRateColor(hitRate: number | null | undefined): string {
   return "#ef4444";                       // Red - bad
 }
 
-export function PoliticianTradesCard({ ticker }: { ticker: string }) {
+interface PoliticianTradesCardProps {
+  ticker: string;
+  initialData?: PoliticianTradeWithContext[] | any[] | null;
+}
+
+// Helper to flatten bundle data to FlatRow format
+function flattenTradeData(data: any[] | null): FlatRow[] {
+  if (!data) return [];
+  return data.map((r: any) => ({
+    ...(r.trade || r),
+    politician: r.politician ?? (r.trade as any)?.politician ?? r,
+    context: r.context,
+  }));
+}
+
+export function PoliticianTradesCard({ ticker, initialData }: PoliticianTradesCardProps) {
   const [limit, setLimit] = useState(50);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // IMPORTANT: rows are FLATTENED rows, not the raw API shape
-  const [rows, setRows] = useState<FlatRow[]>([]);
+  const [rows, setRows] = useState<FlatRow[]>(() => flattenTradeData(initialData ?? null));
 
   useEffect(() => {
+    // Use bundle data only if limit fits within it
+    if (initialData != null && limit <= initialData.length) {
+      setRows(flattenTradeData(initialData.slice(0, limit)));
+      return;
+    }
+
     let mounted = true;
 
     async function load() {
@@ -69,7 +92,7 @@ export function PoliticianTradesCard({ ticker }: { ticker: string }) {
 
         const flattened: FlatRow[] = (data ?? []).map((r: PoliticianTradeWithContext) => ({
           ...r.trade,
-          politician: r.politician ?? (r.trade as any).politician, // fallback if backend nests it too
+          politician: r.politician ?? (r.trade as any).politician,
           context: r.context,
         }));
 
@@ -85,7 +108,7 @@ export function PoliticianTradesCard({ ticker }: { ticker: string }) {
     return () => {
       mounted = false;
     };
-  }, [ticker, limit]);
+  }, [ticker, limit, initialData]);
 
   const counts = useMemo(() => {
     let buys = 0;

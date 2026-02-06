@@ -1,4 +1,4 @@
-from sqlalchemy import desc
+from sqlalchemy import desc, or_
 from high_finance.db.models.company import Company
 from high_finance.db.models.politician import Politician
 from high_finance.db.models.politician_trade import PoliticianTrade
@@ -7,37 +7,71 @@ import requests
 import logging
 from sqlalchemy.orm import Session, joinedload
 from datetime import date, timedelta, datetime
-from high_finance.workers.tasks.congress_trades_logic import refresh_congress_trades
+from high_finance.workers.tasks.congress_trades_logic import refresh_congress_trades, _resolve_company_id
 from typing import List
 
 
 logger = logging.getLogger(__name__)
 
 
-def get_company_politician_trades(db: Session, ticker: str, limit: int = 50):
-    company = db.query(Company).filter(Company.ticker == ticker.upper()).first()
-    if not company:
-        return []
+def _backfill_company_ids(db: Session, trades, company_id: int) -> None:
+    """Opportunistically set company_id on trades that matched by ticker_raw only."""
+    updated = False
+    for t in trades:
+        if t.company_id is None:
+            t.company_id = company_id
+            updated = True
+    if updated:
+        db.commit()
 
-    return (
+
+def get_company_politician_trades(db: Session, ticker: str, limit: int = 50):
+    ticker_upper = ticker.upper()
+    company = db.query(Company).filter(Company.ticker == ticker_upper).first()
+
+    # Match by ticker_raw OR company_id so we catch orphaned trades (company_id=NULL)
+    filters = [PoliticianTrade.ticker_raw == ticker_upper]
+    if company:
+        filters.append(PoliticianTrade.company_id == company.id)
+
+    trades = (
         db.query(PoliticianTrade)
-        .options(joinedload(PoliticianTrade.politician))  # 👈 load politician row
-        .filter(PoliticianTrade.company_id == company.id)
+        .options(joinedload(PoliticianTrade.politician))
+        .filter(or_(*filters))
         .order_by(desc(PoliticianTrade.disclosure_date))
         .limit(limit)
         .all()
     )
 
+    # Heal orphaned trades: set company_id where it was NULL
+    if company and trades:
+        _backfill_company_ids(db, trades, company.id)
+
+    # Deduplicate: same politician, ticker, transaction_date, disclosure_date, type
+    # Existing DB rows may have dupes from the old broken sync path
+    seen = set()
+    unique_trades = []
+    for t in trades:
+        key = (t.politician_id, t.ticker_raw, t.transaction_date, t.disclosure_date, t.transaction_type)
+        if key not in seen:
+            seen.add(key)
+            unique_trades.append(t)
+
+    return unique_trades
 
 
 def ensure_company_trades_fresh(db: Session, ticker: str, max_age_days: int = 1) -> None:
-    company = db.query(Company).filter(Company.ticker == ticker.upper()).first()
-    if not company:
-        return
+    ticker_upper = ticker.upper()
+    company = db.query(Company).filter(Company.ticker == ticker_upper).first()
+
+    # Check freshness against trades matched by ticker_raw too, not just company_id
+    filters = [PoliticianTrade.ticker_raw == ticker_upper]
+    if company:
+        filters.append(PoliticianTrade.company_id == company.id)
 
     latest = (
         db.query(PoliticianTrade)
-        .filter(PoliticianTrade.company_id == company.id)
+        .filter(or_(*filters))
         .order_by(desc(PoliticianTrade.disclosure_date))
         .first()
     )
@@ -153,28 +187,32 @@ def sync_congress_trades(db: Session, limit: int = 200):
             continue  # Skip if dates are garbage
 
         # 4. Check for Duplicates
-        # A simple check: same politician, ticker, date, and amount
+        raw_ticker = item.get("Ticker")
+        ticker_norm = raw_ticker.upper() if raw_ticker else None
         exists = db.query(PoliticianTrade).filter(
             PoliticianTrade.politician_id == politician.id,
-            PoliticianTrade.ticker_raw == item.get("Ticker"),
+            PoliticianTrade.ticker_raw == ticker_norm,
             PoliticianTrade.transaction_date == t_date,
-            PoliticianTrade.amount_raw == item.get("Range")
+            PoliticianTrade.disclosure_date == d_date,
+            PoliticianTrade.transaction_type == item.get("Transaction"),
         ).first()
 
         if exists:
             continue
 
         # 5. Create Trade
+        company_id = _resolve_company_id(db, ticker_norm, ticker_norm)
+
         trade = PoliticianTrade(
             politician_id=politician.id,
-            ticker_raw=item.get("Ticker"),
-            issuer_raw=item.get("Ticker"),
+            company_id=company_id,
+            ticker_raw=ticker_norm,
+            issuer_raw=ticker_norm,
             transaction_type=item.get("Transaction"),
             transaction_date=t_date,
             disclosure_date=d_date,
-            amount_raw=item.get("Range"),
-            amount_min=item.get("Amount"),  # Adjust if your model expects float
-            amount_max=item.get("Amount")   # Adjust if your model expects float
+            amount_min=item.get("Amount"),
+            amount_max=item.get("Amount"),
         )
         db.add(trade)
         new_count += 1

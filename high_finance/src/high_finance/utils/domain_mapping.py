@@ -1,4 +1,6 @@
-def company_domains(sector: str | None, industry: str | None) -> set[str]:
+def company_domains(sector: str | None, industry: str | None, sic_code: str | None = None) -> set[str]:
+    from high_finance.utils.sic_domains import sic_to_domains
+
     s = (sector or "").lower()
     i = (industry or "").lower()
     tags: set[str] = set()
@@ -25,6 +27,9 @@ def company_domains(sector: str | None, industry: str | None) -> set[str]:
     if "technology" in s or any(k in i for k in ["software", "semiconductor"]):
         tags.add("tech")
 
+    # SIC-based tags — adds signal, never subtracts
+    tags |= sic_to_domains(sic_code)
+
     return tags
 
 
@@ -46,7 +51,16 @@ def committee_domains(committee_name: str, subcommittee_name: str | None = None)
     if any(k in text for k in ["energy", "environment", "natural resources"]):
         tags.add("energy")
 
-    if any(k in text for k in ["technology", "cyber", "communications"]):
+    if any(k in text for k in ["technology", "cyber"]):
         tags.add("tech")
+
+    if any(k in text for k in ["agriculture", "farm", "nutrition", "forestry"]):
+        tags.add("agriculture")
+
+    if any(k in text for k in ["transportation", "infrastructure", "aviation"]):
+        tags.add("transportation")
+
+    if any(k in text for k in ["communications", "telecom", "spectrum", "broadband"]):
+        tags.add("telecom")
 
     return tags

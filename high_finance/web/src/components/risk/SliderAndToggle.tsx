@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { memo, useEffect, useState } from "react";
 
-export function SliderControl({
+export const SliderControl = memo(function SliderControl({
   label,
   value,
   setValue,
@@ -115,10 +115,10 @@ export function SliderControl({
       </div>
     </div>
   );
-}
+});
 
 
-export function ToggleControl({
+export const ToggleControl = memo(function ToggleControl({
   label,
   value,
   setValue,
@@ -177,4 +177,4 @@ export function ToggleControl({
       </button>
     </div>
   );
-}
+});

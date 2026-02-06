@@ -10,7 +10,12 @@ import { ScenarioCard } from "./RiskScenario";
 import { fmtPct, fmtPctSigned, fmtPrice } from "../Functions";
 
 
-export function RiskCard({ ticker }: { ticker: string }) {
+interface RiskCardProps {
+  ticker: string;
+  initialData?: RiskBundle | null;
+}
+
+export function RiskCard({ ticker, initialData }: RiskCardProps) {
   // Controls
   const [period, setPeriod] = useState<"6mo" | "1y" | "2y">("1y");
   const [horizon, setHorizon] = useState<number>(60);
@@ -20,10 +25,13 @@ export function RiskCard({ ticker }: { ticker: string }) {
   const [targetPriceOffset, setTargetPriceOffset] = useState<number>(0.1); // +10% default
   const [drawdownThreshold, setDrawdownThreshold] = useState<number>(-0.15);
 
-  // Data
-  const [data, setData] = useState<RiskBundle | null>(null);
+  // Data - use initial data from bundle if provided
+  const [data, setData] = useState<RiskBundle | null>(initialData ?? null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  // Track if params have changed from defaults (then we need to fetch)
+  const [paramsChanged, setParamsChanged] = useState(false);
 
   // Expanded sections
   const [showControls, setShowControls] = useState(false);
@@ -61,8 +69,22 @@ export function RiskCard({ ticker }: { ticker: string }) {
   }, [ticker, period, horizon, sims, volMultiplier, includeEarningsShock, drawdownThreshold, targetPriceOffset, data?.as_of_close]);
 
   useEffect(() => {
+    // Use initial data from bundle on first load if available and params haven't changed
+    if (initialData !== undefined && !paramsChanged) {
+      setData(initialData);
+      return;
+    }
+    // Otherwise fetch with current params
     if (ticker) fetchRisk();
-  }, [ticker, period, horizon, sims, volMultiplier, includeEarningsShock, drawdownThreshold, targetPriceOffset]);
+  }, [ticker, period, horizon, sims, volMultiplier, includeEarningsShock, drawdownThreshold, targetPriceOffset, initialData, paramsChanged]);
+
+  // Track when params change from defaults
+  useEffect(() => {
+    const isDefault = period === "1y" && horizon === 60 && sims === 500 &&
+                      volMultiplier === 1.0 && !includeEarningsShock &&
+                      targetPriceOffset === 0.1 && drawdownThreshold === -0.15;
+    setParamsChanged(!isDefault);
+  }, [period, horizon, sims, volMultiplier, includeEarningsShock, targetPriceOffset, drawdownThreshold]);
 
   const m = data?.metrics;
   const p = data?.probabilities;

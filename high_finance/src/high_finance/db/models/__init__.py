@@ -24,3 +24,4 @@ from .user_data import WatchlistItem, PortfolioPosition
 from .job_execution import JobExecution
 from .peer_group import PeerGroup
 from .chart_drawing import ChartDrawing
+from .private_company import PrivateCompany, PrivateCompanyInvestor

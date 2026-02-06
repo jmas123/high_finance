@@ -1064,3 +1064,43 @@ export interface PortfolioPerformanceResponse {
   outperformance: Record<string, number>;
   risk_metrics?: RiskMetrics;
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PRIVATE COMPANIES (IPO Exposure Tracker)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export type PrivateCompanyInvestor = {
+  id: number;
+  investor_name: string;
+  investor_type: "corporate" | "vc" | "pe" | "sovereign" | "individual";
+  public_ticker: string | null;
+  round_or_context: string | null;
+  investment_amount: number | null;
+  investment_date: string | null;
+  notes: string | null;
+};
+
+export type PrivateCompanyProfile = {
+  id: number;
+  slug: string;
+  name: string;
+  description: string | null;
+  sector: string | null;
+  founded_year: number | null;
+  hq_location: string | null;
+  website: string | null;
+  latest_valuation: number | null;
+  valuation_date: string | null;
+  status: "private" | "pre_ipo" | "filed_s1";
+  investors: PrivateCompanyInvestor[];
+};
+
+export type PrivateCompanySummary = {
+  slug: string;
+  name: string;
+  sector: string | null;
+  status: string;
+  latest_valuation: number | null;
+  investor_count: number;
+  public_investor_count: number;
+};

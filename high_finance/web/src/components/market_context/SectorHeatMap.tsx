@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useRef } from "react";
 import {
   TrendingUp,
   TrendingDown,
@@ -71,8 +71,13 @@ const SectorHeatmapCard: React.FC<SectorHeatmapCardProps> = ({
   const [timeFrame, setTimeFrame] = useState<TimeFrame>("1d");
   const [viewMode, setViewMode] = useState<"heatmap" | "bars">("heatmap");
   const [activeSector, setActiveSector] = useState<SectorData | null>(null);
+  const fetchedRef = useRef(false); // Prevents StrictMode double-fetch
 
-  useEffect(() => { fetchSectorData(); }, []);
+  useEffect(() => {
+    if (fetchedRef.current) return;
+    fetchedRef.current = true;
+    fetchSectorData();
+  }, []);
 
   const fetchSectorData = async () => {
     setLoading(true);

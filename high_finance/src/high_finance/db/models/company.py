@@ -12,6 +12,7 @@ class Company(Base):
     industry = Column(String)
     market_cap = Column(Float)
     description = Column(String)
+    sic_code = Column(String(4), nullable=True)
 
     # Relationships
     prices = relationship("Price", back_populates="company", cascade="all, delete-orphan")

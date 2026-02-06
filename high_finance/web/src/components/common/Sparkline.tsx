@@ -4,7 +4,7 @@
  * A compact mini-chart for showing price trends.
  */
 
-import { useMemo } from "react";
+import { memo, useMemo } from "react";
 
 interface SparklineProps {
   data: number[];
@@ -15,7 +15,7 @@ interface SparklineProps {
   strokeWidth?: number;
 }
 
-export function Sparkline({
+export const Sparkline = memo(function Sparkline({
   data,
   width = 80,
   height = 24,
@@ -106,6 +106,6 @@ export function Sparkline({
       )}
     </svg>
   );
-}
+});
 
 export default Sparkline;

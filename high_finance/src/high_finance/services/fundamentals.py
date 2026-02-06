@@ -352,6 +352,17 @@ async def get_company_fundamentals(
     db.commit()
     db.refresh(company)
 
+    # Opportunistic SIC code fetch — lazy-load on first view
+    if not company.sic_code:
+        try:
+            from high_finance.services.sec_sic import fetch_sic_code
+            sic = fetch_sic_code(ticker)
+            if sic:
+                company.sic_code = sic
+                db.commit()
+        except Exception:
+            pass  # Non-critical; backfill script handles bulk population
+
     data = {
         "ticker": ticker,
         "name": info.get("longName"),

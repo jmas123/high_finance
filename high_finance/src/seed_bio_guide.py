@@ -311,5 +311,62 @@ def backfill_bioguide_ids():
         for pid, name, cleaned in sorted(missing_politicians, key=lambda x: x[2]):
             print(f"  ID {pid:4d}: {name:<40} -> '{cleaned}'")
 
+def sync_chamber_from_bioguide():
+    """Update chamber/party/state for all politicians with a bioguide_id.
+
+    Uses legislators-current.yaml as the source of truth.
+    The last entry in each legislator's `terms` list is the current term,
+    which tells us their current chamber (sen → Senate, rep → House).
+    """
+    db: Session = SessionLocal()
+
+    print("\n📥 Fetching current legislators for chamber sync...")
+    current = yaml.safe_load(requests.get(LEGISLATORS_CURRENT, timeout=30).text)
+    print(f"   Found {len(current)} current legislators")
+
+    # Build bioguide → latest term info
+    bio_to_info: dict[str, dict] = {}
+    for leg in current:
+        bio = leg.get("id", {}).get("bioguide")
+        terms = leg.get("terms", [])
+        if not bio or not terms:
+            continue
+        latest = terms[-1]
+        term_type = latest.get("type", "")
+        chamber = "Senate" if term_type == "sen" else "House" if term_type == "rep" else None
+        party = latest.get("party")
+        state = latest.get("state")
+        bio_to_info[bio] = {"chamber": chamber, "party": party, "state": state}
+
+    # Update all politicians that have a bioguide_id
+    politicians = db.query(Politician).filter(Politician.bioguide_id.isnot(None)).all()
+    updated = 0
+
+    for pol in politicians:
+        info = bio_to_info.get(pol.bioguide_id)
+        if not info:
+            continue
+
+        changed = False
+        if info["chamber"] and pol.chamber != info["chamber"]:
+            print(f"  {pol.name}: {pol.chamber} → {info['chamber']}")
+            pol.chamber = info["chamber"]
+            changed = True
+        if info["party"] and pol.party != info["party"]:
+            pol.party = info["party"]
+            changed = True
+        if info["state"] and pol.state != info["state"]:
+            pol.state = info["state"]
+            changed = True
+
+        if changed:
+            updated += 1
+
+    db.commit()
+    db.close()
+    print(f"\n✅ Updated {updated} politicians with current chamber/party/state")
+
+
 if __name__ == "__main__":
     backfill_bioguide_ids()
+    sync_chamber_from_bioguide()

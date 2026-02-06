@@ -1,43 +1,34 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from typing import Optional
 
-from sqlalchemy import desc
+from sqlalchemy import asc, desc
 from sqlalchemy.orm import Session
 
 from high_finance.db.models.politician_trade import PoliticianTrade
 from high_finance.db.models.price import Price
 
 
-def _parse_price_date(s: Optional[str]) -> Optional[date]:
-    if not s:
-        return None
-    try:
-        return datetime.strptime(str(s)[:10], "%Y-%m-%d").date()
-    except Exception:
-        return None
-
 
 def _closest_close_on_or_after(db: Session, company_id: int, target: date) -> Optional[float]:
     """
-    Tier-1 simple approach (works with Price.date as a string).
-    Later optimization: make Price.date a Date column and query in SQL.
+    Find the closest closing price on or after the target date.
+    Price.date is a String column in YYYY-MM-DD format, so lexicographic
+    comparison works correctly for date ordering.
     """
-    rows = db.query(Price).filter(Price.company_id == company_id).all()
-
-    best_d: Optional[date] = None
-    best_close: Optional[float] = None
-
-    for p in rows:
-        d = _parse_price_date(p.date)
-        if not d or p.close_price is None:
-            continue
-        if d >= target and (best_d is None or d < best_d):
-            best_d = d
-            best_close = float(p.close_price)
-
-    return best_close
+    target_str = target.isoformat()  # YYYY-MM-DD
+    row = (
+        db.query(Price.close_price)
+        .filter(
+            Price.company_id == company_id,
+            Price.date >= target_str,
+            Price.close_price.isnot(None),
+        )
+        .order_by(asc(Price.date))
+        .first()
+    )
+    return float(row[0]) if row and row[0] is not None else None
 
 
 def politician_rolling_performance(

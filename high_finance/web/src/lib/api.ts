@@ -20,6 +20,8 @@ import type {
   SavedScreenCreate,
   ExportInputs,
   PortfolioPerformanceResponse,
+  PrivateCompanySummary,
+  PrivateCompanyProfile,
 } from "./types";
 import type {
   CalendarEventsRequest,
@@ -71,7 +73,50 @@ class ApiError extends Error {
   }
 }
 
+// Bundle response type for single-request ticker data
+// This mega-bundle fetches ALL ticker page data in one request to avoid browser connection limits
+export interface TickerBundleResponse {
+  // Core data
+  company: Company | null;
+  fundamentals: Fundamentals | null;
+  prices: any[];
+  leadership: any[];
+  financials: FinancialStatementsResponse | null;
+  comps: CompsResponse | null;
+
+  // Component data (previously fetched individually by each card)
+  risk: RiskBundle | null;
+  valuation: ValuationBundle | null;
+  institutional_flow: any | null;
+  insider_trades: any[];
+  insider_summary: any | null;
+  politician_trades: PoliticianTradeWithContext[];
+  options_overview: any | null;
+  iv_context: IVContext | null;
+  earnings: any | null;
+  news: NewsBundle | null;
+  prediction: any | null;
+
+  // Market context (shared across all tickers)
+  macro_indicators: any | null;
+  sectors: any | null;
+  rate_impact: any | null;
+
+  // Error tracking for partial failures
+  errors: Record<string, string>;
+}
+
 export const api = {
+  /**
+   * Fetch all core ticker data in a single request.
+   * This avoids the browser's 6-connection limit by letting the backend
+   * fetch everything in parallel.
+   */
+  tickerBundle: (ticker: string, period: string = "1y") =>
+    getJSON<TickerBundleResponse>(
+      `${BASE}/ticker/${encodeURIComponent(ticker)}?period=${period}`
+    ),
+
   company: (ticker: string) =>
     getJSON<Company>(`${BASE}/companies/${encodeURIComponent(ticker)}`),
 
@@ -578,6 +623,47 @@ valuation: (ticker: string, params?: Partial<{growth:number;margin:number;tax:nu
       }
       return res.json();
     },
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // PRIVATE COMPANIES API (IPO Exposure Tracker)
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  privateCompanies: (filters?: { status?: string; sector?: string }) => {
+    const q = new URLSearchParams();
+    if (filters?.status) q.set("status", filters.status);
+    if (filters?.sector) q.set("sector", filters.sector);
+    const qs = q.toString();
+    return getJSON<PrivateCompanySummary[]>(`${BASE}/private-companies${qs ? `?${qs}` : ""}`);
+  },
+
+  privateCompany: (slug: string) =>
+    getJSON<PrivateCompanyProfile>(`${BASE}/private-companies/${encodeURIComponent(slug)}`),
+
+  createPrivateCompany: async (data: Record<string, unknown>) => {
+    const res = await fetch(`${BASE}/private-companies`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    return res.json() as Promise<PrivateCompanyProfile>;
+  },
+
+  addPrivateCompanyInvestor: async (slug: string, data: Record<string, unknown>) => {
+    const res = await fetch(`${BASE}/private-companies/${encodeURIComponent(slug)}/investors`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
   },
 };
 

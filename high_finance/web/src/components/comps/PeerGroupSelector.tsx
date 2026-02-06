@@ -32,6 +32,7 @@ export function PeerGroupSelector({
   const [error, setError] = useState<string | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const fetchingRef = useRef<string | null>(null); // Prevents StrictMode double-fetch
 
   // Fetch peer groups when authenticated and ticker changes
   useEffect(() => {
@@ -39,6 +40,11 @@ export function PeerGroupSelector({
       setGroups([]);
       return;
     }
+
+    // Prevent StrictMode double-fetch
+    const key = `${ticker}-${refreshKey}`;
+    if (fetchingRef.current === key) return;
+    fetchingRef.current = key;
 
     const fetchGroups = async () => {
       setLoading(true);

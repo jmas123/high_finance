@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useRef } from "react";
 import {
   TrendingUp,
   TrendingDown,
@@ -77,8 +77,13 @@ const RateImpactCard: React.FC<RateImpactCardProps> = ({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeSector, setActiveSector] = useState<string | null>(sector ?? null);
+  const fetchedRef = useRef(false); // Prevents StrictMode double-fetch
 
-  useEffect(() => { fetchRateImpact(); }, [sector]);
+  useEffect(() => {
+    if (fetchedRef.current) return;
+    fetchedRef.current = true;
+    fetchRateImpact();
+  }, [sector]);
 
   const fetchRateImpact = async () => {
     setLoading(true);

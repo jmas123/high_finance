@@ -518,10 +518,10 @@ export function OptionDecaySimulator({ ticker }: { ticker: string }) {
   // Load options chain and IV context on mount
   useEffect(() => {
     if (!ticker) return;
-    
+
     setChainLoading(true);
     setIVLoading(true);
-    
+
     // Load options overview
     api.optionsOverview(ticker)
       .then((data) => {
@@ -539,7 +539,7 @@ export function OptionDecaySimulator({ ticker }: { ticker: string }) {
       })
       .catch(() => {})
       .finally(() => setChainLoading(false));
-    
+
     // Load IV context
     api.ivContext(ticker)
       .then((ctx) => {

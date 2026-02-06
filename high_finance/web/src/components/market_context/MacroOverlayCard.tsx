@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useRef } from "react";
 import {
   TrendingUp,
   TrendingDown,
@@ -95,8 +95,11 @@ export default function MacroOverlayCard({ ticker, onIndicatorClick }: MacroOver
   const [error, setError] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
   const [active, setActive] = useState<MacroIndicator | null>(null);
+  const fetchedRef = useRef(false); // Prevents StrictMode double-fetch
 
   useEffect(() => {
+    if (fetchedRef.current) return;
+    fetchedRef.current = true;
     fetchMacroData();
   }, []);
 
