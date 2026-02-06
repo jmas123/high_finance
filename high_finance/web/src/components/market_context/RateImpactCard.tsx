@@ -34,6 +34,7 @@ interface RateImpactCardProps {
   ticker?: string;
   sector?: string;
   currentRateEnvironment?: "rising" | "falling" | "stable";
+  initialData?: RateImpactResponse | null;
 }
 
 /* ─── Colours ────────────────────────────────────────────────── */
@@ -72,18 +73,27 @@ const RateImpactCard: React.FC<RateImpactCardProps> = ({
   ticker,
   sector,
   currentRateEnvironment = "stable",
+  initialData,
 }) => {
-  const [data, setData] = useState<RateImpactResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<RateImpactResponse | null>(initialData ?? null);
+  const [loading, setLoading] = useState(!initialData);
   const [error, setError] = useState<string | null>(null);
   const [activeSector, setActiveSector] = useState<string | null>(sector ?? null);
-  const fetchedRef = useRef(false); // Prevents StrictMode double-fetch
+  const fetchedRef = useRef(!!initialData); // Skip fetch if initialData provided
 
   useEffect(() => {
     if (fetchedRef.current) return;
     fetchedRef.current = true;
     fetchRateImpact();
   }, [sector]);
+
+  // Pre-select sector when initialData is provided
+  useEffect(() => {
+    if (initialData && initialData.analyses?.length && sector) {
+      const match = findMatchingSector(sector, initialData.analyses);
+      setActiveSector(match ?? (initialData.analyses[0]?.sector ?? null));
+    }
+  }, [initialData, sector]);
 
   const fetchRateImpact = async () => {
     setLoading(true);

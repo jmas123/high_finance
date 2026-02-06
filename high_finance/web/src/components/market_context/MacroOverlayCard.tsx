@@ -47,6 +47,7 @@ interface MacroData {
 interface MacroOverlayCardProps {
   ticker?: string;
   onIndicatorClick?: (indicator: MacroIndicator) => void;
+  initialData?: MacroData | null;
 }
 
 /* ─── Formatting ─────────────────────────────────────────────── */
@@ -89,13 +90,13 @@ function TrendIcon({ trend, color }: { trend: MacroIndicator["trend"]; color: st
 
 /* ─── Component ──────────────────────────────────────────────── */
 
-export default function MacroOverlayCard({ ticker, onIndicatorClick }: MacroOverlayCardProps) {
-  const [data, setData] = useState<MacroData | null>(null);
-  const [loading, setLoading] = useState(true);
+export default function MacroOverlayCard({ ticker, onIndicatorClick, initialData }: MacroOverlayCardProps) {
+  const [data, setData] = useState<MacroData | null>(initialData ?? null);
+  const [loading, setLoading] = useState(!initialData);
   const [error, setError] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
   const [active, setActive] = useState<MacroIndicator | null>(null);
-  const fetchedRef = useRef(false); // Prevents StrictMode double-fetch
+  const fetchedRef = useRef(!!initialData); // Skip fetch if initialData provided
 
   useEffect(() => {
     if (fetchedRef.current) return;

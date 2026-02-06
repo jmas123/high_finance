@@ -16,6 +16,8 @@ try:
 except ImportError:
     _FRED_OK = False
 
+from high_finance.core.cache import get_or_compute, macro_ttl
+
 logger = logging.getLogger(__name__)
 
 
@@ -249,12 +251,14 @@ class MarketService:
     # ──────────────────────────────────────────────────────────
 
     async def get_macro_indicators(self) -> list[MacroIndicator]:
-        cached = self._cache.get("macro")
-        if cached is not None:
-            return cached
-        result = await asyncio.to_thread(self._build_macro)
-        self._cache.set("macro", result, ttl=900)  # 15 min
-        return result
+        cache_key = "hf:market:macro"
+
+        async def _compute():
+            raw = await asyncio.to_thread(self._build_macro)
+            return [m.model_dump(mode="json") for m in raw]
+
+        cached = await get_or_compute(cache_key, 900, _compute)
+        return [MacroIndicator(**m) for m in cached]
 
     def _build_macro(self) -> list[MacroIndicator]:
         now = datetime.utcnow()
@@ -364,12 +368,14 @@ class MarketService:
     # ──────────────────────────────────────────────────────────
 
     async def get_sector_performance(self) -> list[SectorPerformance]:
-        cached = self._cache.get("sectors")
-        if cached is not None:
-            return cached
-        result = await asyncio.to_thread(self._build_sectors)
-        self._cache.set("sectors", result, ttl=300)  # 5 min
-        return result
+        cache_key = "hf:market:sectors"
+
+        async def _compute():
+            raw = await asyncio.to_thread(self._build_sectors)
+            return [s.model_dump(mode="json") for s in raw]
+
+        cached = await get_or_compute(cache_key, 300, _compute)
+        return [SectorPerformance(**s) for s in cached]
 
     def _build_sectors(self) -> list[SectorPerformance]:
         etfs = list(SECTOR_ETFS.values())
@@ -466,13 +472,17 @@ class MarketService:
     async def get_rate_impact_analysis(
         self, sector: Optional[str] = None,
     ) -> list[RateImpactAnalysis]:
-        cached = self._cache.get("rate_impact")
-        if cached is None:
-            cached = await asyncio.to_thread(self._build_rate_impact)
-            self._cache.set("rate_impact", cached, ttl=86400)  # 24 h
+        cache_key = "hf:market:rate_impact"
+
+        async def _compute():
+            raw = await asyncio.to_thread(self._build_rate_impact)
+            return [a.model_dump(mode="json") for a in raw]
+
+        cached = await get_or_compute(cache_key, 86400, _compute)
+        all_analyses = [RateImpactAnalysis(**a) for a in cached]
         if sector:
-            return [a for a in cached if a.sector == sector]
-        return cached
+            return [a for a in all_analyses if a.sector == sector]
+        return all_analyses
 
     def _build_rate_impact(self) -> list[RateImpactAnalysis]:
         """
@@ -575,12 +585,14 @@ class MarketService:
     # ──────────────────────────────────────────────────────────
 
     async def get_market_breadth(self) -> MarketBreadth:
-        cached = self._cache.get("breadth")
-        if cached is not None:
-            return cached
-        result = await asyncio.to_thread(self._build_breadth)
-        self._cache.set("breadth", result, ttl=300)
-        return result
+        cache_key = "hf:market:breadth"
+
+        async def _compute():
+            raw = await asyncio.to_thread(self._build_breadth)
+            return raw.model_dump(mode="json")
+
+        cached = await get_or_compute(cache_key, 300, _compute)
+        return MarketBreadth(**cached)
 
     def _build_breadth(self) -> MarketBreadth:
         """

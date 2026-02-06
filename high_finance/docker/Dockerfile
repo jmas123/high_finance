@@ -26,5 +26,8 @@ COPY ./src ./src
 # Expose the application port
 EXPOSE 8000
 
-# Command to run the application
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+# Copy gunicorn config
+COPY ./docker/gunicorn_conf.py /app/gunicorn_conf.py
+
+# Production: use gunicorn with uvicorn workers (4 workers, not --reload)
+CMD ["gunicorn", "main:app", "-c", "/app/gunicorn_conf.py"]

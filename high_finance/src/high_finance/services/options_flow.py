@@ -1,12 +1,21 @@
+import asyncio
+
 import yfinance as yf
 from typing import Dict, Any, List
 from datetime import datetime
 import pandas as pd
 
-async def get_options_overview(ticker: str) -> Dict[str, Any]:
-    """Get options chain overview with unusual activity detection."""
+from high_finance.core.cache import get_or_compute, options_ttl
+from high_finance.services.yf_cache import get_yf_info
+
+
+def _fetch_options_overview_sync(ticker: str, info: dict) -> Dict[str, Any]:
+    """Blocking yfinance call — runs in thread pool.
+    Accepts pre-fetched info dict to avoid duplicate .info HTTP call.
+    Still needs yf.Ticker() for .options and .option_chain().
+    """
     stock = yf.Ticker(ticker)
-    
+
     result = {
         "ticker": ticker,
         "current_price": None,
@@ -21,10 +30,9 @@ async def get_options_overview(ticker: str) -> Dict[str, Any]:
         "iv_percentile": None,
         "nearest_expiry_analysis": None,
     }
-    
+
     try:
-        # Get current price
-        info = stock.info
+        # Get current price from pre-fetched info
         result["current_price"] = info.get('regularMarketPrice') or info.get('currentPrice')
         
         # Get available expirations
@@ -79,6 +87,17 @@ async def get_options_overview(ticker: str) -> Dict[str, Any]:
         traceback.print_exc()
     
     return result
+
+
+async def get_options_overview(ticker: str) -> Dict[str, Any]:
+    """Get options chain overview with unusual activity detection."""
+    cache_key = f"hf:options:{ticker}"
+
+    async def _compute():
+        info = await get_yf_info(ticker)
+        return await asyncio.to_thread(_fetch_options_overview_sync, ticker, info)
+
+    return await get_or_compute(cache_key, options_ttl(), _compute)
 
 
 def calculate_max_pain(calls: pd.DataFrame, puts: pd.DataFrame, current_price: float) -> float:
@@ -281,34 +300,38 @@ def calculate_iv_percentile(stock) -> int:
         return None
 
 
-async def get_options_chain(ticker: str, expiry: str) -> Dict[str, Any]:
-    """Get full options chain for a specific expiration."""
+def _fetch_options_chain_sync(ticker: str, expiry: str) -> Dict[str, Any]:
+    """Blocking yfinance call — runs in thread pool."""
     stock = yf.Ticker(ticker)
-    
+
     try:
         chain = stock.option_chain(expiry)
-        
+
         calls = chain.calls.to_dict('records') if not chain.calls.empty else []
         puts = chain.puts.to_dict('records') if not chain.puts.empty else []
-        
-        # Clean up NaN values
+
         for call in calls:
             for key, value in call.items():
                 if pd.isna(value):
                     call[key] = None
-        
+
         for put in puts:
             for key, value in put.items():
                 if pd.isna(value):
                     put[key] = None
-        
+
         return {
             "ticker": ticker,
             "expiry": expiry,
             "calls": calls,
             "puts": puts,
         }
-    
+
     except Exception as e:
         print(f"Error getting options chain: {e}")
         return {"ticker": ticker, "expiry": expiry, "calls": [], "puts": []}
+
+
+async def get_options_chain(ticker: str, expiry: str) -> Dict[str, Any]:
+    """Get full options chain for a specific expiration."""
+    return await asyncio.to_thread(_fetch_options_chain_sync, ticker, expiry)

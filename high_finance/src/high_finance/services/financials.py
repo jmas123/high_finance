@@ -1,7 +1,13 @@
+import asyncio
+
 import yfinance as yf
 from typing import Dict, Any
 
-async def get_financial_statements(ticker: str) -> Dict[str, Any]:
+from high_finance.core.cache import get_or_compute, fundamentals_ttl
+
+
+def _fetch_financial_statements_sync(ticker: str) -> Dict[str, Any]:
+    """Blocking yfinance call — runs in thread pool."""
     stock = yf.Ticker(ticker)
 
     def df_to_dict(df):
@@ -13,7 +19,6 @@ async def get_financial_statements(ticker: str) -> Dict[str, Any]:
             result[date_str] = {}
             for idx, value in df[col].items():
                 key = str(idx)
-                # drop NaN
                 if value is None:
                     continue
                 if isinstance(value, float) and value != value:
@@ -21,7 +26,6 @@ async def get_financial_statements(ticker: str) -> Dict[str, Any]:
                 try:
                     result[date_str][key] = float(value)
                 except:
-                    # if it can't be cast, skip
                     continue
         return result
 
@@ -37,5 +41,13 @@ async def get_financial_statements(ticker: str) -> Dict[str, Any]:
         "cash_flow": df_to_dict(stock.quarterly_cashflow),
     }
 
-    # Return both
-    return { "annual": annual, "quarterly": quarterly }
+    return {"annual": annual, "quarterly": quarterly}
+
+
+async def get_financial_statements(ticker: str) -> Dict[str, Any]:
+    cache_key = f"hf:financials:{ticker}"
+
+    async def _compute():
+        return await asyncio.to_thread(_fetch_financial_statements_sync, ticker)
+
+    return await get_or_compute(cache_key, fundamentals_ttl(), _compute)

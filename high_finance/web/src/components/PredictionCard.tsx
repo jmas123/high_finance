@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 interface PredictionCardProps {
   ticker: string;
+  initialData?: any | null;
 }
 
 
@@ -161,10 +162,17 @@ function SectionHeader({ title, term }: { title: string; term?: string }) {
   );
 }
 
-export function PredictionCard({ ticker }: PredictionCardProps) {
-  const [prediction, setPrediction] = useState<any | null>(null);
+export function PredictionCard({ ticker, initialData }: PredictionCardProps) {
+  const [prediction, setPrediction] = useState<any | null>(initialData ?? null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Sync with initialData from bundle when it arrives
+  useEffect(() => {
+    if (initialData !== undefined && initialData !== null) {
+      setPrediction(initialData);
+    }
+  }, [initialData]);
 
   async function handlePredict() {
     setLoading(true);

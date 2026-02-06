@@ -12,12 +12,13 @@ Features:
 - Analyst consensus overlay
 """
 
+import asyncio
 import math
 from typing import Any, Dict, List, Optional
 
-import yfinance as yf
-
 from high_finance.services.financials import get_financial_statements
+from high_finance.core.cache import get_or_compute, valuation_ttl
+from high_finance.services.yf_cache import get_yf_info
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -937,10 +938,10 @@ async def get_valuation_bundle(
     wacc: Optional[float] = None,
     terminal_g: Optional[float] = None,
 ) -> Dict[str, Any]:
-    stock = yf.Ticker(ticker)
-    info = stock.info or {}
-
-    stmts = await get_financial_statements(ticker)
+    # Fetch yfinance info (cached) and financial statements in parallel
+    info_task = get_yf_info(ticker)
+    stmts_task = get_financial_statements(ticker)
+    info, stmts = await asyncio.gather(info_task, stmts_task)
 
     annual_is = stmts.get("annual", {}).get("income_statement", {})
     annual_bs = stmts.get("annual", {}).get("balance_sheet", {})

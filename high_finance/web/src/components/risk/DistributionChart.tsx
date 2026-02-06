@@ -1,4 +1,6 @@
-export function DistributionChart({
+import { memo } from "react";
+
+export const DistributionChart = memo(function DistributionChart({
   distribution,
   currentPrice,
 }: {
@@ -122,4 +124,4 @@ export function DistributionChart({
         })}
     </svg>
   );
-}
+});

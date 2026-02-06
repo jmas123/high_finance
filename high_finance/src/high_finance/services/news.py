@@ -1,3 +1,4 @@
+import asyncio
 import json
 import time
 from typing import Any, Dict, List, Optional
@@ -9,6 +10,7 @@ from fastapi import Depends
 
 from high_finance.db.session import get_db
 from high_finance.db.models.news_cache import NewsCache
+from high_finance.core.cache import get_or_compute, news_ttl
 
 _analyzer = SentimentIntensityAnalyzer()
 
@@ -17,12 +19,11 @@ def _headline_sentiment(text: str) -> Dict[str, float]:
     return {"compound": s["compound"], "pos": s["pos"], "neu": s["neu"], "neg": s["neg"]}
 
 def _rss_url(ticker: str) -> str:
-    # Google News RSS query (no API key)
-    # Keep it ticker-centric; you can refine later with company name from your companies endpoint
     q = f"{ticker}%20(stock%20OR%20earnings%20OR%20guidance%20OR%20contract%20OR%20SEC%20OR%208-K%20OR%2010-Q)"
     return f"https://news.google.com/rss/search?q={q}&hl=en-US&gl=US&ceid=US:en"
 
-async def _fetch_google_news(ticker: str, limit: int) -> List[Dict[str, Any]]:
+def _fetch_google_news_sync(ticker: str, limit: int) -> List[Dict[str, Any]]:
+    """Blocking feedparser call — runs in thread pool."""
     feed = feedparser.parse(_rss_url(ticker))
     out: List[Dict[str, Any]] = []
     for e in (feed.entries or [])[:limit]:
@@ -35,6 +36,9 @@ async def _fetch_google_news(ticker: str, limit: int) -> List[Dict[str, Any]]:
             "sentiment": _headline_sentiment(title),
         })
     return out
+
+async def _fetch_google_news(ticker: str, limit: int) -> List[Dict[str, Any]]:
+    return await asyncio.to_thread(_fetch_google_news_sync, ticker, limit)
 
 def _get_cached(db: Session, ticker: str, ttl_seconds: int) -> Optional[Dict[str, Any]]:
     row = db.get(NewsCache, ticker)

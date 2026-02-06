@@ -1,7 +1,8 @@
+import { memo } from "react";
 import type { SensitivityItem } from "../../lib/types";
 import { fmtPx } from "../Functions";
 
-export function TornadoChart({ sensitivities, baseFV }: { sensitivities: SensitivityItem[]; baseFV: number }) {
+export const TornadoChart = memo(function TornadoChart({ sensitivities, baseFV }: { sensitivities: SensitivityItem[]; baseFV: number }) {
   if (!sensitivities?.length) return null;
 
   const width = 500;
@@ -58,4 +59,4 @@ export function TornadoChart({ sensitivities, baseFV }: { sensitivities: Sensiti
       })}
     </svg>
   );
-}
+});

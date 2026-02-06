@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, memo } from "react";
 import type { DivergenceAnalysis, ValuationScenarioInputs } from "../../lib/types";
 import { fmtPct, fmtPctSigned, fmtPx } from "../Functions";
 
@@ -12,7 +12,7 @@ interface DivergenceExplainerProps {
   hasPreMarketValues: boolean;
 }
 
-export function DivergenceExplainer({
+export const DivergenceExplainer = memo(function DivergenceExplainer({
   divergence,
   currentInputs,
   currentPrice,
@@ -306,4 +306,4 @@ export function DivergenceExplainer({
       </div>
     </div>
   );
-}
+});

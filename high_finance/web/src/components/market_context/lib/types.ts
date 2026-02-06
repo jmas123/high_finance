@@ -31,5 +31,6 @@ export type TimeFrame = "1d" | "1w" | "1m" | "ytd";
 export interface SectorHeatmapCardProps {
   highlightSector?: string;
   onSectorClick?: (sector: SectorData) => void;
+  initialData?: SectorResponse | null;
 }
 

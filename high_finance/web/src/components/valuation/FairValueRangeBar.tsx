@@ -1,6 +1,7 @@
+import { memo } from "react";
 import { fmtPx } from "../Functions";
 
-export function FairValueRangeBar({
+export const FairValueRangeBar = memo(function FairValueRangeBar({
   low,
   mid,
   high,
@@ -158,4 +159,4 @@ export function FairValueRangeBar({
       )}
     </div>
   );
-}
+});

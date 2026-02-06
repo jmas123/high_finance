@@ -1,14 +1,17 @@
 """
 ENHANCED OPTION DECAY SIMULATOR WITH SMART IV
-Replace the previous option_decay_backend.py content in options_flow.py
 """
 
+import asyncio
 import math
 from scipy.stats import norm
 from typing import Dict, Any, List, Optional
 import yfinance as yf
 import pandas as pd
 from datetime import datetime
+
+from high_finance.core.cache import get_or_compute, options_ttl
+from high_finance.services.yf_cache import get_yf_info
 
 
 def black_scholes_price(
@@ -196,17 +199,10 @@ def interpret_decay_scenario(
     }
 
 
-async def get_iv_context(ticker: str) -> Dict[str, Any]:
-    """
-    Get IV context for a ticker - helps users understand what IV to use.
-    
-    Returns:
-        - atm_iv: Current at-the-money implied volatility
-        - iv_percentile: Where current IV ranks vs last year (0-100)
-        - iv_high_52w: Highest IV in last year (estimated from HV)
-        - iv_low_52w: Lowest IV in last year (estimated from HV)
-        - suggested_iv: Recommended IV to use
-        - iv_by_expiry: ATM IV for each available expiration
+def _fetch_iv_context_sync(ticker: str, info: dict) -> Dict[str, Any]:
+    """Blocking yfinance call — runs in thread pool.
+    Accepts pre-fetched info dict to avoid duplicate .info HTTP call.
+    Still needs yf.Ticker() for .history(), .options, .option_chain().
     """
     stock = yf.Ticker(ticker)
     result = {
@@ -220,10 +216,9 @@ async def get_iv_context(ticker: str) -> Dict[str, Any]:
         "iv_by_expiry": [],
         "strikes_with_iv": [],
     }
-    
+
     try:
-        # Get current price
-        info = stock.info
+        # Get current price from pre-fetched info
         current_price = info.get('regularMarketPrice') or info.get('currentPrice')
         
         if not current_price:
@@ -306,25 +301,21 @@ async def get_iv_context(ticker: str) -> Dict[str, Any]:
     return result
 
 
-async def get_contract_iv(
-    ticker: str,
-    expiry: str,
-    strike: float,
-    option_type: str = 'call'
-) -> Dict[str, Any]:
-    """
-    Get the implied volatility for a specific contract.
+async def get_iv_context(ticker: str) -> Dict[str, Any]:
+    """Get IV context for a ticker — cached + async."""
+    cache_key = f"hf:iv_context:{ticker}"
 
-    Returns:
-        - iv: The contract's implied volatility (decimal)
-        - iv_pct: IV as percentage
-        - bid: Contract bid
-        - ask: Contract ask
-        - last_price: Last traded price
-        - volume: Today's volume
-        - open_interest: Open interest
-        - iv_source: 'contract', 'hv', or None
-    """
+    async def _compute():
+        info = await get_yf_info(ticker)
+        return await asyncio.to_thread(_fetch_iv_context_sync, ticker, info)
+
+    return await get_or_compute(cache_key, options_ttl(), _compute)
+
+
+def _fetch_contract_iv_sync(
+    ticker: str, expiry: str, strike: float, option_type: str = 'call'
+) -> Dict[str, Any]:
+    """Blocking yfinance call — runs in thread pool."""
     stock = yf.Ticker(ticker)
 
     try:
@@ -335,11 +326,9 @@ async def get_contract_iv(
         else:
             df = chain.puts
 
-        # Find the contract
         contract = df[df['strike'] == strike]
 
         if contract.empty:
-            # Try to find closest strike
             df['distance'] = abs(df['strike'] - strike)
             contract = df.loc[[df['distance'].idxmin()]]
 
@@ -351,11 +340,7 @@ async def get_contract_iv(
         iv = row.get('impliedVolatility', None)
         iv_source = 'contract'
 
-        # Check if IV is valid (not NaN and not unreasonably low)
-        # IV below 15% (0.15) is almost never realistic for individual stocks
-        # Even "boring" stocks like utilities have 15-20% IV
         if pd.isna(iv) or iv < 0.15:
-            # Try to get historical volatility as fallback
             try:
                 hist = stock.history(period="3mo")
                 if not hist.empty:
@@ -366,7 +351,7 @@ async def get_contract_iv(
                         iv = float(hv_value)
                         iv_source = 'hv'
                     else:
-                        iv = 0.25  # Default fallback: 25%
+                        iv = 0.25
                         iv_source = 'default'
                 else:
                     iv = 0.25
@@ -389,6 +374,15 @@ async def get_contract_iv(
 
     except Exception as e:
         return {"error": str(e), "iv": None}
+
+
+async def get_contract_iv(
+    ticker: str, expiry: str, strike: float, option_type: str = 'call'
+) -> Dict[str, Any]:
+    """Get the implied volatility for a specific contract."""
+    return await asyncio.to_thread(
+        _fetch_contract_iv_sync, ticker, expiry, strike, option_type
+    )
 
 
 async def simulate_option_decay(
@@ -563,62 +557,70 @@ async def simulate_option_decay(
     }
 
 
+def _fetch_contract_for_decay_sync(
+    ticker: str, expiry: str, strike: float, option_type: str, info: dict
+) -> Dict[str, Any]:
+    """Blocking yfinance call — runs in thread pool. Returns params for simulation.
+    Accepts pre-fetched info dict to avoid duplicate .info HTTP call.
+    """
+    stock = yf.Ticker(ticker)
+
+    stock_price = info.get('regularMarketPrice') or info.get('currentPrice')
+
+    if not stock_price:
+        raise ValueError(f"Could not get current price for {ticker}")
+
+    try:
+        chain = stock.option_chain(expiry)
+    except Exception as e:
+        raise ValueError(f"Could not get options chain for {expiry}: {e}")
+
+    if option_type == 'call':
+        options_df = chain.calls
+    else:
+        options_df = chain.puts
+
+    contract = options_df[options_df['strike'] == strike]
+
+    if contract.empty:
+        raise ValueError(f"No {option_type} contract found at strike {strike}")
+
+    contract = contract.iloc[0]
+
+    iv = contract.get('impliedVolatility', 0.30)
+    if pd.isna(iv) or iv <= 0:
+        iv = 0.30
+
+    expiry_date = datetime.strptime(expiry, "%Y-%m-%d")
+    days_to_expiry = (expiry_date - datetime.now()).days
+
+    if days_to_expiry < 1:
+        days_to_expiry = 1
+
+    return {
+        "stock_price": stock_price,
+        "iv": iv,
+        "days_to_expiry": days_to_expiry,
+    }
+
+
 async def get_decay_simulation_for_contract(
     ticker: str,
     expiry: str,
     strike: float,
     option_type: str = 'call'
 ) -> Dict[str, Any]:
-    """
-    Get decay simulation for a specific contract from the options chain.
-    Fetches current price and IV from market data.
-    """
-    stock = yf.Ticker(ticker)
-    
-    # Get current stock price
-    info = stock.info
-    stock_price = info.get('regularMarketPrice') or info.get('currentPrice')
-    
-    if not stock_price:
-        raise ValueError(f"Could not get current price for {ticker}")
-    
-    # Get the specific option contract
-    try:
-        chain = stock.option_chain(expiry)
-    except Exception as e:
-        raise ValueError(f"Could not get options chain for {expiry}: {e}")
-    
-    if option_type == 'call':
-        options_df = chain.calls
-    else:
-        options_df = chain.puts
-    
-    # Find the contract
-    contract = options_df[options_df['strike'] == strike]
-    
-    if contract.empty:
-        raise ValueError(f"No {option_type} contract found at strike {strike}")
-    
-    contract = contract.iloc[0]
-    
-    # Get IV from the contract
-    iv = contract.get('impliedVolatility', 0.30)
-    if pd.isna(iv) or iv <= 0:
-        iv = 0.30
-    
-    # Calculate days to expiry
-    expiry_date = datetime.strptime(expiry, "%Y-%m-%d")
-    days_to_expiry = (expiry_date - datetime.now()).days
-    
-    if days_to_expiry < 1:
-        days_to_expiry = 1  # Minimum 1 day
-    
-    # Run simulation
+    """Get decay simulation for a specific contract from the options chain."""
+    info = await get_yf_info(ticker)
+    params = await asyncio.to_thread(
+        _fetch_contract_for_decay_sync, ticker, expiry, strike, option_type, info
+    )
+
     return await simulate_option_decay(
         ticker=ticker,
-        stock_price=stock_price,
+        stock_price=params["stock_price"],
         strike=strike,
-        days_to_expiry=days_to_expiry,
-        implied_volatility=iv,
-        option_type=option_type
+        days_to_expiry=params["days_to_expiry"],
+        implied_volatility=params["iv"],
+        option_type=option_type,
     )

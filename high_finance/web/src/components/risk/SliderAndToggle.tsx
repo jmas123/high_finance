@@ -1,4 +1,4 @@
-import { memo, useEffect, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 
 export const SliderControl = memo(function SliderControl({
   label,
@@ -20,9 +20,17 @@ export const SliderControl = memo(function SliderControl({
   suffix?: string;
 }) {
   const [draft, setDraft] = useState(value);
+  const commitRef = useRef<number>(0); // dedup multiple release events per gesture
 
   // keep draft in sync if parent updates value externally
   useEffect(() => setDraft(value), [value]);
+
+  const commitValue = () => {
+    const now = Date.now();
+    if (now - commitRef.current < 50) return; // dedup within 50ms
+    commitRef.current = now;
+    setValue(draft);
+  };
 
   const displayValue = (v: number) => {
     switch (format) {
@@ -93,10 +101,11 @@ export const SliderControl = memo(function SliderControl({
           value={draft}
           onChange={(e) => setDraft(Number(e.target.value))}
           // commit on release - multiple events for cross-browser/device support
-          onMouseUp={() => setValue(draft)}
-          onTouchEnd={() => setValue(draft)}
-          onPointerUp={() => setValue(draft)}
-          onKeyUp={() => setValue(draft)} // for keyboard arrows
+          // commitValue deduplicates so only one fires per gesture
+          onMouseUp={commitValue}
+          onTouchEnd={commitValue}
+          onPointerUp={commitValue}
+          onKeyUp={commitValue}
           style={{
             flex: 1,
             accentColor: "#3b82f6",

@@ -3,14 +3,19 @@ High Finance API
 ================
 """
 
+import asyncio
 import logging
+from concurrent.futures import ThreadPoolExecutor
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, ORJSONResponse
 from slowapi.errors import RateLimitExceeded
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.gzip import GZipMiddleware
 
 from high_finance.core.config import settings
+from high_finance.core.cache import close_redis
 from high_finance.core.rate_limit import limiter, rate_limit_exceeded_handler
 from high_finance.api.v1.routes import (
     companies, fundamentals, ownership, leadership,
@@ -38,6 +43,16 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+
+        # Cache-Control: let browsers cache ticker/market data to avoid redundant round-trips
+        path = request.url.path
+        if path.startswith("/api/v1/ticker/"):
+            response.headers["Cache-Control"] = "public, max-age=60, stale-while-revalidate=300"
+        elif path.startswith("/api/v1/market/"):
+            response.headers["Cache-Control"] = "public, max-age=30"
+        else:
+            response.headers["Cache-Control"] = "no-cache"
+
         return response
 
 
@@ -47,7 +62,24 @@ app = FastAPI(
     version="1.0.0",
     docs_url="/docs" if settings.DEBUG else None,
     redoc_url="/redoc" if settings.DEBUG else None,
+    default_response_class=ORJSONResponse,
 )
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Configure thread pool for blocking yfinance/feedparser calls."""
+    executor = ThreadPoolExecutor(max_workers=40)
+    loop = asyncio.get_running_loop()
+    loop.set_default_executor(executor)
+    logger.info("Thread pool executor configured with max_workers=40")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Clean up Redis connection."""
+    await close_redis()
+    logger.info("Redis connection closed")
 
 # Rate limiter
 app.state.limiter = limiter
@@ -66,6 +98,9 @@ app.add_middleware(
     expose_headers=["X-Request-ID", "X-RateLimit-Limit", "X-RateLimit-Remaining"],
     max_age=600,
 )
+
+# GZip compression — ~50-70% smaller JSON payloads (skip tiny responses <500 bytes)
+app.add_middleware(GZipMiddleware, minimum_size=500)
 
 # Routes
 app.include_router(companies.router, prefix="/api/v1/companies", tags=["companies"])

@@ -1,29 +1,53 @@
-import { useState, useEffect, useCallback, lazy, Suspense, useRef } from "react";
+import { useState, useEffect, useCallback, useReducer, lazy, Suspense, useRef } from "react";
 import { Routes, Route, useNavigate, useParams, useLocation, Link } from "react-router-dom";
 import { api } from "./lib/api";
 import { projectsApi } from "./components/project/api";
-import { PriceChartWithDrawings } from "./components/chart";
 import { CompanyHeader } from "./components/CompanyHeader";
 import { FundamentalsCard } from "./components/FundamentalsCard";
 import { EarningsCard } from "./components/earnings/EarningsCard";
 import { NewsCard } from "./components/NewsCard";
-import { RiskCard } from "./components/risk/RiskCard";
-import { OptionsFlowCard } from "./components/options/OptionsFlowCard";
+
 // Lazy load heavy components for better initial load time
+const PriceChartWithDrawings = lazy(() =>
+  import("./components/chart").then(m => ({ default: m.PriceChartWithDrawings }))
+);
+const RiskCard = lazy(() =>
+  import("./components/risk/RiskCard").then(m => ({ default: m.RiskCard }))
+);
+const OptionsFlowCard = lazy(() =>
+  import("./components/options/OptionsFlowCard").then(m => ({ default: m.OptionsFlowCard }))
+);
 const OptionDecaySimulator = lazy(() =>
   import("./components/options/OptionsDecaySimulator").then(m => ({ default: m.OptionDecaySimulator }))
 );
-import { DCFCard } from "./components/valuation/DCFCard";
-import { NotificationsCard } from "./components/notifications/NotificationsCard";
-import { CompsTable } from "./components/CompsTableCard";
+const DCFCard = lazy(() =>
+  import("./components/valuation/DCFCard").then(m => ({ default: m.DCFCard }))
+);
+const NotificationsCard = lazy(() =>
+  import("./components/notifications/NotificationsCard").then(m => ({ default: m.NotificationsCard }))
+);
+const CompsTable = lazy(() =>
+  import("./components/CompsTableCard").then(m => ({ default: m.CompsTable }))
+);
+const PredictionCard = lazy(() =>
+  import("./components/PredictionCard").then(m => ({ default: m.PredictionCard }))
+);
+const FinancialStatements = lazy(() =>
+  import("./components/FinancialStatements").then(m => ({ default: m.FinancialStatements }))
+);
+const InsiderTradingCard = lazy(() =>
+  import("./components/InsiderTradingCard").then(m => ({ default: m.InsiderTradingCard }))
+);
+const InstitutionalFlowCard = lazy(() =>
+  import("./components/InstitutionalFlowCard").then(m => ({ default: m.InstitutionalFlowCard }))
+);
+const PoliticianTradesCard = lazy(() =>
+  import("./components/politicians/PoliticianTradesCard").then(m => ({ default: m.PoliticianTradesCard }))
+);
 import type { CompsResponse, FinancialStatementsResponse, RiskBundle, ValuationBundle, NewsBundle, IVContext, PoliticianTradeWithContext } from "./lib/types";
+import type { TickerBundleResponse } from "./lib/api";
 import { LeadershipTable } from "./components/LeadershipTable";
-import { FinancialStatements } from "./components/FinancialStatements";
-import { PredictionCard } from "./components/PredictionCard";
 import { SearchBar } from "./components/SearchBar";
-import { PoliticianTradesCard } from "./components/politicians/PoliticianTradesCard";
-import { InsiderTradingCard } from "./components/InsiderTradingCard";
-import { InstitutionalFlowCard } from "./components/InstitutionalFlowCard";
 import BroaderMarketContext from "./components/market_context/BroaderMarketContextCard";
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
@@ -309,9 +333,11 @@ function ScreenerView() {
 // ══════════════════════════════════════════════════════════════════════════════
 function SignalsView() {
   return (
-    <div style={{ marginBottom: 20 }}>
-      <NotificationsCard />
-    </div>
+    <Suspense fallback={<div style={styles.lazyFallback}>Loading signals...</div>}>
+      <div style={{ marginBottom: 20 }}>
+        <NotificationsCard />
+      </div>
+    </Suspense>
   );
 }
 
@@ -419,6 +445,112 @@ function ProjectView() {
   );
 }
 
+// ── Ticker state reducer ─────────────────────────────────────────────────────
+// Replaces 19 individual useState hooks with a single dispatch.
+// One dispatch({ type: 'LOAD_SUCCESS', bundle }) → single reconciliation pass.
+type TickerState = {
+  company: any | null;
+  fundamentals: any | null;
+  prices: any[];
+  leadership: any[];
+  financials: FinancialStatementsResponse | null;
+  comps: CompsResponse | null;
+  riskData: RiskBundle | null;
+  valuationData: ValuationBundle | null;
+  institutionalFlow: any | null;
+  insiderTrades: any[];
+  insiderSummary: any | null;
+  politicianTrades: PoliticianTradeWithContext[];
+  optionsOverview: any | null;
+  ivContext: IVContext | null;
+  earningsData: any | null;
+  newsData: NewsBundle | null;
+  predictionData: any | null;
+  macroIndicators: any | null;
+  sectorsData: any | null;
+  rateImpact: any | null;
+  loading: boolean;
+  error: string | null;
+};
+
+type TickerAction =
+  | { type: 'LOAD_START' }
+  | { type: 'LOAD_SUCCESS'; bundle: TickerBundleResponse }
+  | { type: 'LOAD_ERROR'; error: string }
+  | { type: 'SET_ERROR'; error: string }
+  | { type: 'UPDATE_PRICES'; prices: any[] }
+  | { type: 'UPDATE_COMPS'; comps: CompsResponse };
+
+const initialTickerState: TickerState = {
+  company: null,
+  fundamentals: null,
+  prices: [],
+  leadership: [],
+  financials: null,
+  comps: null,
+  riskData: null,
+  valuationData: null,
+  institutionalFlow: null,
+  insiderTrades: [],
+  insiderSummary: null,
+  politicianTrades: [],
+  optionsOverview: null,
+  ivContext: null,
+  earningsData: null,
+  newsData: null,
+  predictionData: null,
+  macroIndicators: null,
+  sectorsData: null,
+  rateImpact: null,
+  loading: false,
+  error: null,
+};
+
+function tickerReducer(state: TickerState, action: TickerAction): TickerState {
+  switch (action.type) {
+    case 'LOAD_START':
+      return { ...initialTickerState, loading: true };
+    case 'LOAD_SUCCESS': {
+      const b = action.bundle;
+      const isEtfOrFund = b.fundamentals?.is_etf || b.fundamentals?.is_mutual_fund;
+      return {
+        company: b.company,
+        fundamentals: b.fundamentals,
+        prices: b.prices || [],
+        leadership: isEtfOrFund ? [] : (b.leadership || []),
+        financials: isEtfOrFund ? null : b.financials,
+        comps: isEtfOrFund ? null : b.comps,
+        riskData: b.risk,
+        valuationData: b.valuation,
+        institutionalFlow: b.institutional_flow,
+        insiderTrades: b.insider_trades || [],
+        insiderSummary: b.insider_summary,
+        politicianTrades: b.politician_trades || [],
+        optionsOverview: b.options_overview,
+        ivContext: b.iv_context,
+        earningsData: b.earnings,
+        newsData: b.news,
+        predictionData: b.prediction,
+        macroIndicators: b.macro_indicators,
+        sectorsData: b.sectors,
+        rateImpact: b.rate_impact,
+        loading: false,
+        error: null,
+      };
+    }
+    case 'LOAD_ERROR':
+      return { ...initialTickerState, error: action.error };
+    case 'UPDATE_PRICES':
+      return { ...state, prices: action.prices };
+    case 'SET_ERROR':
+      return { ...state, error: action.error };
+    case 'UPDATE_COMPS':
+      return { ...state, comps: action.comps };
+    default:
+      return state;
+  }
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // TICKER VIEW (/quote/:ticker)
 // ══════════════════════════════════════════════════════════════════════════════
@@ -433,33 +565,13 @@ function TickerView() {
     addPosition,
   } = useUserData();
 
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const [company, setCompany] = useState<any>(null);
-  const [fundamentals, setFundamentals] = useState<any>(null);
-  const [comps, setComps] = useState<CompsResponse | null>(null);
-  const [leadership, setLeadership] = useState<any[]>([]);
-  const [prices, setPrices] = useState<any[]>([]);
-  const [financials, setFinancials] = useState<FinancialStatementsResponse | null>(null);
-
-  // Bundle data - component-specific (fetched in single request to avoid connection limits)
-  const [riskData, setRiskData] = useState<RiskBundle | null>(null);
-  const [valuationData, setValuationData] = useState<ValuationBundle | null>(null);
-  const [institutionalFlow, setInstitutionalFlow] = useState<any | null>(null);
-  const [insiderTrades, setInsiderTrades] = useState<any[]>([]);
-  const [insiderSummary, setInsiderSummary] = useState<any | null>(null);
-  const [politicianTrades, setPoliticianTrades] = useState<PoliticianTradeWithContext[]>([]);
-  const [optionsOverview, setOptionsOverview] = useState<any | null>(null);
-  const [ivContext, setIvContext] = useState<IVContext | null>(null);
-  const [earningsData, setEarningsData] = useState<any | null>(null);
-  const [newsData, setNewsData] = useState<NewsBundle | null>(null);
-  const [predictionData, setPredictionData] = useState<any | null>(null);
-
-  // Market context (shared)
-  const [macroIndicators, setMacroIndicators] = useState<any | null>(null);
-  const [sectorsData, setSectorsData] = useState<any | null>(null);
-  const [rateImpact, setRateImpact] = useState<any | null>(null);
+  const [state, dispatch] = useReducer(tickerReducer, initialTickerState);
+  const {
+    company, fundamentals, prices, leadership, financials, comps,
+    riskData, valuationData, institutionalFlow, insiderSummary,
+    politicianTrades, optionsOverview, ivContext, earningsData, newsData,
+    predictionData, macroIndicators, sectorsData, rateImpact, loading, error,
+  } = state;
 
   const [showAddPosition, setShowAddPosition] = useState(false);
 
@@ -467,10 +579,10 @@ function TickerView() {
   const returnProjectId = sessionStorage.getItem("hf_return_project");
 
   // DCF state for project import flow - save to sessionStorage for cross-route persistence
-  const handleDCFStateChange = useCallback((state: DCFState) => {
-    if (state && returnProjectId) {
+  const handleDCFStateChange = useCallback((dcfState: DCFState) => {
+    if (dcfState && returnProjectId) {
       // Only save to session if we came from a project
-      saveDCFToSession(state);
+      saveDCFToSession(dcfState);
     }
   }, [returnProjectId]);
 
@@ -494,31 +606,8 @@ function TickerView() {
     if (fetchingRef.current === t) return;
     fetchingRef.current = t;
 
-    setLoading(true);
-    setError(null);
+    dispatch({ type: 'LOAD_START' });
     setShowAddPosition(false);
-
-    // Reset all state
-    setCompany(null);
-    setFundamentals(null);
-    setLeadership([]);
-    setPrices([]);
-    setFinancials(null);
-    setComps(null);
-    setRiskData(null);
-    setValuationData(null);
-    setInstitutionalFlow(null);
-    setInsiderTrades([]);
-    setInsiderSummary(null);
-    setPoliticianTrades([]);
-    setOptionsOverview(null);
-    setIvContext(null);
-    setEarningsData(null);
-    setNewsData(null);
-    setPredictionData(null);
-    setMacroIndicators(null);
-    setSectorsData(null);
-    setRateImpact(null);
 
     try {
       // Single request fetches ALL data - backend runs parallel fetches internally
@@ -529,48 +618,19 @@ function TickerView() {
         throw new Error("Ticker not found");
       }
 
-      // Core data
-      setCompany(bundle.company);
-      setFundamentals(bundle.fundamentals);
-      setPrices(bundle.prices || []);
+      // Single dispatch replaces 19 individual setState calls → one reconciliation pass
+      dispatch({ type: 'LOAD_SUCCESS', bundle });
 
       // ── Personalization tracking ───────────────────────────────────────────
       addRecentTicker(t);
-
-      // Only set stock-specific data if NOT an ETF
-      const isEtfOrFund = bundle.fundamentals?.is_etf || bundle.fundamentals?.is_mutual_fund;
-      if (!isEtfOrFund) {
-        setLeadership(bundle.leadership || []);
-        setFinancials(bundle.financials);
-        setComps(bundle.comps);
-      }
-
-      // Component data (from mega-bundle)
-      setRiskData(bundle.risk);
-      setValuationData(bundle.valuation);
-      setInstitutionalFlow(bundle.institutional_flow);
-      setInsiderTrades(bundle.insider_trades || []);
-      setInsiderSummary(bundle.insider_summary);
-      setPoliticianTrades(bundle.politician_trades || []);
-      setOptionsOverview(bundle.options_overview);
-      setIvContext(bundle.iv_context);
-      setEarningsData(bundle.earnings);
-      setNewsData(bundle.news);
-      setPredictionData(bundle.prediction);
-
-      // Market context
-      setMacroIndicators(bundle.macro_indicators);
-      setSectorsData(bundle.sectors);
-      setRateImpact(bundle.rate_impact);
 
       // Log any partial failures for debugging
       if (Object.keys(bundle.errors).length > 0) {
         console.warn("Partial load failures:", bundle.errors);
       }
     } catch (e: any) {
-      setError(e?.message ?? "Unknown error");
+      dispatch({ type: 'LOAD_ERROR', error: e?.message ?? "Unknown error" });
     } finally {
-      setLoading(false);
       fetchingRef.current = null;
     }
   }, []);
@@ -584,15 +644,15 @@ function TickerView() {
     }
   }, [ticker, loadTicker]);
 
-  async function loadPrices(period: string) {
+  const loadPrices = useCallback(async (period: string) => {
     if (!ticker) return;
     try {
       const p = await api.prices(ticker, period);
-      setPrices(p);
+      dispatch({ type: 'UPDATE_PRICES', prices: p });
     } catch (e: any) {
-      setError(e?.message ?? "Failed to load prices");
+      console.error("Failed to load prices:", e);
     }
-  }
+  }, [ticker]);
 
   // State for infinite scroll loading
   const [isLoadingMorePrices, setIsLoadingMorePrices] = useState(false);
@@ -601,7 +661,7 @@ function TickerView() {
    * Load more historical price data (infinite scroll).
    * Fetches ~6 months of data ending at the earliestDate and prepends it.
    */
-  async function loadMorePrices(earliestDate: string): Promise<void> {
+  const loadMorePrices = useCallback(async (earliestDate: string): Promise<void> => {
     if (!ticker || isLoadingMorePrices) return;
 
     setIsLoadingMorePrices(true);
@@ -640,7 +700,7 @@ function TickerView() {
           (a, b) => a.timestamp - b.timestamp
         );
 
-        setPrices(mergedArray);
+        dispatch({ type: 'UPDATE_PRICES', prices: mergedArray });
       }
     } catch (e: any) {
       console.error("Failed to load more prices:", e);
@@ -648,7 +708,7 @@ function TickerView() {
     } finally {
       setIsLoadingMorePrices(false);
     }
-  }
+  }, [ticker, isLoadingMorePrices, prices]);
 
   // ── Personalization handlers ─────────────────────────────────────────────
   const inWatchlist = ticker ? isInWatchlist(ticker) : false;
@@ -685,7 +745,7 @@ function TickerView() {
       });
       navigate(`/projects/${p.id}`);
     } catch (e: any) {
-      setError(e?.message ?? "Failed to create project");
+      dispatch({ type: 'SET_ERROR', error: e?.message ?? "Failed to create project" });
     }
   }
 
@@ -824,16 +884,9 @@ function TickerView() {
 
       {/* Price Chart - Always show */}
       {prices.length > 0 && (
-        <div
-          style={{
-            marginBottom: 20,
-            background: "#1a1a1a",
-            border: "1px solid #333",
-            borderRadius: 10,
-            padding: 16,
-          }}
-        >
-          <PriceChartWithDrawings
+        <Suspense fallback={<div style={styles.lazyFallback}>Loading chart...</div>}>
+          <div style={styles.cardContainer}>
+            <PriceChartWithDrawings
               data={prices}
               ticker={ticker}
               onPeriodChange={loadPrices}
@@ -841,7 +894,8 @@ function TickerView() {
               onLoadMore={loadMorePrices}
               isLoadingMore={isLoadingMorePrices}
             />
-        </div>
+          </div>
+        </Suspense>
       )}
 
       {/* ==================== */}
@@ -850,48 +904,56 @@ function TickerView() {
       {isStock && (
         <>
           {/* ML Prediction */}
-          <div style={{ marginBottom: 20 }}>
-            <PredictionCard key={`pred-${ticker}`} ticker={ticker} />
-          </div>
+          <Suspense fallback={<div style={styles.lazyFallback}>Loading prediction...</div>}>
+            <div style={{ marginBottom: 20 }}>
+              <PredictionCard key={`pred-${ticker}`} ticker={ticker} initialData={predictionData} />
+            </div>
+          </Suspense>
 
           {/* DCF + Risk (side by side) */}
-          <div style={styles.gridTwoCol}>
-            <DCFCard
-              key={`dcf-${ticker}`}
-              ticker={ticker}
-              onStateChange={handleDCFStateChange}
-              initialData={valuationData}
-            />
-            <RiskCard key={`risk-${ticker}`} ticker={ticker} initialData={riskData} />
-          </div>
+          <Suspense fallback={<div style={styles.lazyFallback}>Loading valuation & risk...</div>}>
+            <div style={styles.gridTwoCol}>
+              <DCFCard
+                key={`dcf-${ticker}`}
+                ticker={ticker}
+                onStateChange={handleDCFStateChange}
+                initialData={valuationData}
+              />
+              <RiskCard key={`risk-${ticker}`} ticker={ticker} initialData={riskData} />
+            </div>
+          </Suspense>
 
           {/* Fundamentals + Institutional Flow */}
-          <div style={styles.gridTwoCol}>
-            <FundamentalsCard data={fundamentals} />
-            <InstitutionalFlowCard key={`inst-${ticker}`} ticker={ticker} initialData={institutionalFlow} />
-          </div>
+          <Suspense fallback={<div style={styles.lazyFallback}>Loading...</div>}>
+            <div style={styles.gridTwoCol}>
+              <FundamentalsCard data={fundamentals} />
+              <InstitutionalFlowCard key={`inst-${ticker}`} ticker={ticker} initialData={institutionalFlow} />
+            </div>
+          </Suspense>
 
           {/* Comps Table */}
           {comps && ticker && (
-            <div style={{ marginBottom: 16 }}>
-              <CompsTable
-                data={comps}
-                ticker={ticker}
-                isAuthenticated={isAuthenticated}
-                onRefetch={async (peerGroupId, peerTickers) => {
-                  try {
-                    const newComps = await api.comps(ticker, {
-                      peer_group_id: peerGroupId ?? undefined,
-                      peers: peerTickers ?? undefined,
-                    });
-                    if (newComps) setComps(newComps);
-                  } catch (e) {
-                    console.error("Failed to refetch comps:", e);
-                  }
-                }}
-                onTickerClick={(t) => navigate(`/quote/${t.toUpperCase()}`)}
-              />
-            </div>
+            <Suspense fallback={<div style={styles.lazyFallback}>Loading comps...</div>}>
+              <div style={{ marginBottom: 16 }}>
+                <CompsTable
+                  data={comps}
+                  ticker={ticker}
+                  isAuthenticated={isAuthenticated}
+                  onRefetch={async (peerGroupId, peerTickers) => {
+                    try {
+                      const newComps = await api.comps(ticker, {
+                        peer_group_id: peerGroupId ?? undefined,
+                        peers: peerTickers ?? undefined,
+                      });
+                      if (newComps) dispatch({ type: 'UPDATE_COMPS', comps: newComps });
+                    } catch (e) {
+                      console.error("Failed to refetch comps:", e);
+                    }
+                  }}
+                  onTickerClick={(t) => navigate(`/quote/${t.toUpperCase()}`)}
+                />
+              </div>
+            </Suspense>
           )}
 
           <div style={{ ...styles.cardContainer, padding: 20 }}>
@@ -901,14 +963,19 @@ function TickerView() {
               showMacro={true}
               showSectors={true}
               showRateImpact={true}
+              initialMacroData={macroIndicators}
+              initialSectorsData={sectorsData}
+              initialRateImpactData={rateImpact}
             />
           </div>
 
           {/* Insider + Politicians */}
-          <div style={styles.gridTwoCol}>
-            <InsiderTradingCard key={`insider-${ticker}`} ticker={ticker} initialData={insiderSummary} />
-            <PoliticianTradesCard key={`pol-${ticker}`} ticker={ticker} initialData={politicianTrades} />
-          </div>
+          <Suspense fallback={<div style={styles.lazyFallback}>Loading...</div>}>
+            <div style={styles.gridTwoCol}>
+              <InsiderTradingCard key={`insider-${ticker}`} ticker={ticker} initialData={insiderSummary} />
+              <PoliticianTradesCard key={`pol-${ticker}`} ticker={ticker} initialData={politicianTrades} />
+            </div>
+          </Suspense>
 
           {/* Leadership */}
           {leadership.length > 0 && <LeadershipTable data={leadership} />}
@@ -931,9 +998,11 @@ function TickerView() {
           </div>
 
           {/* Risk Card - Works for ETFs too */}
-          <div style={{ marginBottom: 20 }}>
-            <RiskCard key={`risk-${ticker}`} ticker={ticker} initialData={riskData} />
-          </div>
+          <Suspense fallback={<div style={styles.lazyFallback}>Loading risk analysis...</div>}>
+            <div style={{ marginBottom: 20 }}>
+              <RiskCard key={`risk-${ticker}`} ticker={ticker} initialData={riskData} />
+            </div>
+          </Suspense>
         </>
       )}
 
@@ -945,9 +1014,11 @@ function TickerView() {
       <NewsCard ticker={ticker} initialData={newsData} />
 
       {/* Options - Works for both (most ETFs have options) */}
-      <div style={{ marginBottom: 20 }}>
-        <OptionsFlowCard key={`options-${ticker}`} ticker={ticker} initialData={optionsOverview} />
-      </div>
+      <Suspense fallback={<div style={styles.lazyFallback}>Loading options flow...</div>}>
+        <div style={{ marginBottom: 20 }}>
+          <OptionsFlowCard key={`options-${ticker}`} ticker={ticker} initialData={optionsOverview} />
+        </div>
+      </Suspense>
 
       {/* Option Decay Simulator - Works for both (lazy loaded) */}
       <Suspense fallback={<div style={styles.lazyFallback}>Loading decay simulator...</div>}>
@@ -955,19 +1026,23 @@ function TickerView() {
           <OptionDecaySimulator
             key={`decay-${ticker}`}
             ticker={ticker}
+            initialOptionsData={optionsOverview}
+            initialIVContext={ivContext}
           />
         </div>
       </Suspense>
 
       {/* Financial Statements - Stock only */}
       {isStock && financials && (
-        <div style={{ marginTop: 16 }}>
-          <FinancialStatements
-            key={`fin-${ticker}`}
-            data={financials}
-            ticker={ticker}
-          />
-        </div>
+        <Suspense fallback={<div style={styles.lazyFallback}>Loading financials...</div>}>
+          <div style={{ marginTop: 16 }}>
+            <FinancialStatements
+              key={`fin-${ticker}`}
+              data={financials}
+              ticker={ticker}
+            />
+          </div>
+        </Suspense>
       )}
     </>
   );

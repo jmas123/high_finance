@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional
 
 from high_finance.services.prices import get_price_history
 from high_finance.services.earnings import get_earnings_history_with_moves
+from high_finance.core.cache import get_or_compute, risk_ttl
 
 TRADING_DAYS = 252
 
@@ -231,18 +232,30 @@ async def get_risk_bundle(
 ) -> Dict[str, Any]:
     """
     Enhanced risk bundle with actionable probability metrics.
-    
-    Args:
-        ticker: Stock ticker
-        period: Historical lookback for volatility estimation
-        horizon_days: Forward simulation horizon
-        n_sims: Number of Monte Carlo simulations
-        vol_multiplier: Scale historical volatility (0.5 = half vol, 2.0 = double)
-        include_earnings_shock: Whether to inject earnings volatility
-        earnings_shock_day: Day in horizon to apply earnings shock (if None, uses horizon/2)
-        target_price: Custom target price for probability calc (if None, uses +10% from current)
-        drawdown_threshold: Drawdown threshold for probability (negative, e.g., -0.15)
     """
+    cache_key = f"hf:risk:{ticker}:p={period}:h={horizon_days}:s={n_sims}:v={vol_multiplier}"
+
+    async def _compute():
+        return await _compute_risk_bundle(
+            ticker, period, horizon_days, n_sims, vol_multiplier,
+            include_earnings_shock, earnings_shock_day, target_price, drawdown_threshold,
+        )
+
+    return await get_or_compute(cache_key, risk_ttl(), _compute)
+
+
+async def _compute_risk_bundle(
+    ticker: str,
+    period: str,
+    horizon_days: int,
+    n_sims: int,
+    vol_multiplier: float,
+    include_earnings_shock: bool,
+    earnings_shock_day: Optional[int],
+    target_price: Optional[float],
+    drawdown_threshold: float,
+) -> Dict[str, Any]:
+    """Inner computation for risk bundle."""
     prices = await get_price_history(ticker, period=period)
     if not prices or len(prices) < 30:
         return {"ticker": ticker, "error": "Insufficient price history"}

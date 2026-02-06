@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState, memo } from "react";
 import { fmtPctSigned, fmtPx, fmtPct } from "../Functions";
 
-export function ScenarioCard({
+export const ScenarioCard = memo(function ScenarioCard({
   scenario,
   fairValue,
   upsidePct,
@@ -86,4 +86,4 @@ export function ScenarioCard({
       )}
     </div>
   );
-}
+});

@@ -491,7 +491,13 @@ function IVSelector({
 }
 
 // ===== MAIN COMPONENT =====
-export function OptionDecaySimulator({ ticker }: { ticker: string }) {
+interface OptionDecaySimulatorProps {
+  ticker: string;
+  initialOptionsData?: any;
+  initialIVContext?: any;
+}
+
+export function OptionDecaySimulator({ ticker, initialOptionsData, initialIVContext }: OptionDecaySimulatorProps) {
   // Options chain state
   const [chainLoading, setChainLoading] = useState(false);
   const [chainData, setChainData] = useState<{
@@ -515,41 +521,61 @@ export function OptionDecaySimulator({ ticker }: { ticker: string }) {
   const [simError, setSimError] = useState<string | null>(null);
   const [simulation, setSimulation] = useState<OptionDecaySimulation | null>(null);
 
-  // Load options chain and IV context on mount
+  // Load options chain and IV context on mount (skip if initialData provided)
   useEffect(() => {
     if (!ticker) return;
 
-    setChainLoading(true);
-    setIVLoading(true);
+    // If we have initialOptionsData from the bundle, use it directly
+    if (initialOptionsData) {
+      setChainData({
+        current_price: initialOptionsData.current_price,
+        expirations: initialOptionsData.expirations || [],
+      });
+      if (initialOptionsData.expirations?.length > 0) {
+        setSelectedExpiry(initialOptionsData.expirations[0]);
+      }
+      if (initialOptionsData.current_price) {
+        const rounded = Math.round(initialOptionsData.current_price / 5) * 5;
+        setSelectedStrike(rounded);
+      }
+    } else {
+      setChainLoading(true);
+      api.optionsOverview(ticker)
+        .then((data) => {
+          setChainData({
+            current_price: data.current_price,
+            expirations: data.expirations || [],
+          });
+          if (data.expirations?.length > 0) {
+            setSelectedExpiry(data.expirations[0]);
+          }
+          if (data.current_price) {
+            const rounded = Math.round(data.current_price / 5) * 5;
+            setSelectedStrike(rounded);
+          }
+        })
+        .catch(() => {})
+        .finally(() => setChainLoading(false));
+    }
 
-    // Load options overview
-    api.optionsOverview(ticker)
-      .then((data) => {
-        setChainData({
-          current_price: data.current_price,
-          expirations: data.expirations || [],
-        });
-        if (data.expirations?.length > 0) {
-          setSelectedExpiry(data.expirations[0]);
-        }
-        if (data.current_price) {
-          const rounded = Math.round(data.current_price / 5) * 5;
-          setSelectedStrike(rounded);
-        }
-      })
-      .catch(() => {})
-      .finally(() => setChainLoading(false));
-
-    // Load IV context
-    api.ivContext(ticker)
-      .then((ctx) => {
-        setIVContext(ctx);
-        if (ctx.suggested_iv) {
-          setSelectedIV(ctx.suggested_iv);
-        }
-      })
-      .catch(() => {})
-      .finally(() => setIVLoading(false));
+    // If we have initialIVContext from the bundle, use it directly
+    if (initialIVContext) {
+      setIVContext(initialIVContext);
+      if (initialIVContext.suggested_iv) {
+        setSelectedIV(initialIVContext.suggested_iv);
+      }
+    } else {
+      setIVLoading(true);
+      api.ivContext(ticker)
+        .then((ctx) => {
+          setIVContext(ctx);
+          if (ctx.suggested_iv) {
+            setSelectedIV(ctx.suggested_iv);
+          }
+        })
+        .catch(() => {})
+        .finally(() => setIVLoading(false));
+    }
   }, [ticker]);
 
   // Fetch contract IV when strike/expiry/type changes

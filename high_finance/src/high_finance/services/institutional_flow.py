@@ -1,30 +1,27 @@
+import asyncio
+
 import yfinance as yf
 from typing import List, Dict, Any
 from datetime import datetime
 
-async def get_institutional_holders(ticker: str) -> List[Dict[str, Any]]:
-    """Get current institutional holders."""
-    stock = yf.Ticker(ticker)
-    
-    holders_df = stock.institutional_holders
-    
+from high_finance.core.cache import get_or_compute, trades_ttl
+from high_finance.services.yf_cache import get_yf_info
+
+
+def _parse_holders_df(holders_df, shares_outstanding) -> List[Dict[str, Any]]:
+    """Parse a yfinance holders DataFrame into a list of dicts."""
     if holders_df is None or holders_df.empty:
         return []
-    
-    # Get shares outstanding for percentage calc
-    shares_outstanding = stock.info.get('sharesOutstanding', None)
-    
+
     results = []
     for _, row in holders_df.iterrows():
         shares = row.get('Shares', 0)
         value = row.get('Value', 0)
-        
-        # Calculate percentage (guard against zero shares outstanding)
+
         pct_held = None
         if shares_outstanding and shares_outstanding > 0 and shares:
             pct_held = shares / shares_outstanding
-        
-        # Parse date
+
         date_reported = row.get('Date Reported')
         if date_reported is not None:
             try:
@@ -33,10 +30,9 @@ async def get_institutional_holders(ticker: str) -> List[Dict[str, Any]]:
                 date_str = str(date_reported)
         else:
             date_str = None
-        
-        # Get change data if available
+
         pct_change = row.get('% Change', row.get('pctChange', None))
-        
+
         results.append({
             "holder": row.get('Holder', 'Unknown'),
             "shares": int(shares) if shares and shares == shares else 0,
@@ -45,52 +41,55 @@ async def get_institutional_holders(ticker: str) -> List[Dict[str, Any]]:
             "pct_change": float(pct_change) if pct_change and pct_change == pct_change else None,
             "date_reported": date_str,
         })
-    
+
     return results
+
+
+def _fetch_institutional_flow_sync(ticker: str, info: dict) -> Dict[str, Any]:
+    """Blocking yfinance calls — runs in thread pool.
+    Accepts pre-fetched info dict to avoid duplicate .info HTTP call.
+    Still needs yf.Ticker() for .institutional_holders / .mutualfund_holders.
+    """
+    stock = yf.Ticker(ticker)
+    shares_outstanding = info.get('sharesOutstanding', None)
+
+    institutional = _parse_holders_df(stock.institutional_holders, shares_outstanding)
+    mutual_funds = _parse_holders_df(stock.mutualfund_holders, shares_outstanding)
+
+    return {
+        "institutional": institutional,
+        "mutual_funds": mutual_funds,
+        "info": {
+            "sharesOutstanding": info.get('sharesOutstanding', 0),
+            "heldPercentInstitutions": info.get('heldPercentInstitutions', 0),
+            "heldPercentInsiders": info.get('heldPercentInsiders', 0),
+            "floatShares": info.get('floatShares', 0),
+        },
+    }
+
+
+def _fetch_institutional_holders_sync(ticker: str, shares_outstanding) -> List[Dict[str, Any]]:
+    stock = yf.Ticker(ticker)
+    return _parse_holders_df(stock.institutional_holders, shares_outstanding)
+
+
+async def get_institutional_holders(ticker: str) -> List[Dict[str, Any]]:
+    """Get current institutional holders."""
+    info = await get_yf_info(ticker)
+    shares_outstanding = info.get('sharesOutstanding', None)
+    return await asyncio.to_thread(_fetch_institutional_holders_sync, ticker, shares_outstanding)
+
+
+def _fetch_mutual_fund_holders_sync(ticker: str, shares_outstanding) -> List[Dict[str, Any]]:
+    stock = yf.Ticker(ticker)
+    return _parse_holders_df(stock.mutualfund_holders, shares_outstanding)
 
 
 async def get_mutual_fund_holders(ticker: str) -> List[Dict[str, Any]]:
     """Get mutual fund holders."""
-    stock = yf.Ticker(ticker)
-    
-    holders_df = stock.mutualfund_holders
-    
-    if holders_df is None or holders_df.empty:
-        return []
-    
-    shares_outstanding = stock.info.get('sharesOutstanding', None)
-    
-    results = []
-    for _, row in holders_df.iterrows():
-        shares = row.get('Shares', 0)
-        value = row.get('Value', 0)
-        
-        # Calculate percentage (guard against zero shares outstanding)
-        pct_held = None
-        if shares_outstanding and shares_outstanding > 0 and shares:
-            pct_held = shares / shares_outstanding
-
-        date_reported = row.get('Date Reported')
-        if date_reported is not None:
-            try:
-                date_str = date_reported.strftime('%Y-%m-%d') if hasattr(date_reported, 'strftime') else str(date_reported)
-            except:
-                date_str = str(date_reported)
-        else:
-            date_str = None
-
-        pct_change = row.get('% Change', row.get('pctChange', None))
-
-        results.append({
-            "holder": row.get('Holder', 'Unknown'),
-            "shares": int(shares) if shares and shares == shares else 0,
-            "value": float(value) if value and value == value else None,
-            "pct_held": pct_held,
-            "pct_change": float(pct_change) if pct_change and pct_change == pct_change else None,
-            "date_reported": date_str,
-        })
-
-    return results
+    info = await get_yf_info(ticker)
+    shares_outstanding = info.get('sharesOutstanding', None)
+    return await asyncio.to_thread(_fetch_mutual_fund_holders_sync, ticker, shares_outstanding)
 
 
 async def get_institutional_flow(ticker: str) -> Dict[str, Any]:
@@ -98,14 +97,22 @@ async def get_institutional_flow(ticker: str) -> Dict[str, Any]:
     Get comprehensive institutional flow data.
     Shows top holders, new positions, biggest changes.
     """
-    stock = yf.Ticker(ticker)
-    
-    # Get basic holders data
-    institutional = await get_institutional_holders(ticker)
-    mutual_funds = await get_mutual_fund_holders(ticker)
-    
-    # Get additional info
-    info = stock.info
+    cache_key = f"hf:institutional:{ticker}"
+
+    async def _compute():
+        # Pre-fetch info from shared cache (avoids duplicate .info HTTP call)
+        info = await get_yf_info(ticker)
+        raw = await asyncio.to_thread(_fetch_institutional_flow_sync, ticker, info)
+        institutional = raw["institutional"]
+        mutual_funds = raw["mutual_funds"]
+        info_summary = raw["info"]
+        return _build_flow_response(institutional, mutual_funds, info_summary)
+
+    return await get_or_compute(cache_key, trades_ttl(), _compute)
+
+
+def _build_flow_response(institutional, mutual_funds, info):
+    """Pure computation — no I/O."""
     shares_outstanding = info.get('sharesOutstanding', 0)
     institutional_pct = info.get('heldPercentInstitutions', 0)
     insider_pct = info.get('heldPercentInsiders', 0)

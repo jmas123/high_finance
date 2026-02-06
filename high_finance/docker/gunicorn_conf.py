@@ -1,7 +1,9 @@
 bind = "0.0.0.0:8000"
 workers = 4
 worker_class = "uvicorn.workers.UvicornWorker"
-timeout = 30
+timeout = 60  # generous but not hiding bugs (see plan: Flaw 6)
+graceful_timeout = 30
+keepalive = 5
 loglevel = "info"
 accesslog = "-"
 errorlog = "-"

@@ -64,14 +64,15 @@ function heatmapText(value: number, maxAbs: number): string {
 const SectorHeatmapCard: React.FC<SectorHeatmapCardProps> = ({
   highlightSector,
   onSectorClick,
+  initialData,
 }) => {
-  const [data, setData] = useState<SectorResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<SectorResponse | null>(initialData ?? null);
+  const [loading, setLoading] = useState(!initialData);
   const [error, setError] = useState<string | null>(null);
   const [timeFrame, setTimeFrame] = useState<TimeFrame>("1d");
   const [viewMode, setViewMode] = useState<"heatmap" | "bars">("heatmap");
   const [activeSector, setActiveSector] = useState<SectorData | null>(null);
-  const fetchedRef = useRef(false); // Prevents StrictMode double-fetch
+  const fetchedRef = useRef(!!initialData); // Skip fetch if initialData provided
 
   useEffect(() => {
     if (fetchedRef.current) return;

@@ -1,7 +1,12 @@
+import asyncio
+
 import yfinance as yf
 from datetime import timedelta
 from typing import List, Dict, Any, Optional, Tuple
 import pandas as pd
+
+from high_finance.core.cache import get_or_compute, fundamentals_ttl
+from high_finance.services.yf_cache import get_yf_info
 
 def _to_naive_ts(ts: pd.Timestamp) -> pd.Timestamp:
     """Convert timestamp to tz-naive (safe for comparing to yfinance price index)."""
@@ -80,7 +85,11 @@ def _get_price_moves_around_event(
     return one_day, five_day
 
 
-async def get_earnings_calendar(ticker: str) -> Dict[str, Any]:
+def _fetch_earnings_calendar_sync(ticker: str, info: dict) -> Dict[str, Any]:
+    """Blocking yfinance call — runs in thread pool.
+    Accepts pre-fetched info dict to avoid duplicate .info HTTP call.
+    Still needs yf.Ticker() for .earnings_dates.
+    """
     stock = yf.Ticker(ticker)
 
     result: Dict[str, Any] = {
@@ -88,7 +97,6 @@ async def get_earnings_calendar(ticker: str) -> Dict[str, Any]:
         "next_earnings": None,
         "earnings_history": [],
         "estimates": None,
-        # New: place for “earnings setup” fields
         "setup": {
             "eps_est_7d_change_pct": None,
             "eps_est_30d_change_pct": None,
@@ -96,9 +104,8 @@ async def get_earnings_calendar(ticker: str) -> Dict[str, Any]:
         },
     }
 
-    # --- Earnings dates / history ---
     try:
-        earnings_dates = stock.earnings_dates  # DataFrame
+        earnings_dates = stock.earnings_dates
         if earnings_dates is not None and not earnings_dates.empty:
             now = pd.Timestamp.now(tz=earnings_dates.index.tz) if getattr(earnings_dates.index, "tz", None) else pd.Timestamp.now()
 
@@ -107,12 +114,10 @@ async def get_earnings_calendar(ticker: str) -> Dict[str, Any]:
                 next_dt, next_row = nearest
                 result["next_earnings"] = {
                     "date": _to_naive_ts(next_dt).strftime("%Y-%m-%d"),
-                    # yfinance often has 00:00; keep your TBD logic
                     "time": _to_naive_ts(next_dt).strftime("%H:%M") if _to_naive_ts(next_dt).hour != 0 else "TBD",
                     "eps_estimate": _safe_float(next_row.get("EPS Estimate")),
                 }
 
-            # Past (most recent first)
             past = earnings_dates[earnings_dates.index <= now].sort_index(ascending=False).head(12)
             for dt, row in past.iterrows():
                 eps_est = _safe_float(row.get("EPS Estimate"))
@@ -136,9 +141,7 @@ async def get_earnings_calendar(ticker: str) -> Dict[str, Any]:
     except Exception as e:
         print(f"Error getting earnings calendar for {ticker}: {e}")
 
-    # --- Current estimates (as you had) ---
     try:
-        info = stock.info or {}
         result["estimates"] = {
             "current_eps_estimate": info.get("forwardEps"),
             "current_pe": info.get("forwardPE"),
@@ -152,7 +155,18 @@ async def get_earnings_calendar(ticker: str) -> Dict[str, Any]:
     return result
 
 
-async def get_earnings_history_with_moves(ticker: str) -> List[Dict[str, Any]]:
+async def get_earnings_calendar(ticker: str) -> Dict[str, Any]:
+    cache_key = f"hf:earnings:{ticker}"
+
+    async def _compute():
+        info = await get_yf_info(ticker)
+        return await asyncio.to_thread(_fetch_earnings_calendar_sync, ticker, info)
+
+    return await get_or_compute(cache_key, fundamentals_ttl(), _compute)
+
+
+def _fetch_earnings_history_with_moves_sync(ticker: str) -> List[Dict[str, Any]]:
+    """Blocking yfinance call — runs in thread pool."""
     stock = yf.Ticker(ticker)
 
     try:
@@ -160,7 +174,6 @@ async def get_earnings_history_with_moves(ticker: str) -> List[Dict[str, Any]]:
         if earnings_dates is None or earnings_dates.empty:
             return []
 
-        # Price history used for moves
         history = stock.history(period="2y", auto_adjust=False)
         if history is None or history.empty:
             return []
@@ -205,7 +218,12 @@ async def get_earnings_history_with_moves(ticker: str) -> List[Dict[str, Any]]:
         return []
 
 
-async def get_upcoming_earnings(tickers: List[str], days_ahead: int = 14) -> List[Dict[str, Any]]:
+async def get_earnings_history_with_moves(ticker: str) -> List[Dict[str, Any]]:
+    return await asyncio.to_thread(_fetch_earnings_history_with_moves_sync, ticker)
+
+
+def _fetch_upcoming_earnings_sync(tickers: List[str], days_ahead: int = 14) -> List[Dict[str, Any]]:
+    """Blocking yfinance calls — runs in thread pool."""
     results: List[Dict[str, Any]] = []
 
     for ticker in tickers:
@@ -222,13 +240,12 @@ async def get_upcoming_earnings(tickers: List[str], days_ahead: int = 14) -> Lis
             if future.empty:
                 continue
 
-            next_dt = future.index[0]  # nearest in window
+            next_dt = future.index[0]
             row = future.loc[next_dt]
 
             next_dt_naive = _to_naive_ts(pd.Timestamp(next_dt))
             now_naive = _to_naive_ts(pd.Timestamp(now))
 
-            # BMO/AMC guess is not reliable from yfinance; keep your heuristic, but base on hour if present
             hr = next_dt_naive.hour
             time_label = "TBD" if hr == 0 else ("BMO" if hr < 12 else "AMC")
 
@@ -249,3 +266,7 @@ async def get_upcoming_earnings(tickers: List[str], days_ahead: int = 14) -> Lis
 
     results.sort(key=lambda x: x["date"])
     return results
+
+
+async def get_upcoming_earnings(tickers: List[str], days_ahead: int = 14) -> List[Dict[str, Any]]:
+    return await asyncio.to_thread(_fetch_upcoming_earnings_sync, tickers, days_ahead)

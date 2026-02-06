@@ -1049,7 +1049,7 @@ export interface BenchmarkPerformance {
   sparkline: number[];
 }
 
-export interface RiskMetrics {
+export interface PortfolioRiskMetrics {
   beta: number | null;  // Beta vs SPY
   sharpe: number | null;  // Sharpe ratio (annualized)
 }
@@ -1062,7 +1062,7 @@ export interface PortfolioPerformanceResponse {
   benchmarks: Record<string, BenchmarkPerformance>;
   periods: string[];
   outperformance: Record<string, number>;
-  risk_metrics?: RiskMetrics;
+  risk_metrics?: PortfolioRiskMetrics;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

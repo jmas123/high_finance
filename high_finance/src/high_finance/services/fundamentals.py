@@ -1,8 +1,10 @@
+import asyncio
 import statistics
 from datetime import datetime, timezone
-import yfinance as yf
 from sqlalchemy import func
 from high_finance.db.models import Company
+from high_finance.core.cache import get_or_compute, fundamentals_ttl
+from high_finance.services.yf_cache import get_yf_info
 
 # ── Extreme-value thresholds ────────────────────────────────────────────────
 # Values above these are legitimate but unusual — the frontend can dim / warn.
@@ -140,8 +142,7 @@ async def get_company_fundamentals(
     fetch_peers: bool = False,
     peer_tickers: list[str] | None = None,
 ):
-    stock = yf.Ticker(ticker)
-    info = stock.info or {}
+    info = await get_yf_info(ticker)
 
     # ==========================================
     # ASSET TYPE DETECTION
@@ -150,7 +151,6 @@ async def get_company_fundamentals(
     is_etf = quote_type == "ETF"
     is_mutual_fund = quote_type == "MUTUALFUND"
     is_index = quote_type == "INDEX"
-    print(f"DEBUG: {ticker} quoteType = {info.get('quoteType')}")
 
     sector = info.get("sector")
     industry = info.get("industry")
@@ -168,15 +168,6 @@ async def get_company_fundamentals(
     if price and previous_close:
         price_change = round(price - previous_close, 4)
         price_change_pct = round((price_change / previous_close) * 100, 4)
-
-    print({
-  "ticker": ticker,
-  "regularMarketPrice": info.get("regularMarketPrice"),
-  "currentPrice": info.get("currentPrice"),
-  "regularMarketPreviousClose": info.get("regularMarketPreviousClose"),
-  "previousClose": info.get("previousClose"),
-  "regularMarketChangePercent": info.get("regularMarketChangePercent"),
-})
 
 
     # ==========================================
@@ -356,7 +347,7 @@ async def get_company_fundamentals(
     if not company.sic_code:
         try:
             from high_finance.services.sec_sic import fetch_sic_code
-            sic = fetch_sic_code(ticker)
+            sic = await asyncio.to_thread(fetch_sic_code, ticker)
             if sic:
                 company.sic_code = sic
                 db.commit()
@@ -428,18 +419,14 @@ async def get_company_fundamentals(
     peers_data = []
 
     if peer_tickers:
-        # Custom peer list provided - fetch each one
-        for peer_ticker in peer_tickers:
-            if peer_ticker.upper() == ticker.upper():
-                continue  # Skip target ticker if accidentally included
-            try:
-                peer_data = await get_company_fundamentals(peer_ticker.upper(), db, fetch_peers=False)
-                if peer_data:
-                    peers_data.append(peer_data)
-            except Exception:
-                # Peer ticker not found or error - include stub with status
+        # Custom peer list provided - fetch all in parallel
+        filtered = [t.upper() for t in peer_tickers if t.upper() != ticker.upper()]
+        peer_tasks = [get_company_fundamentals(t, db, fetch_peers=False) for t in filtered]
+        peer_results = await asyncio.gather(*peer_tasks, return_exceptions=True)
+        for i, r in enumerate(peer_results):
+            if isinstance(r, Exception) or r is None:
                 peers_data.append({
-                    "ticker": peer_ticker.upper(),
+                    "ticker": filtered[i],
                     "name": None,
                     "status": "not_found",
                     "market_cap": None,
@@ -448,6 +435,8 @@ async def get_company_fundamentals(
                     "ev_to_sales": None,
                     "revenue_growth": None,
                 })
+            else:
+                peers_data.append(r)
     else:
         # Auto-select peers by industry/sector proximity
         current_mcap = market_cap or 0
@@ -468,11 +457,16 @@ async def get_company_fundamentals(
             ).order_by(func.abs(Company.market_cap - current_mcap)).limit(needed).all()
             peers_list.extend(sector_peers)
 
-        for peer in peers_list:
-            try:
-                peers_data.append(await get_company_fundamentals(peer.ticker, db, fetch_peers=False))
-            except:
+        peer_tasks = [
+            get_company_fundamentals(peer.ticker, db, fetch_peers=False)
+            for peer in peers_list
+        ]
+        peer_results = await asyncio.gather(*peer_tasks, return_exceptions=True)
+        for r in peer_results:
+            if isinstance(r, Exception):
                 continue
+            if r:
+                peers_data.append(r)
 
     # Averages for whatever the template asks for
     metrics = comp_template["metrics"]

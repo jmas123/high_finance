@@ -1,9 +1,13 @@
+import asyncio
+
 import yfinance as yf
 import pandas as pd
 import numpy as np
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error, r2_score
 from typing import Dict, Any
+
+from high_finance.core.cache import get_or_compute, risk_ttl
 
 FEATURE_DISPLAY_NAMES = {
     'ret_1d': '1-Day Return',
@@ -168,28 +172,21 @@ def backtest_strategy(y_test, y_pred_test, threshold=0.0005, cost=0.0005):
     }
 
 
-async def train_and_predict(ticker: str) -> Dict[str, Any]:
-    """
-    Train a Random Forest regression model and predict next day's return.
-    Includes backtesting results.
-    """
-    # Fetch 5 years of data
+def _train_and_predict_sync(ticker: str) -> Dict[str, Any]:
+    """Blocking yfinance + sklearn call — runs in thread pool."""
     stock = yf.Ticker(ticker)
     data = stock.history(period="5y")
 
     if data.empty or len(data) < 300:
         return {"error": "Insufficient data for prediction (need 5+ years)"}
 
-    # Prepare features
     x, y, full_data = prep_data(data)
 
     if len(x) < 200:
         return {"error": "Insufficient data after feature engineering"}
 
-    # Train/test split
     x_train, x_test, y_train, y_test = time_split(x, y, test_size=0.2)
 
-    # Train model
     regressor = RandomForestRegressor(
         n_estimators=200,
         max_depth=5,
@@ -198,30 +195,24 @@ async def train_and_predict(ticker: str) -> Dict[str, Any]:
     )
     regressor.fit(x_train, y_train)
 
-    # Predictions
     y_pred_train = regressor.predict(x_train)
     y_pred_test = regressor.predict(x_test)
 
-    # Metrics
     train_mse = mean_squared_error(y_train, y_pred_train)
     test_mse = mean_squared_error(y_test, y_pred_test)
     train_r2 = r2_score(y_train, y_pred_train)
     test_r2 = r2_score(y_test, y_pred_test)
     direction_accuracy = ((y_test > 0) == (y_pred_test > 0)).mean()
 
-    # Feature importance
     feature_importance = dict(zip(x.columns, regressor.feature_importances_))
     top_features = sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)[:5]
-    # Backtest
     backtest_results = backtest_strategy(y_test, y_pred_test)
 
-    # Predict next day
     latest_features = x.iloc[-1:].values
     predicted_return = float(regressor.predict(latest_features)[0])
     current_price = float(data['Close'].iloc[-1])
     predicted_price = current_price * (1 + predicted_return)
 
-    # Current technical indicators
     latest_data = full_data.iloc[-1]
 
     return {
@@ -261,3 +252,13 @@ async def train_and_predict(ticker: str) -> Dict[str, Any]:
             "ma_20_ratio": round(float(latest_data['ma_20_ratio']) * 100, 2),
         }
     }
+
+
+async def train_and_predict(ticker: str) -> Dict[str, Any]:
+    """Train a Random Forest regression model and predict next day's return."""
+    cache_key = f"hf:prediction:{ticker}"
+
+    async def _compute():
+        return await asyncio.to_thread(_train_and_predict_sync, ticker)
+
+    return await get_or_compute(cache_key, risk_ttl(), _compute)

@@ -12,6 +12,9 @@ interface BroaderMarketContextProps {
   showMacro?: boolean;
   showSectors?: boolean;
   showRateImpact?: boolean;
+  initialMacroData?: any;
+  initialSectorsData?: any;
+  initialRateImpactData?: any;
 }
 
 const C = {
@@ -29,6 +32,9 @@ const BroaderMarketContext: React.FC<BroaderMarketContextProps> = ({
   showMacro = true,
   showSectors = true,
   showRateImpact = true,
+  initialMacroData,
+  initialSectorsData,
+  initialRateImpactData,
 }) => {
   const [activeTab, setActiveTab] = useState<Tab>("overview");
 
@@ -125,26 +131,27 @@ const BroaderMarketContext: React.FC<BroaderMarketContextProps> = ({
           <div style={{ display: "grid", gridTemplateColumns: "5fr 7fr", gap: 16 }}>
             {/* Left column: Macro + Rates stacked */}
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-              {showMacro && <MacroOverlayCard ticker={ticker} />}
+              {showMacro && <MacroOverlayCard ticker={ticker} initialData={initialMacroData} />}
               {showRateImpact && (
                 <RateImpactCard
                   ticker={ticker}
                   sector={sector}
                   currentRateEnvironment="stable"
+                  initialData={initialRateImpactData}
                 />
               )}
             </div>
             {/* Right column: Heatmap */}
             <div style={{ minHeight: 500 }}>
-              {showSectors && <SectorHeatmapCard highlightSector={sector} />}
+              {showSectors && <SectorHeatmapCard highlightSector={sector} initialData={initialSectorsData} />}
             </div>
           </div>
         )}
 
-        {activeTab === "macro" && showMacro && <MacroOverlayCard ticker={ticker} />}
-        {activeTab === "sectors" && showSectors && <SectorHeatmapCard highlightSector={sector} />}
+        {activeTab === "macro" && showMacro && <MacroOverlayCard ticker={ticker} initialData={initialMacroData} />}
+        {activeTab === "sectors" && showSectors && <SectorHeatmapCard highlightSector={sector} initialData={initialSectorsData} />}
         {activeTab === "rates" && showRateImpact && (
-          <RateImpactCard ticker={ticker} sector={sector} currentRateEnvironment="stable" />
+          <RateImpactCard ticker={ticker} sector={sector} currentRateEnvironment="stable" initialData={initialRateImpactData} />
         )}
       </div>
     </div>

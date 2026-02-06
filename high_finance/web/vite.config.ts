@@ -12,6 +12,16 @@ export default defineConfig({
       },
     },
   },
-  // Ensure proper base path for production
   base: "/",
+  build: {
+    target: "es2020",
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          charts: ["recharts", "lightweight-charts"],
+          vendor: ["react", "react-dom", "react-router-dom"],
+        },
+      },
+    },
+  },
 });

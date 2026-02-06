@@ -1,6 +1,7 @@
+import { memo } from "react";
 import { fmtPrice } from "../Functions";
 
-export function FanChart({
+export const FanChart = memo(function FanChart({
   fan,
   s0,
   horizonDays,
@@ -132,4 +133,4 @@ export function FanChart({
       </g>
     </svg>
   );
-}
+});

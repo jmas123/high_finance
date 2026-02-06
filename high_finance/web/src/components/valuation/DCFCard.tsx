@@ -82,6 +82,10 @@ export function DCFCard({ ticker, onStateChange, initialData }: DCFCardProps) {
 
   const [activeTab, setActiveTab] = useState<"dcf" | "multiples" | "sensitivity">("dcf");
 
+  // Memoize chart data so TornadoChart (React.memo) doesn't re-render on unrelated state changes
+  const sensitivityData = useMemo(() => data?.sensitivity?.sensitivities ?? [], [data?.sensitivity?.sensitivities]);
+  const baseFV = useMemo(() => data?.sensitivity?.base_fair_value ?? 0, [data?.sensitivity?.base_fair_value]);
+
   // Export state
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
@@ -795,8 +799,8 @@ export function DCFCard({ ticker, onStateChange, initialData }: DCFCardProps) {
         {activeTab === "sensitivity" && (
           <div>
             <div style={{ fontSize: 11, opacity: 0.5, marginBottom: 12 }}>Impact of ±3% change in each input on fair value</div>
-            {data?.sensitivity?.sensitivities ? (
-              <TornadoChart sensitivities={data.sensitivity.sensitivities} baseFV={data.sensitivity.base_fair_value} />
+            {sensitivityData.length > 0 ? (
+              <TornadoChart sensitivities={sensitivityData} baseFV={baseFV} />
             ) : (
               <div style={{ opacity: 0.5, fontSize: 12 }}>Loading sensitivity…</div>
             )}

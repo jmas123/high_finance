@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import type { RiskBundle } from "../../lib/types";
 import { FanChart } from "./FanChart";
 import { DistributionChart } from "./DistributionChart";
@@ -68,14 +68,20 @@ export function RiskCard({ ticker, initialData }: RiskCardProps) {
     }
   }, [ticker, period, horizon, sims, volMultiplier, includeEarningsShock, drawdownThreshold, targetPriceOffset, data?.as_of_close]);
 
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+
   useEffect(() => {
     // Use initial data from bundle on first load if available and params haven't changed
     if (initialData !== undefined && !paramsChanged) {
       setData(initialData);
       return;
     }
-    // Otherwise fetch with current params
-    if (ticker) fetchRisk();
+    // Debounce fetches so rapid slider adjustments don't spam the API
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      if (ticker) fetchRisk();
+    }, 300);
+    return () => clearTimeout(debounceRef.current);
   }, [ticker, period, horizon, sims, volMultiplier, includeEarningsShock, drawdownThreshold, targetPriceOffset, initialData, paramsChanged]);
 
   // Track when params change from defaults
@@ -90,6 +96,10 @@ export function RiskCard({ ticker, initialData }: RiskCardProps) {
   const p = data?.probabilities;
   const s = data?.scenarios;
   const closePrice = data?.as_of_close ?? 0;
+
+  // Memoize chart data to prevent unnecessary re-renders of memoized charts
+  const fanData = useMemo(() => data?.monte_carlo?.fan ?? [], [data?.monte_carlo?.fan]);
+  const distributionData = useMemo(() => data?.distribution ?? [], [data?.distribution]);
 
   // Safe price target calculation (guards against null/undefined close price)
   const calcPriceTarget = (returnPct: number) => closePrice > 0 ? closePrice * (1 + returnPct) : 0;
@@ -518,7 +528,7 @@ export function RiskCard({ ticker, initialData }: RiskCardProps) {
             </div>
             <div style={{ padding: 12 }}>
               <FanChart
-                fan={data.monte_carlo.fan}
+                fan={fanData}
                 s0={closePrice}
                 horizonDays={horizon}
               />
@@ -549,7 +559,7 @@ export function RiskCard({ ticker, initialData }: RiskCardProps) {
             </div>
             <div style={{ padding: 12 }}>
               <DistributionChart
-                distribution={data.distribution}
+                distribution={distributionData}
                 currentPrice={closePrice}
               />
             </div>

@@ -5,10 +5,13 @@ Returns ALL ticker page data in a single request to eliminate browser connection
 """
 
 import asyncio
+import logging
 from typing import Optional, Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 from high_finance.db.session import get_db
 
@@ -30,6 +33,7 @@ from high_finance.services.earnings import get_earnings_calendar
 from high_finance.services.news import get_news_bundle
 from high_finance.services.ml_predictor import train_and_predict
 from high_finance.services.market import market_service
+from high_finance.api.v1.routes.market import _macro_summary
 
 
 class TickerBundleResponse(BaseModel):
@@ -91,18 +95,14 @@ async def get_ticker_bundle(
     # DEFINE ALL FETCH TASKS
     # ═══════════════════════════════════════════════════════════════════════════
 
-    async def fetch_company():
+    # Dedup: call get_company_fundamentals(fetch_peers=True) ONCE.
+    # Split result: full dict for comps, target dict for company/fundamentals.
+    async def fetch_comps_full():
+        """Single call for company + fundamentals + comps."""
         try:
-            return await get_company_fundamentals(ticker, db)
+            return await get_company_fundamentals(ticker, db, fetch_peers=True)
         except Exception as e:
-            errors["company"] = str(e)
-            return None
-
-    async def fetch_fundamentals():
-        try:
-            return await get_company_fundamentals(ticker, db)
-        except Exception as e:
-            errors["fundamentals"] = str(e)
+            errors["comps"] = str(e)
             return None
 
     async def fetch_prices():
@@ -125,13 +125,6 @@ async def get_ticker_bundle(
             return await get_financial_statements(ticker)
         except Exception as e:
             errors["financials"] = str(e)
-            return None
-
-    async def fetch_comps():
-        try:
-            return await get_company_fundamentals(ticker, db, fetch_peers=True)
-        except Exception as e:
-            errors["comps"] = str(e)
             return None
 
     async def fetch_risk():
@@ -181,38 +174,40 @@ async def get_ticker_bundle(
 
     async def fetch_politician_trades():
         try:
-            trades = get_company_politician_trades(db, ticker, limit=50)
-            results = []
-            for t in trades:
-                pol = None
-                if t.politician:
-                    pol = {
-                        "id": t.politician.id,
-                        "name": t.politician.name,
-                        "party": t.politician.party,
-                        "chamber": t.politician.chamber,
-                        "state": t.politician.state,
-                        "district": t.politician.district,
-                        "hit_rate": None,
-                        "avg_return_pct": None,
-                    }
-                results.append({
-                    "trade": {
-                        "id": t.id,
-                        "politician_id": t.politician_id,
-                        "company_id": t.company_id,
-                        "issuer_raw": t.issuer_raw,
-                        "ticker_raw": t.ticker_raw,
-                        "transaction_date": t.transaction_date.isoformat() if t.transaction_date else None,
-                        "disclosure_date": t.disclosure_date.isoformat() if t.disclosure_date else None,
-                        "transaction_type": t.transaction_type,
-                        "amount_min": t.amount_min,
-                        "amount_max": t.amount_max,
-                        "source_url": t.source_url,
-                    },
-                    "politician": pol,
-                })
-            return results
+            def _fetch_sync():
+                trades = get_company_politician_trades(db, ticker, limit=50)
+                results = []
+                for t in trades:
+                    pol = None
+                    if t.politician:
+                        pol = {
+                            "id": t.politician.id,
+                            "name": t.politician.name,
+                            "party": t.politician.party,
+                            "chamber": t.politician.chamber,
+                            "state": t.politician.state,
+                            "district": t.politician.district,
+                            "hit_rate": None,
+                            "avg_return_pct": None,
+                        }
+                    results.append({
+                        "trade": {
+                            "id": t.id,
+                            "politician_id": t.politician_id,
+                            "company_id": t.company_id,
+                            "issuer_raw": t.issuer_raw,
+                            "ticker_raw": t.ticker_raw,
+                            "transaction_date": t.transaction_date.isoformat() if t.transaction_date else None,
+                            "disclosure_date": t.disclosure_date.isoformat() if t.disclosure_date else None,
+                            "transaction_type": t.transaction_type,
+                            "amount_min": t.amount_min,
+                            "amount_max": t.amount_max,
+                            "source_url": t.source_url,
+                        },
+                        "politician": pol,
+                    })
+                return results
+            return await asyncio.to_thread(_fetch_sync)
         except Exception as e:
             errors["politician_trades"] = str(e)
             return []
@@ -260,7 +255,7 @@ async def get_ticker_bundle(
         try:
             indicators = await market_service.get_macro_indicators()
             payload = [ind.model_dump(mode="json") for ind in indicators]
-            return {"indicators": payload}
+            return {"indicators": payload, "summary": _macro_summary(payload)}
         except Exception as e:
             errors["macro_indicators"] = str(e)
             return None
@@ -273,6 +268,11 @@ async def get_ticker_bundle(
                 "sectors": [s.model_dump(mode="json") for s in sorted_sectors],
                 "market_leader": sorted_sectors[0].sector if sorted_sectors else None,
                 "market_laggard": sorted_sectors[-1].sector if sorted_sectors else None,
+                "breadth": {
+                    "positive": sum(1 for s in sectors if s.performance_1d > 0),
+                    "negative": sum(1 for s in sectors if s.performance_1d < 0),
+                    "unchanged": sum(1 for s in sectors if s.performance_1d == 0),
+                },
             }
         except Exception as e:
             errors["sectors"] = str(e)
@@ -283,42 +283,63 @@ async def get_ticker_bundle(
             analyses = await market_service.get_rate_impact_analysis(None)
             return {
                 "analyses": [a.model_dump(mode="json") for a in analyses],
+                "by_sensitivity": {
+                    "high": [a.sector for a in analyses if a.sensitivity == "high"],
+                    "medium": [a.sector for a in analyses if a.sensitivity == "medium"],
+                    "low": [a.sector for a in analyses if a.sensitivity == "low"],
+                },
+                "rate_beneficiaries": [
+                    a.sector for a in analyses if a.impact_direction == "positive"
+                ],
+                "rate_sensitive": [
+                    a.sector for a in analyses if a.impact_direction == "negative"
+                ],
             }
         except Exception as e:
             errors["rate_impact"] = str(e)
             return None
 
     # ═══════════════════════════════════════════════════════════════════════════
-    # RUN ALL FETCHES IN PARALLEL
+    # RUN ALL FETCHES IN PARALLEL (with per-task timeouts)
     # ═══════════════════════════════════════════════════════════════════════════
 
+    async def with_timeout(coro, timeout_s: float, name: str):
+        """Wrap a coroutine with a timeout. Returns None on timeout."""
+        try:
+            return await asyncio.wait_for(coro, timeout=timeout_s)
+        except asyncio.TimeoutError:
+            errors[name] = f"Timed out after {timeout_s}s"
+            logger.warning("Bundle task %s timed out after %ss", name, timeout_s)
+            return None
+
+    FAST = 8    # Most tasks should complete in <8s
+    SLOW = 12   # Heavy tasks (ML, comps with peers) get 12s
+
     results = await asyncio.gather(
-        fetch_company(),           # 0
-        fetch_fundamentals(),      # 1
-        fetch_prices(),            # 2
-        fetch_leadership(),        # 3
-        fetch_financials(),        # 4
-        fetch_comps(),             # 5
-        fetch_risk(),              # 6
-        fetch_valuation(),         # 7
-        fetch_institutional_flow(), # 8
-        fetch_insider_trades(),    # 9
-        fetch_insider_summary(),   # 10
-        fetch_politician_trades(), # 11
-        fetch_options_overview(),  # 12
-        fetch_iv_context(),        # 13
-        fetch_earnings(),          # 14
-        fetch_news(),              # 15
-        fetch_prediction(),        # 16
-        fetch_macro_indicators(),  # 17
-        fetch_sectors(),           # 18
-        fetch_rate_impact(),       # 19
+        with_timeout(fetch_comps_full(), SLOW, "comps"),             # 0
+        with_timeout(fetch_prices(), FAST, "prices"),                # 1
+        with_timeout(fetch_leadership(), FAST, "leadership"),        # 2
+        with_timeout(fetch_financials(), FAST, "financials"),        # 3
+        with_timeout(fetch_risk(), FAST, "risk"),                    # 4
+        with_timeout(fetch_valuation(), FAST, "valuation"),          # 5
+        with_timeout(fetch_institutional_flow(), FAST, "inst_flow"), # 6
+        with_timeout(fetch_insider_trades(), FAST, "insider"),       # 7
+        with_timeout(fetch_insider_summary(), FAST, "insider_sum"),  # 8
+        with_timeout(fetch_politician_trades(), FAST, "pol_trades"), # 9
+        with_timeout(fetch_options_overview(), FAST, "options"),     # 10
+        with_timeout(fetch_iv_context(), FAST, "iv_context"),        # 11
+        with_timeout(fetch_earnings(), FAST, "earnings"),            # 12
+        with_timeout(fetch_news(), FAST, "news"),                    # 13
+        with_timeout(fetch_prediction(), SLOW, "prediction"),        # 14
+        with_timeout(fetch_macro_indicators(), FAST, "macro"),       # 15
+        with_timeout(fetch_sectors(), FAST, "sectors"),              # 16
+        with_timeout(fetch_rate_impact(), FAST, "rate_impact"),      # 17
         return_exceptions=True,
     )
 
     # Unpack results
     (
-        company, fundamentals, prices, leadership, financials, comps,
+        comps_full, prices, leadership, financials,
         risk, valuation, institutional_flow, insider_trades, insider_summary,
         politician_trades, options_overview, iv_context, earnings, news,
         prediction, macro_indicators, sectors, rate_impact
@@ -331,12 +352,10 @@ async def get_ticker_bundle(
             return default
         return val
 
-    company = safe_result(company, "company")
-    fundamentals = safe_result(fundamentals, "fundamentals")
+    comps_full = safe_result(comps_full, "comps")
     prices = safe_result(prices, "prices", [])
     leadership = safe_result(leadership, "leadership", [])
     financials = safe_result(financials, "financials")
-    comps = safe_result(comps, "comps")
     risk = safe_result(risk, "risk")
     valuation = safe_result(valuation, "valuation")
     institutional_flow = safe_result(institutional_flow, "institutional_flow")
@@ -351,6 +370,19 @@ async def get_ticker_bundle(
     macro_indicators = safe_result(macro_indicators, "macro_indicators")
     sectors = safe_result(sectors, "sectors")
     rate_impact = safe_result(rate_impact, "rate_impact")
+
+    # Split the deduped comps_full result:
+    # - fetch_peers=True returns {"target": {...}, "peers": [...], ...}
+    # - company/fundamentals consumers need the flat "target" dict
+    if comps_full and isinstance(comps_full, dict) and "target" in comps_full:
+        company = comps_full["target"]
+        fundamentals = comps_full["target"]
+        comps = comps_full
+    else:
+        # Fallback: comps_full might be a flat dict (ETF path or error)
+        company = comps_full
+        fundamentals = comps_full
+        comps = None
 
     # If both company and fundamentals failed, the ticker is probably invalid
     if company is None and fundamentals is None:

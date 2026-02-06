@@ -117,6 +117,7 @@ export function PriceChartWithDrawings({
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameRef = useRef<number>(0);
+  const lastMoveTimeRef = useRef(0);
 
   // Indicator series refs
   const smaSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
@@ -810,6 +811,12 @@ export function PriceChartWithDrawings({
   const handleCanvasMouseMove = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
       if (!chartReady) return;
+
+      // Throttle to 60fps — mousemove fires hundreds of times/sec, but the
+      // browser can only render at 60fps. Most events produce no visible change.
+      const now = performance.now();
+      if (now - lastMoveTimeRef.current < 16) return;
+      lastMoveTimeRef.current = now;
 
       const rect = e.currentTarget.getBoundingClientRect();
       const x = e.clientX - rect.left;
