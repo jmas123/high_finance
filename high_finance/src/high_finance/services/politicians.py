@@ -115,7 +115,10 @@ def get_significant_congress_trades(
 
     return (
         db.query(PoliticianTrade)
-        .options(joinedload(PoliticianTrade.politician))
+        .options(
+            joinedload(PoliticianTrade.politician),
+            joinedload(PoliticianTrade.company),
+        )
         .filter(PoliticianTrade.disclosure_date >= cutoff)
         .filter(PoliticianTrade.amount_max != None)  # noqa: E711
         .filter(PoliticianTrade.amount_max >= min_amount)

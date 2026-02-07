@@ -5,12 +5,12 @@ Endpoints for job management and monitoring.
 Requires admin authentication.
 """
 
-import os
 import time
 from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Header, Request
+from high_finance.core.config import settings
 from redis import Redis
 from rq import Queue, Retry
 from slowapi import Limiter
@@ -110,7 +110,7 @@ def verify_admin(authorization: Annotated[str | None, Header()] = None) -> bool:
 
     Expects header: Authorization: Bearer <ADMIN_API_KEY>
     """
-    admin_key = os.getenv("ADMIN_API_KEY")
+    admin_key = settings.ADMIN_API_KEY
 
     if not admin_key:
         raise HTTPException(

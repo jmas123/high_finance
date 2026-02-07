@@ -3,7 +3,7 @@ import { PortfolioCard } from "./PortfolioCard";
 import { WatchlistCard } from "./WatchlistCard";
 import { projectsApi } from "../project/api";
 import type { ProjectSummary } from "../../lib/types";
-import { getRecentTickers, exportAllData, importAllData, clearAllData } from "./storage";
+import { getRecentTickers, getWatchlist, getPortfolio, exportAllData, importAllData, clearAllData } from "./storage";
 
 interface HomeDashboardProps {
   onSelect: (ticker: string) => void;
@@ -136,6 +136,57 @@ export function HomeDashboard({
           )}
         </div>
       </div>
+
+      {/* Empty-state hero for first-time visitors */}
+      {recentTickers.length === 0 && getWatchlist().length === 0 && getPortfolio().length === 0 && activeProjects.length === 0 && (
+        <div
+          style={{
+            background: "linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)",
+            border: "1px solid #333",
+            borderRadius: 12,
+            padding: "40px 32px",
+            marginBottom: 24,
+            textAlign: "center",
+          }}
+        >
+          <div style={{ fontSize: 28, fontWeight: 700, color: "#fff", marginBottom: 8 }}>
+            High Finance
+          </div>
+          <p style={{ fontSize: 15, color: "#999", maxWidth: 480, margin: "0 auto 24px" }}>
+            AI-powered equity research. Search any ticker to get fundamentals, risk analysis, congressional trades, and DCF valuation.
+          </p>
+          <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
+            {["AAPL", "NVDA", "MSFT", "JPM", "TSLA"].map((t) => (
+              <button
+                key={t}
+                onClick={() => onSelect(t)}
+                style={{
+                  background: "#3b82f620",
+                  border: "1px solid #3b82f640",
+                  borderRadius: 8,
+                  color: "#3b82f6",
+                  fontSize: 14,
+                  fontWeight: 600,
+                  fontFamily: "monospace",
+                  padding: "8px 20px",
+                  cursor: "pointer",
+                  transition: "all 0.15s",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "#3b82f630";
+                  e.currentTarget.style.borderColor = "#3b82f680";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "#3b82f620";
+                  e.currentTarget.style.borderColor = "#3b82f640";
+                }}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Two Column: Watchlist + Portfolio */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 16, marginBottom: 20 }}>

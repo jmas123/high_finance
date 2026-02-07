@@ -71,6 +71,7 @@ const ScreenerCard = lazy(() =>
 
 // ── Calendar ────────────────────────────────────────────────────────────────
 import { CalendarPopupButton } from "./components/calendar";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 
 // ── Private Companies ─────────────────────────────────────────────────────
 import { PrivateCompanyList } from "./components/private/PrivateCompanyList";
@@ -280,23 +281,53 @@ export default function App() {
           </Link>
         </div>
 
-        {/* ── Routes (wrapped in Suspense for lazy loading) ─────────────── */}
-        <Suspense fallback={<LoadingSpinner />}>
-          <Routes>
-            <Route path="/" element={<DashboardView />} />
-            <Route path="/quote/:ticker" element={<TickerView />} />
-            <Route path="/screener" element={<ScreenerView />} />
-            <Route path="/projects" element={<ProjectsListView />} />
-            <Route path="/projects/:projectId" element={<ProjectView />} />
-            <Route path="/signals" element={<SignalsView />} />
-            <Route path="/private" element={<PrivateCompanyList />} />
-            <Route path="/private/:slug" element={<PrivateCompanyProfileView />} />
-          </Routes>
-        </Suspense>
+        {/* ── Routes (wrapped in ErrorBoundary + Suspense) ─────────────── */}
+        <ErrorBoundary>
+          <Suspense fallback={<LoadingSpinner />}>
+            <Routes>
+              <Route path="/" element={<DashboardView />} />
+              <Route path="/quote/:ticker" element={<TickerView />} />
+              <Route path="/screener" element={<ScreenerView />} />
+              <Route path="/projects" element={<ProjectsListView />} />
+              <Route path="/projects/:projectId" element={<ProjectView />} />
+              <Route path="/signals" element={<SignalsView />} />
+              <Route path="/private" element={<PrivateCompanyList />} />
+              <Route path="/private/:slug" element={<PrivateCompanyProfileView />} />
+              <Route path="*" element={<NotFoundView />} />
+            </Routes>
+          </Suspense>
+        </ErrorBoundary>
       </div>
 
       {/* Auth Modal */}
       <AuthModal isOpen={showAuthModal} onClose={() => setShowAuthModal(false)} />
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 404 NOT FOUND
+// ══════════════════════════════════════════════════════════════════════════════
+function NotFoundView() {
+  const navigate = useNavigate();
+  return (
+    <div style={{ textAlign: "center", padding: "80px 20px", color: "#888" }}>
+      <div style={{ fontSize: 48, fontWeight: 700, color: "#fff", marginBottom: 8 }}>404</div>
+      <div style={{ fontSize: 16, marginBottom: 24 }}>Page not found</div>
+      <button
+        onClick={() => navigate("/")}
+        style={{
+          padding: "10px 24px",
+          background: "#222",
+          color: "#fff",
+          border: "1px solid #444",
+          borderRadius: 8,
+          fontSize: 14,
+          cursor: "pointer",
+        }}
+      >
+        Go to Dashboard
+      </button>
     </div>
   );
 }

@@ -1,4 +1,9 @@
+import warnings
+
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_INSECURE_DEFAULTS = {"CHANGE-ME-IN-PRODUCTION", "your_secret_key", "secret", ""}
 
 
 class Settings(BaseSettings):
@@ -11,6 +16,21 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "CHANGE-ME-IN-PRODUCTION"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
     ALGORITHM: str = "HS256"
+
+    @model_validator(mode="after")
+    def _validate_secret_key(self) -> "Settings":
+        if self.SECRET_KEY in _INSECURE_DEFAULTS or len(self.SECRET_KEY) < 32:
+            if not self.DEBUG:
+                raise ValueError(
+                    "SECRET_KEY is insecure. Set a random 32+ char key in your .env "
+                    "(generate one with: python -c \"import secrets; print(secrets.token_hex(32))\")"
+                )
+            warnings.warn(
+                "SECRET_KEY is using an insecure default. "
+                "This is OK for local dev but MUST be changed before deploying.",
+                stacklevel=2,
+            )
+        return self
 
     # CORS - comma-separated list of allowed origins
     ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173"

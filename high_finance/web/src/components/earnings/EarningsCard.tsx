@@ -93,7 +93,7 @@ export function EarningsCard({ ticker, initialData }: EarningsCardProps) {
     }
 
     load();
-    return () => { mounted = false; };
+    return () => { mounted = false; fetchingRef.current = null; };
   }, [ticker, initialData]);
 
   // Calculate historical stats

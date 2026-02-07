@@ -17,7 +17,7 @@ import math
 from typing import Any, Dict, List, Optional
 
 from high_finance.services.financials import get_financial_statements
-from high_finance.core.cache import get_or_compute, valuation_ttl
+from high_finance.core.cache import get_cached, get_or_compute, set_cached, valuation_ttl
 from high_finance.services.yf_cache import get_yf_info
 
 
@@ -118,17 +118,27 @@ DEFAULT_BENCHMARKS = {
 # HELPERS
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def _latest_column(d: Dict[str, Dict[str, float]]) -> Optional[str]:
+def _reported_columns(d: Dict[str, Dict[str, float]], min_fields: int = 10) -> List[str]:
+    """Return column date-strings sorted ascending, excluding estimate-only columns.
+
+    yfinance 1.1+ can include forward fiscal-year columns that are mostly NaN
+    (e.g., only EPS/shares filled — 4 fields).  These break valuation because
+    _latest_column would pick a column with no revenue.
+    """
     if not d:
-        return None
-    return sorted(d.keys())[-1]
+        return []
+    return sorted(c for c in d.keys() if len(d[c]) >= min_fields)
+
+
+def _latest_column(d: Dict[str, Dict[str, float]]) -> Optional[str]:
+    cols = _reported_columns(d)
+    return cols[-1] if cols else None
 
 
 def _get_column_by_index(d: Dict[str, Dict[str, float]], index: int) -> Optional[str]:
     """Get column by reverse index (0 = most recent, 1 = second most recent, etc.)"""
-    if not d:
-        return None
-    cols = sorted(d.keys(), reverse=True)
+    cols = _reported_columns(d)
+    cols.reverse()
     if index < len(cols):
         return cols[index]
     return None
@@ -931,6 +941,33 @@ def _compute_divergence_analysis(
 # ═══════════════════════════════════════════════════════════════════════════════
 
 async def get_valuation_bundle(
+    ticker: str,
+    growth: Optional[float] = None,
+    margin: Optional[float] = None,
+    tax: Optional[float] = None,
+    wacc: Optional[float] = None,
+    terminal_g: Optional[float] = None,
+) -> Dict[str, Any]:
+    # Cache the default bundle (no custom params) to avoid re-computation
+    # on initial page loads. Slider-parameterized calls bypass cache by design.
+    is_default = all(p is None for p in [growth, margin, tax, wacc, terminal_g])
+
+    if is_default:
+        cache_key = f"hf:valuation_bundle:{ticker}"
+        cached = await get_cached(cache_key)
+        if cached is not None:
+            return cached
+
+        result = await _compute_bundle(ticker, None, None, None, None, None)
+        # Only cache successful results — errors may be transient (yfinance flaky)
+        if "error" not in result:
+            await set_cached(cache_key, result, valuation_ttl())
+        return result
+
+    return await _compute_bundle(ticker, growth, margin, tax, wacc, terminal_g)
+
+
+async def _compute_bundle(
     ticker: str,
     growth: Optional[float] = None,
     margin: Optional[float] = None,

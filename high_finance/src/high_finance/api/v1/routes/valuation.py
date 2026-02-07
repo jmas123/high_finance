@@ -5,10 +5,12 @@ All parameters are optional - if not provided, smart defaults from actual
 financials will be used.
 """
 
+import logging
 from typing import Optional
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 from high_finance.services.valuation import get_valuation_bundle
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -39,11 +41,15 @@ async def read_valuation(
     - Assumption warnings when inputs look aggressive
     - Analyst consensus targets
     """
-    return await get_valuation_bundle(
-        ticker.upper(),
-        growth=growth,
-        margin=margin,
-        tax=tax,
-        wacc=wacc,
-        terminal_g=terminal_g,
-    )
+    try:
+        return await get_valuation_bundle(
+            ticker.upper(),
+            growth=growth,
+            margin=margin,
+            tax=tax,
+            wacc=wacc,
+            terminal_g=terminal_g,
+        )
+    except Exception as e:
+        logger.exception("Valuation failed for %s", ticker)
+        raise HTTPException(500, "Unable to compute valuation")

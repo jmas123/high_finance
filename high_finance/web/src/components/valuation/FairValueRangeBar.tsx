@@ -18,11 +18,13 @@ export const FairValueRangeBar = memo(function FairValueRangeBar({
   analystLow: number | null;
   analystHigh: number | null;
 }) {
-  const allValues = [low, mid, high, current, analystTarget, analystLow, analystHigh].filter(v => v !== null) as number[];
+  const allValues = [low, mid, high, current, analystTarget, analystLow, analystHigh].filter(v => v != null && Number.isFinite(v)) as number[];
+  if (allValues.length === 0) return null;
   const min = Math.min(...allValues) * 0.9;
   const max = Math.max(...allValues) * 1.1;
+  const range = max - min || 1; // prevent division by zero if all values identical
 
-  const pos = (v: number) => ((v - min) / (max - min)) * 100;
+  const pos = (v: number) => ((v - min) / range) * 100;
 
   // Check if DCF values are clustered (all within 15% of chart width)
   const dcfSpread = pos(high) - pos(low);

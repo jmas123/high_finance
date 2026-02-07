@@ -134,6 +134,7 @@ export function DCFCard({ ticker, onStateChange, initialData }: DCFCardProps) {
     if (fetchingRef.current === ticker) return;
     fetchingRef.current = ticker;
 
+    const controller = new AbortController();
     let mounted = true;
     async function loadInitial() {
       setLoading(true);
@@ -155,7 +156,10 @@ export function DCFCard({ ticker, onStateChange, initialData }: DCFCardProps) {
             wacc: String(saved.wacc),
             terminal_g: String(saved.terminal_g),
           });
-          const res = await fetch(`/api/v1/valuation/${encodeURIComponent(ticker)}?${q.toString()}`);
+          const res = await fetch(
+            `/api/v1/valuation/${encodeURIComponent(ticker)}?${q.toString()}`,
+            { signal: controller.signal },
+          );
           if (!res.ok) throw new Error(await res.text());
           json = (await res.json()) as ValuationBundle;
         } else if (initialData) {
@@ -163,40 +167,51 @@ export function DCFCard({ ticker, onStateChange, initialData }: DCFCardProps) {
           json = initialData;
         } else {
           // Fetch with smart defaults
-          const res = await fetch(`/api/v1/valuation/${encodeURIComponent(ticker)}`);
+          const res = await fetch(
+            `/api/v1/valuation/${encodeURIComponent(ticker)}`,
+            { signal: controller.signal },
+          );
           if (!res.ok) throw new Error(await res.text());
           json = (await res.json()) as ValuationBundle;
         }
 
         if (mounted) {
           setData(json);
-          // Use saved inputs if available, otherwise use smart defaults from API
-          if (saved) {
+          // Error response (e.g. no revenue data) — show error, skip slider init
+          if (json.error) {
+            setInitialized(true);
+            setSkipNextUpdate(true);
+          } else if (saved) {
+            // Use saved inputs if available
             setGrowth(saved.growth);
             setMargin(saved.margin);
             setTax(saved.tax);
             setWacc(saved.wacc);
             setTerminalG(saved.terminal_g);
             setLastSaved(new Date(saved.savedAt));
+            setInitialized(true);
+            setSkipNextUpdate(true);
           } else {
+            // Use smart defaults from API
             setGrowth(json.inputs.growth);
             setMargin(json.inputs.margin);
             setTax(json.inputs.tax);
             setWacc(json.inputs.wacc);
             setTerminalG(json.inputs.terminal_g);
             setLastSaved(new Date());
+            setInitialized(true);
+            setSkipNextUpdate(true);
           }
-          setInitialized(true);
-          setSkipNextUpdate(true); // Prevent subsequent useEffect from refetching immediately
         }
       } catch (e: any) {
+        if (e?.name === "AbortError") return; // Cancelled — don't set error
         if (mounted) setErr(e?.message ?? "Failed to load valuation");
       } finally {
         if (mounted) setLoading(false);
       }
     }
     loadInitial();
-    return () => { mounted = false; };
+    return () => { mounted = false; controller.abort(); fetchingRef.current = null; };
   }, [ticker, initialData]);
 
   // Subsequent updates when sliders change - also saves to localStorage
@@ -209,6 +224,7 @@ export function DCFCard({ ticker, onStateChange, initialData }: DCFCardProps) {
       return;
     }
 
+    const controller = new AbortController();
     let mounted = true;
     async function update() {
       setLoading(true);
@@ -220,7 +236,10 @@ export function DCFCard({ ticker, onStateChange, initialData }: DCFCardProps) {
           wacc: String(wacc),
           terminal_g: String(terminalG),
         });
-        const res = await fetch(`/api/v1/valuation/${encodeURIComponent(ticker)}?${q.toString()}`);
+        const res = await fetch(
+          `/api/v1/valuation/${encodeURIComponent(ticker)}?${q.toString()}`,
+          { signal: controller.signal },
+        );
         if (!res.ok) throw new Error(await res.text());
         const json = (await res.json()) as ValuationBundle;
         if (mounted) {
@@ -236,14 +255,15 @@ export function DCFCard({ ticker, onStateChange, initialData }: DCFCardProps) {
           });
         }
       } catch (e: any) {
+        if (e?.name === "AbortError") return; // Cancelled by new slider change — don't set error
         if (mounted) setErr(e?.message ?? "Failed to update valuation");
       } finally {
         if (mounted) setLoading(false);
       }
     }
 
-    const timer = setTimeout(update, 300); // Debounce
-    return () => { mounted = false; clearTimeout(timer); };
+    const timer = setTimeout(update, 500); // Debounce (500ms to reduce fetch pile-up)
+    return () => { mounted = false; clearTimeout(timer); controller.abort(); };
   }, [ticker, growth, margin, tax, wacc, terminalG, initialized]);
 
   // Capture market-implied assumptions when divergence first detected
@@ -760,7 +780,7 @@ export function DCFCard({ ticker, onStateChange, initialData }: DCFCardProps) {
                     const s = data.scenarios[scenario];
                     const color = scenario === "bear" ? "#ef4444" : scenario === "bull" ? "#22c55e" : "#3b82f6";
                     const currentPrice = data.facts.current_price;
-                    const upsidePct = currentPrice ? (s.fair_value_per_share - currentPrice) / currentPrice : null;
+                    const upsidePct = currentPrice != null && currentPrice > 0 ? (s.fair_value_per_share - currentPrice) / currentPrice : null;
                     
                     const scenarioDescriptions = {
                       bear: "Conservative case: Lower growth, compressed margins, higher discount rate. What if things go wrong?",

@@ -4,10 +4,12 @@ Enhanced Risk Analytics API Route
 Provides Monte Carlo simulations with probability-based outputs.
 """
 
+import logging
 from typing import Optional
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 from high_finance.services.risk import get_risk_bundle
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -72,14 +74,18 @@ async def read_risk(
     - Scenario analysis (stress/base/bull expected returns)
     - Terminal return distribution histogram
     """
-    return await get_risk_bundle(
-        ticker.upper(),
-        period=period,
-        horizon_days=horizon_days,
-        n_sims=n_sims,
-        vol_multiplier=vol_multiplier,
-        include_earnings_shock=include_earnings_shock,
-        earnings_shock_day=earnings_shock_day,
-        target_price=target_price,
-        drawdown_threshold=drawdown_threshold,
-    )
+    try:
+        return await get_risk_bundle(
+            ticker.upper(),
+            period=period,
+            horizon_days=horizon_days,
+            n_sims=n_sims,
+            vol_multiplier=vol_multiplier,
+            include_earnings_shock=include_earnings_shock,
+            earnings_shock_day=earnings_shock_day,
+            target_price=target_price,
+            drawdown_threshold=drawdown_threshold,
+        )
+    except Exception as e:
+        logger.exception("Risk analysis failed for %s", ticker)
+        raise HTTPException(500, "Unable to compute risk analysis")

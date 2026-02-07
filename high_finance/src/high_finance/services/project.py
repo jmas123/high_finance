@@ -6,7 +6,7 @@ Business logic for project CRUD.  Mirrors the pattern in services/news.py
 """
 
 from typing import List, Optional
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from sqlalchemy import func as sqla_func
 
 from fastapi import HTTPException
@@ -85,7 +85,15 @@ async def list_projects(
     ticker: Optional[str] = None,
     owner_id: Optional[str] = None,
 ) -> List[dict]:
-    q = db.query(Project)
+    q = (
+        db.query(Project)
+        .options(
+            selectinload(Project.dcf_snapshots),
+            selectinload(Project.thesis_bullets),
+            selectinload(Project.catalysts),
+            selectinload(Project.risks),
+        )
+    )
     if owner_id:
         q = q.filter(Project.owner_id == owner_id)
     if status:

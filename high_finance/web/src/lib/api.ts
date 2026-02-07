@@ -40,14 +40,28 @@ function getAuthHeaders(): Record<string, string> {
   return {};
 }
 
+const DEFAULT_TIMEOUT_MS = 30_000;
+
+function fetchWithTimeout(
+  url: string,
+  init?: RequestInit,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(url, { ...init, signal: controller.signal }).finally(() =>
+    clearTimeout(timer),
+  );
+}
+
 async function getJSON<T>(path: string): Promise<T> {
-  const res = await fetch(path);
+  const res = await fetchWithTimeout(path);
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
 
 async function postJSON<T>(path: string): Promise<T> {
-  const res = await fetch(path, { method: "POST" });
+  const res = await fetchWithTimeout(path, { method: "POST" });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }

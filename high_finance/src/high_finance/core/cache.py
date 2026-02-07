@@ -159,8 +159,8 @@ async def get_or_compute(
         return await compute_fn()
 
     if not acquired:
-        # 4. Another worker is computing — poll for result
-        for _ in range(60):
+        # 4. Another worker is computing — poll for result (15s max)
+        for _ in range(30):
             await asyncio.sleep(0.5)
             cached = await get_cached(key)
             if cached is not None:

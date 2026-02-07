@@ -7,6 +7,7 @@ Gathers events from multiple sources for the calendar popup:
 - Project catalysts (from database, authenticated users only)
 """
 
+import asyncio
 from datetime import date, datetime, timedelta
 from typing import List, Optional, Dict, Any
 import yfinance as yf
@@ -20,6 +21,8 @@ from high_finance.api.v1.schemas.calendar import (
     CalendarEventsResponse,
     EventType,
 )
+from high_finance.core.cache import get_or_compute, trades_ttl
+from high_finance.services.yf_cache import get_yf_info
 from high_finance.db.models.project import Project, ProjectCatalyst
 
 
@@ -46,6 +49,32 @@ def _to_naive_date(ts) -> Optional[date]:
     return None
 
 
+def _fetch_earnings_dates_sync(ticker: str) -> List[dict]:
+    """Blocking yfinance call for earnings dates — runs in thread pool."""
+    stock = yf.Ticker(ticker)
+    df = stock.earnings_dates
+    if df is None or df.empty:
+        return []
+    rows = []
+    for dt, row in df.iterrows():
+        rows.append({
+            "dt": dt.isoformat() if hasattr(dt, "isoformat") else str(dt),
+            "hour": getattr(dt, "hour", 0) if hasattr(dt, "tz") else (dt.hour if hasattr(dt, "hour") else 0),
+            "eps_estimate": float(row["EPS Estimate"]) if "EPS Estimate" in row and pd.notna(row.get("EPS Estimate")) else None,
+        })
+    return rows
+
+
+async def _get_earnings_dates_cached(ticker: str) -> List[dict]:
+    """Get earnings dates for a ticker, cached in Redis (1 hr TTL)."""
+    cache_key = f"hf:earnings_dates:{ticker}"
+
+    async def _compute():
+        return await asyncio.to_thread(_fetch_earnings_dates_sync, ticker)
+
+    return await get_or_compute(cache_key, trades_ttl(), _compute)
+
+
 async def get_earnings_events(
     tickers: List[str],
     start_date: date,
@@ -56,18 +85,18 @@ async def get_earnings_events(
 
     for ticker in tickers:
         try:
-            stock = yf.Ticker(ticker)
-            earnings_dates = stock.earnings_dates
+            earnings_rows = await _get_earnings_dates_cached(ticker)
 
-            if earnings_dates is None or earnings_dates.empty:
+            if not earnings_rows:
                 continue
 
-            info = stock.info or {}
+            info = await get_yf_info(ticker)
             company_name = info.get("shortName") or info.get("longName") or ticker
 
-            for dt, row in earnings_dates.iterrows():
-                event_date = _to_naive_date(dt)
-                if event_date is None:
+            for row in earnings_rows:
+                try:
+                    event_date = datetime.fromisoformat(row["dt"]).date()
+                except (ValueError, TypeError):
                     continue
 
                 # Filter by date range
@@ -75,13 +104,10 @@ async def get_earnings_events(
                     continue
 
                 # Determine time (BMO/AMC/TBD)
-                if isinstance(dt, pd.Timestamp):
-                    hour = dt.hour if dt.tz is None else dt.tz_convert(None).hour
-                    time_label = "TBD" if hour == 0 else ("BMO" if hour < 12 else "AMC")
-                else:
-                    time_label = "TBD"
+                hour = row.get("hour", 0)
+                time_label = "TBD" if hour == 0 else ("BMO" if hour < 12 else "AMC")
 
-                eps_estimate = _safe_float(row.get("EPS Estimate"))
+                eps_estimate = row.get("eps_estimate")
 
                 events.append(CalendarEvent(
                     id=f"earnings_{ticker}_{event_date.isoformat()}",
@@ -111,8 +137,7 @@ async def get_dividend_events(
 
     for ticker in tickers:
         try:
-            stock = yf.Ticker(ticker)
-            info = stock.info or {}
+            info = await get_yf_info(ticker)
 
             ex_div_date = info.get("exDividendDate")
             if ex_div_date is None:

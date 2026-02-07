@@ -35,6 +35,9 @@ async def get_yf_info(ticker: str) -> dict:
     cache_key = f"hf:yf_info:{ticker}"
 
     async def _compute():
-        return await asyncio.to_thread(_fetch_yf_info_sync, ticker)
+        return await asyncio.wait_for(
+            asyncio.to_thread(_fetch_yf_info_sync, ticker),
+            timeout=15,
+        )
 
     return await get_or_compute(cache_key, fundamentals_ttl(), _compute)

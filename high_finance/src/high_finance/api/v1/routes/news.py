@@ -1,9 +1,12 @@
-from fastapi import APIRouter, Query, Depends
+import logging
+
+from fastapi import APIRouter, HTTPException, Query, Depends
 from sqlalchemy.orm import Session
 
 from high_finance.api.deps import get_db
 from high_finance.services.news import get_news_bundle
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 @router.get("/{ticker}")
@@ -12,4 +15,8 @@ async def read_news(
     limit: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
 ):
-    return await get_news_bundle(db, ticker.upper(), limit=limit)
+    try:
+        return await get_news_bundle(db, ticker.upper(), limit=limit)
+    except Exception as e:
+        logger.exception("News fetch failed for %s", ticker)
+        raise HTTPException(500, "Unable to load news")

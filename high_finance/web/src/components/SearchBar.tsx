@@ -19,6 +19,7 @@ export function SearchBar({ onSelect, loading }: SearchBarProps) {
   const [showResults, setShowResults] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -42,6 +43,7 @@ export function SearchBar({ onSelect, loading }: SearchBarProps) {
     }
 
     setSearching(true); // Show searching state immediately
+    setSearchError(null);
 
     debounceRef.current = setTimeout(async () => {
       try {
@@ -49,8 +51,12 @@ export function SearchBar({ onSelect, loading }: SearchBarProps) {
         setResults(searchResults);
         setShowResults(searchResults.length > 0); // Only show if we have results
         setSelectedIndex(-1);
+        setSearchError(null);
       } catch (e) {
         console.error("Search error:", e);
+        setSearchError("Search unavailable — try again or enter a ticker directly");
+        setResults([]);
+        setShowResults(false);
       } finally {
         setSearching(false);
       }
@@ -160,6 +166,22 @@ export function SearchBar({ onSelect, loading }: SearchBarProps) {
           {loading ? "Loading..." : "Search"}
         </button>
       </div>
+
+      {/* Search error message */}
+      {searchError && !showResults && (
+        <div style={{
+          padding: "8px 16px",
+          fontSize: 13,
+          color: "#f87171",
+          background: "#1a1a1a",
+          borderLeft: "1px solid #333",
+          borderRight: "1px solid #333",
+          borderBottom: "1px solid #333",
+          borderRadius: "0 0 10px 10px",
+        }}>
+          {searchError}
+        </div>
+      )}
 
       {/* Search Results Dropdown - only show when we have results */}
       {showResults && results.length > 0 && (

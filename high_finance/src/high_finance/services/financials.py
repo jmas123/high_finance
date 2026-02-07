@@ -3,7 +3,11 @@ import asyncio
 import yfinance as yf
 from typing import Dict, Any
 
-from high_finance.core.cache import get_or_compute, fundamentals_ttl
+import logging
+
+from high_finance.core.cache import get_cached, get_or_compute, fundamentals_ttl, set_cached
+
+logger = logging.getLogger(__name__)
 
 
 def _fetch_financial_statements_sync(ticker: str) -> Dict[str, Any]:
@@ -44,10 +48,36 @@ def _fetch_financial_statements_sync(ticker: str) -> Dict[str, Any]:
     return {"annual": annual, "quarterly": quarterly}
 
 
+def _is_complete(stmts: Dict[str, Any]) -> bool:
+    """Reject partial data — yfinance sometimes returns only EPS/shares fields."""
+    annual_is = stmts.get("annual", {}).get("income_statement", {})
+    if not annual_is:
+        return False
+    # Find at least one column with >= 10 fields (skips estimate-only columns)
+    return any(len(fields) >= 10 for fields in annual_is.values())
+
+
 async def get_financial_statements(ticker: str) -> Dict[str, Any]:
     cache_key = f"hf:financials:{ticker}"
 
-    async def _compute():
-        return await asyncio.to_thread(_fetch_financial_statements_sync, ticker)
+    # Check cache first
+    cached = await get_cached(cache_key)
+    if cached is not None and _is_complete(cached):
+        return cached
 
-    return await get_or_compute(cache_key, fundamentals_ttl(), _compute)
+    # Compute fresh — incomplete cached data is treated as a miss
+    result = await asyncio.wait_for(
+        asyncio.to_thread(_fetch_financial_statements_sync, ticker),
+        timeout=15,
+    )
+
+    # Only cache if data looks complete
+    if _is_complete(result):
+        await set_cached(cache_key, result, fundamentals_ttl())
+    else:
+        logger.warning("Incomplete financials for %s (%d fields), not caching",
+                        ticker, len(next(iter(
+                            result.get("annual", {}).get("income_statement", {}).values()
+                        ), {})))
+
+    return result
