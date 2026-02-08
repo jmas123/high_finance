@@ -6,7 +6,7 @@
  */
 
 import { useState, useCallback } from "react";
-import type { ChartDrawing, ChartDrawingCreate } from "../types/drawing";
+import type { ChartDrawing } from "../types/drawing";
 
 interface DrawingAction {
   type: "create" | "update" | "delete";

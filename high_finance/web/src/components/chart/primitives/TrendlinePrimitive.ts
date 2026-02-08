@@ -13,7 +13,6 @@ import {
   drawHandle,
   isNearPoint,
   isNearLine,
-  formatPrice,
   formatPercent,
 } from "./BasePrimitive";
 
@@ -31,7 +30,7 @@ export function renderTrendline(
   isSelected: boolean,
   isHovered: boolean
 ): void {
-  const { canvas, chartWidth, chartHeight } = ctx;
+  const { canvas, chartWidth, chartHeight: _chartHeight } = ctx;
 
   if (drawing.points.length < 2) return;
 
@@ -176,7 +175,7 @@ export function hitTestTrendline(
  * Calculate new points when dragging a trendline.
  */
 export function dragTrendline(
-  drawing: ChartDrawing,
+  _drawing: ChartDrawing,
   handleType: "start" | "end" | "body",
   newPoint: DrawingPoint,
   originalPoints: DrawingPoint[]

@@ -60,6 +60,21 @@ def fetch_ticker_data(ticker: str) -> Optional[dict]:
         pb_ratio = clamp(info.get("priceToBook"), lo=0.1, hi=200)
         ev_to_ebitda = clamp(info.get("enterpriseToEbitda"), lo=0.1, hi=1000)
 
+        # Quality & Profitability
+        roe = clamp(info.get("returnOnEquity"), lo=-2, hi=5)
+        profit_margin = clamp(info.get("profitMargins"), lo=-2, hi=2)
+        debt_to_equity = clamp(info.get("debtToEquity"), lo=0, hi=1000)
+        # Convert D/E from percentage (yfinance returns 150 for 1.5x) to ratio
+        if debt_to_equity is not None:
+            debt_to_equity = debt_to_equity / 100.0
+        beta_val = clamp(info.get("beta"), lo=-2, hi=10)
+
+        # FCF Yield = Free Cash Flow / Market Cap
+        fcf = info.get("freeCashflow")
+        fcf_yield_val = None
+        if fcf and market_cap and market_cap > 0:
+            fcf_yield_val = clamp(fcf / market_cap, lo=-1, hi=1)
+
         # Growth & Yield
         revenue_growth = clamp(info.get("revenueGrowth"), lo=-1, hi=5)
         dividend_yield = clamp(info.get("dividendYield"), lo=0, hi=0.5)
@@ -85,6 +100,11 @@ def fetch_ticker_data(ticker: str) -> Optional[dict]:
             "forward_pe": forward_pe,
             "pb_ratio": pb_ratio,
             "ev_to_ebitda": ev_to_ebitda,
+            "roe": roe,
+            "profit_margin": profit_margin,
+            "debt_to_equity": debt_to_equity,
+            "fcf_yield": fcf_yield_val,
+            "beta": beta_val,
             "revenue_growth": revenue_growth,
             "dividend_yield": dividend_yield,
             "price_vs_200ma": price_vs_200ma,
@@ -96,18 +116,57 @@ def fetch_ticker_data(ticker: str) -> Optional[dict]:
         return None
 
 
-def aggregate_insider_activity(db: Session, ticker: str, days: int = 90) -> dict:
+def aggregate_insider_activity_yf(ticker: str, days: int = 90) -> dict:
     """
-    Aggregate insider trading activity for a ticker over the past N days.
-    Uses the insider_trade table if it exists.
+    Aggregate insider trading activity for a ticker over the past N days
+    using yfinance insider_transactions data.
     """
-    # Return zeros - insider aggregation would require insider_trade table
-    # which may not exist. This can be enhanced later.
-    return {
-        "insider_net_shares_90d": 0,
-        "insider_buys_90d": 0,
-        "insider_sells_90d": 0,
-    }
+    try:
+        stock = yf.Ticker(ticker)
+        txns = stock.insider_transactions
+        if txns is None or txns.empty:
+            return {"insider_net_shares_90d": 0, "insider_buys_90d": 0, "insider_sells_90d": 0}
+
+        cutoff = datetime.utcnow() - timedelta(days=days)
+
+        # Filter to recent transactions
+        if "Start Date" in txns.columns:
+            txns = txns[txns["Start Date"] >= cutoff]
+        elif "startDate" in txns.columns:
+            txns = txns[txns["startDate"] >= cutoff]
+
+        buy_shares = 0
+        sell_shares = 0
+        buy_count = 0
+        sell_count = 0
+
+        shares_col = "Shares" if "Shares" in txns.columns else "shares"
+        text_col = "Text" if "Text" in txns.columns else "text"
+
+        for _, row in txns.iterrows():
+            shares = row.get(shares_col, 0) or 0
+            text = str(row.get(text_col, "")).lower()
+            if "purchase" in text or "buy" in text or "acquisition" in text:
+                buy_shares += abs(shares)
+                buy_count += 1
+            elif "sale" in text or "sell" in text or "disposition" in text:
+                sell_shares += abs(shares)
+                sell_count += 1
+            elif shares > 0:
+                buy_shares += shares
+                buy_count += 1
+            elif shares < 0:
+                sell_shares += abs(shares)
+                sell_count += 1
+
+        return {
+            "insider_net_shares_90d": int(buy_shares - sell_shares),
+            "insider_buys_90d": buy_count,
+            "insider_sells_90d": sell_count,
+        }
+    except Exception as e:
+        print(f"Error fetching insider data for {ticker}: {e}")
+        return {"insider_net_shares_90d": 0, "insider_buys_90d": 0, "insider_sells_90d": 0}
 
 
 def aggregate_congress_activity(db: Session, ticker: str, days: int = 90) -> dict:
@@ -196,7 +255,7 @@ def refresh_screener_cache_logic(
             continue
 
         # Aggregate insider/congress activity
-        insider = aggregate_insider_activity(db, ticker)
+        insider = aggregate_insider_activity_yf(ticker)
         congress = aggregate_congress_activity(db, ticker)
 
         # Merge all data

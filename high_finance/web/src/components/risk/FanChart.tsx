@@ -31,7 +31,6 @@ export const FanChart = memo(function FanChart({
   const ys = fan.flatMap((d) => [d.p5, d.p95]);
 
   // Guard against empty arrays and division by zero
-  const xMin = 0;
   const xMax = xs.length > 0 ? Math.max(...xs) : 1;
   const yMin = ys.length > 0 ? Math.min(...ys) * 0.98 : 0;
   const yMax = ys.length > 0 ? Math.max(...ys) * 1.02 : 1;

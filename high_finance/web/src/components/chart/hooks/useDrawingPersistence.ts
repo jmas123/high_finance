@@ -44,7 +44,7 @@ export function useDrawingPersistence(
   const [error, setError] = useState<string | null>(null);
 
   // Track pending updates for debouncing
-  const pendingUpdates = useRef<Map<number, { updates: Partial<ChartDrawingUpdate>; timer: NodeJS.Timeout }>>(
+  const pendingUpdates = useRef<Map<number, { updates: Partial<ChartDrawingUpdate>; timer: ReturnType<typeof setTimeout> }>>(
     new Map()
   );
 

@@ -12,8 +12,6 @@ import type {
   DrawingStyle,
   DrawingSelection,
   PendingDrawing,
-  DEFAULT_DRAWING_STYLE,
-  REQUIRED_POINTS,
 } from "../types/drawing";
 
 interface UseDrawingStateResult {

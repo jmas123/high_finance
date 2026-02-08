@@ -1,4 +1,4 @@
-import type { ValuationBundle, SensitivityItem } from "../../lib/types";
+import type { ValuationBundle } from "../../lib/types";
 import { fmtPx, fmtPctSigned } from "../Functions";
 
 export function MultiplesTable({ multiples, currentPrice }: { multiples: ValuationBundle["multiples"]; currentPrice: number | null }) {

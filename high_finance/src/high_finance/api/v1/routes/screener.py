@@ -43,6 +43,17 @@ async def run_screener(
     pb_ratio_max: Optional[float] = Query(None),
     ev_to_ebitda_min: Optional[float] = Query(None),
     ev_to_ebitda_max: Optional[float] = Query(None),
+    # Quality & Profitability
+    roe_min: Optional[float] = Query(None, description="Decimal, e.g., 0.15 = 15%"),
+    roe_max: Optional[float] = Query(None),
+    profit_margin_min: Optional[float] = Query(None, description="Decimal, e.g., 0.1 = 10%"),
+    profit_margin_max: Optional[float] = Query(None),
+    debt_to_equity_min: Optional[float] = Query(None),
+    debt_to_equity_max: Optional[float] = Query(None),
+    fcf_yield_min: Optional[float] = Query(None, description="Decimal, e.g., 0.05 = 5%"),
+    fcf_yield_max: Optional[float] = Query(None),
+    beta_min: Optional[float] = Query(None),
+    beta_max: Optional[float] = Query(None),
     # Growth & Dividend
     revenue_growth_min: Optional[float] = Query(None, description="Decimal, e.g., 0.1 = 10%"),
     revenue_growth_max: Optional[float] = Query(None),
@@ -80,7 +91,11 @@ async def run_screener(
     filter_params = [
         "market_cap_min", "market_cap_max", "pe_ratio_min", "pe_ratio_max",
         "forward_pe_min", "forward_pe_max", "pb_ratio_min", "pb_ratio_max",
-        "ev_to_ebitda_min", "ev_to_ebitda_max", "revenue_growth_min", "revenue_growth_max",
+        "ev_to_ebitda_min", "ev_to_ebitda_max",
+        "roe_min", "roe_max", "profit_margin_min", "profit_margin_max",
+        "debt_to_equity_min", "debt_to_equity_max", "fcf_yield_min", "fcf_yield_max",
+        "beta_min", "beta_max",
+        "revenue_growth_min", "revenue_growth_max",
         "dividend_yield_min", "dividend_yield_max", "price_vs_200ma_min", "price_vs_200ma_max",
         "price_vs_52w_high_min", "price_vs_52w_high_max", "sectors",
         "insider_net_shares_90d_min", "has_insider_buys_90d", "congress_net_value_90d_min",
@@ -103,6 +118,16 @@ async def run_screener(
         pb_ratio_max=pb_ratio_max,
         ev_to_ebitda_min=ev_to_ebitda_min,
         ev_to_ebitda_max=ev_to_ebitda_max,
+        roe_min=roe_min,
+        roe_max=roe_max,
+        profit_margin_min=profit_margin_min,
+        profit_margin_max=profit_margin_max,
+        debt_to_equity_min=debt_to_equity_min,
+        debt_to_equity_max=debt_to_equity_max,
+        fcf_yield_min=fcf_yield_min,
+        fcf_yield_max=fcf_yield_max,
+        beta_min=beta_min,
+        beta_max=beta_max,
         revenue_growth_min=revenue_growth_min,
         revenue_growth_max=revenue_growth_max,
         dividend_yield_min=dividend_yield_min,
@@ -121,12 +146,79 @@ async def run_screener(
         offset=offset,
     )
 
+    universe_total = await svc.get_universe_total(db)
+
     return ScreenerResponse(
         results=[ScreenerResult(**r) for r in results],
         total_count=total_count,
+        universe_total=universe_total,
         filters_applied=filters_applied,
         cached_at=cached_at,
     )
+
+
+@router.get("/count")
+async def get_screener_count(
+    # Same filters as main screener endpoint
+    market_cap_min: Optional[int] = Query(None),
+    market_cap_max: Optional[int] = Query(None),
+    pe_ratio_min: Optional[float] = Query(None),
+    pe_ratio_max: Optional[float] = Query(None),
+    forward_pe_min: Optional[float] = Query(None),
+    forward_pe_max: Optional[float] = Query(None),
+    pb_ratio_min: Optional[float] = Query(None),
+    pb_ratio_max: Optional[float] = Query(None),
+    ev_to_ebitda_min: Optional[float] = Query(None),
+    ev_to_ebitda_max: Optional[float] = Query(None),
+    roe_min: Optional[float] = Query(None),
+    roe_max: Optional[float] = Query(None),
+    profit_margin_min: Optional[float] = Query(None),
+    profit_margin_max: Optional[float] = Query(None),
+    debt_to_equity_min: Optional[float] = Query(None),
+    debt_to_equity_max: Optional[float] = Query(None),
+    fcf_yield_min: Optional[float] = Query(None),
+    fcf_yield_max: Optional[float] = Query(None),
+    beta_min: Optional[float] = Query(None),
+    beta_max: Optional[float] = Query(None),
+    revenue_growth_min: Optional[float] = Query(None),
+    revenue_growth_max: Optional[float] = Query(None),
+    dividend_yield_min: Optional[float] = Query(None),
+    dividend_yield_max: Optional[float] = Query(None),
+    price_vs_200ma_min: Optional[float] = Query(None),
+    price_vs_200ma_max: Optional[float] = Query(None),
+    price_vs_52w_high_min: Optional[float] = Query(None),
+    price_vs_52w_high_max: Optional[float] = Query(None),
+    sectors: Optional[str] = Query(None),
+    insider_net_shares_90d_min: Optional[int] = Query(None),
+    has_insider_buys_90d: Optional[bool] = Query(None),
+    congress_net_value_90d_min: Optional[int] = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Return just the count matching current filters. Fast — no data returned."""
+    _, total_count, _ = await svc.run_screen(
+        db,
+        market_cap_min=market_cap_min, market_cap_max=market_cap_max,
+        pe_ratio_min=pe_ratio_min, pe_ratio_max=pe_ratio_max,
+        forward_pe_min=forward_pe_min, forward_pe_max=forward_pe_max,
+        pb_ratio_min=pb_ratio_min, pb_ratio_max=pb_ratio_max,
+        ev_to_ebitda_min=ev_to_ebitda_min, ev_to_ebitda_max=ev_to_ebitda_max,
+        roe_min=roe_min, roe_max=roe_max,
+        profit_margin_min=profit_margin_min, profit_margin_max=profit_margin_max,
+        debt_to_equity_min=debt_to_equity_min, debt_to_equity_max=debt_to_equity_max,
+        fcf_yield_min=fcf_yield_min, fcf_yield_max=fcf_yield_max,
+        beta_min=beta_min, beta_max=beta_max,
+        revenue_growth_min=revenue_growth_min, revenue_growth_max=revenue_growth_max,
+        dividend_yield_min=dividend_yield_min, dividend_yield_max=dividend_yield_max,
+        price_vs_200ma_min=price_vs_200ma_min, price_vs_200ma_max=price_vs_200ma_max,
+        price_vs_52w_high_min=price_vs_52w_high_min, price_vs_52w_high_max=price_vs_52w_high_max,
+        sectors=sectors,
+        insider_net_shares_90d_min=insider_net_shares_90d_min,
+        has_insider_buys_90d=has_insider_buys_90d,
+        congress_net_value_90d_min=congress_net_value_90d_min,
+        limit=0, offset=0,
+    )
+    universe_total = await svc.get_universe_total(db)
+    return {"count": total_count, "universe_total": universe_total}
 
 
 @router.get("/sectors")

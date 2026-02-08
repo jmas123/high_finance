@@ -1,58 +1,65 @@
 import { api } from "../lib/api";
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
+import type { PredictionResponse, PredictionSignal } from "../lib/types";
+
 interface PredictionCardProps {
   ticker: string;
-  initialData?: any | null;
+  initialData?: PredictionResponse | null;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// EXPLANATIONS
+// ═══════════════════════════════════════════════════════════════════════════════
 
-
-// Explanations for all terms
 const EXPLANATIONS: Record<string, string> = {
-  // Model metrics
-  direction_accuracy: "Percentage of times the model correctly predicted whether the stock would go up or down. >55% is considered good for financial markets.",
-  r_squared: "R² measures how well the model explains variance in returns. 0 = no predictive power, 1 = perfect prediction. In finance, even 0.01-0.05 can be meaningful.",
-  mse: "Mean Squared Error - average of squared prediction errors. Lower is better. Hard to interpret alone; compare across models.",
-  training_samples: "Number of historical data points used to train the model. More data generally improves reliability.",
-  
-  // Backtest metrics
-  sharpe_ratio: "Risk-adjusted return = (Return - Risk Free Rate) / Volatility. >1 is good, >2 is very good, >3 is excellent. Measures return per unit of risk.",
-  annual_return: "Strategy's projected yearly return based on backtest performance. Assumes similar market conditions continue.",
-  annual_volatility: "Standard deviation of returns annualized. Higher = more risk. Compare to S&P 500's ~15-20% historical volatility.",
-  max_drawdown: "Largest peak-to-trough decline during the backtest. -10% means at worst you'd be down 10% from your high point.",
-  win_rate: "Percentage of trades that were profitable. >50% needed for profit, but depends on avg win vs avg loss size.",
-  num_trades: "Total position changes in backtest. More trades = more transaction costs. Too few = may not be statistically significant.",
-  
-  // Buy & Hold comparison
-  buy_hold_sharpe: "Sharpe ratio if you simply bought and held the stock. Compare to strategy Sharpe to see if active trading adds value.",
-  buy_hold_return: "Total return from buying at start of test period and holding. Benchmark for any active strategy.",
-  alpha: "Excess return vs buy-and-hold. Positive alpha = strategy beat passive investing. This is what active managers try to generate.",
-  
-  // Technical indicators
-  rsi: "Relative Strength Index (0-100). >70 = overbought (may fall), <30 = oversold (may rise). Measures momentum.",
-  macd: "Moving Average Convergence Divergence. Positive = bullish momentum, Negative = bearish. Crossovers signal trend changes.",
-  trend: "Based on 50-day vs 200-day moving average. Bullish = 50 > 200 (golden cross). Bearish = 50 < 200 (death cross).",
-  volatility: "20-day rolling standard deviation of returns. Higher volatility = bigger price swings = more risk.",
-  ma_ratio: "Current price relative to moving average. Positive = trading above average (bullish), Negative = below (bearish).",
-  volume_ratio: "Current volume vs 20-day average. >1 = higher than normal activity, often confirms price moves.",
-  
-  // Features
-  feature_importance: "How much each input contributes to predictions. Higher % = model relies more on this indicator. Helps understand what drives predictions.",
-  
-  // Sections
-  backtest: "Simulates how the strategy would have performed historically. Includes transaction costs. Past performance ≠ future results.",
-  prediction: "Model's forecast for next trading day. Based on current technical indicators and learned patterns from 5 years of data.",
-  confidence: "Based on predicted return magnitude. HIGH = |return| > 0.5%, MEDIUM = > 0.1%, LOW = smaller moves are harder to predict.",
+  direction_accuracy: "Percentage of times the model correctly predicted whether the stock would go up or down over the forecast horizon.",
+  baseline_accuracy: "Accuracy if the model always predicted the majority outcome (usually UP). The model must beat this to be useful.",
+  accuracy_vs_baseline: "How much better (or worse) the model is vs. always predicting UP. Positive = model adds value over naive baseline.",
+  gated_accuracy: "Accuracy only on days where the model had a clear signal (probability above 58% or below 42%). This is the model's accuracy when it's most confident.",
+  information_coefficient: "Rank correlation between predicted probabilities and actual returns. IC > 0.05 is meaningful. IC > 0.10 is excellent. This is the gold-standard metric in quantitative finance.",
+  r_squared: "R² measures how well the model explains variance in returns. 0 = no power, 1 = perfect. In finance, even 0.01-0.05 can be meaningful.",
+  sharpe_ratio: "Risk-adjusted return = (Return - Risk Free Rate) / Volatility. >1 is good, >2 is very good. Measures return per unit of risk.",
+  calmar_ratio: "Annualized return divided by max drawdown. Measures how much return you get per unit of worst-case pain. More intuitive than Sharpe for most people.",
+  annual_return: "Strategy's projected yearly return based on backtest. Assumes similar market conditions continue.",
+  annual_volatility: "Standard deviation of returns annualized. Higher = more risk.",
+  max_drawdown: "Largest peak-to-trough decline during backtest. -10% means at worst you'd be down 10% from your high point.",
+  win_rate: "Percentage of trading days that were profitable. >50% needed for profit, but depends on avg win vs avg loss size.",
+  selectivity: "Percentage of days the model actually takes a position (vs. sitting flat). Lower selectivity = model is more selective, only trading when confident.",
+  buy_hold_sharpe: "Sharpe ratio if you simply bought and held. Compare to strategy Sharpe to see if the model adds value.",
+  buy_hold_return: "Total return from buying at start of test period and holding. The benchmark for any active strategy.",
+  alpha: "Excess return vs buy-and-hold. Positive alpha = strategy beat passive investing.",
+  signal: "Model's current conviction. BULLISH (>58% probability UP), BEARISH (<42% UP), NEUTRAL (42-58% — model says 'I don't know').",
+  probability: "The model's estimated probability that the stock goes UP over the forecast horizon. Based on calibrated GBM classifier probabilities.",
+  walk_forward: "Walk-forward validation trains on expanding windows and tests on subsequent periods with a purge gap to prevent look-ahead bias. Shows how the model performs across different market regimes.",
+  bootstrap_ci: "Bootstrap resampling of the test set to estimate the statistical uncertainty of direction accuracy. The 95% CI tells you the range where the true accuracy likely falls.",
+  factor_attribution: "Decomposes strategy returns into market exposure (beta) and genuine skill (alpha). Most ML strategies' 'alpha' is actually just leveraged beta.",
+  factor_alpha: "Annualized return after removing market exposure. Positive alpha = the model adds value beyond just following the market.",
+  factor_beta: "Market exposure of the strategy. Beta = 1.0 means it moves 1:1 with SPY.",
+  feature_importance: "How much each input contributes to predictions. Higher % = model relies more on this indicator.",
+  backtest: "Simulates how the confidence-gated strategy would have performed historically. Includes transaction costs and weekly rebalancing.",
+  model_health: "Key metadata about the model: what it was trained on, its prediction horizon, and the current market regime.",
+  rsi: "Relative Strength Index (0-100). >70 = overbought (may fall), <30 = oversold (may rise).",
+  macd: "Moving Average Convergence Divergence. Positive = bullish momentum, Negative = bearish.",
+  trend: "Based on 50-day vs 200-day moving average. Bullish = 50 > 200 (golden cross).",
+  volatility: "20-day rolling standard deviation of returns. Higher = bigger price swings.",
+  ma_ratio: "Current price relative to moving average. Positive = trading above average (bullish).",
+  volume_ratio: "Current volume vs 20-day average. >1 = higher than normal activity.",
+  bb_position: "Bollinger Band position. 0 = at the middle band. +1/-1 = at upper/lower band. Beyond +/-1 = extreme.",
+  vol_regime: "20-day vol / 60-day vol. >1.3 = volatility expanding, <0.7 = compressing.",
 };
 
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// INFO BUTTON (tooltip)
+// ═══════════════════════════════════════════════════════════════════════════════
 
 function InfoButton({ term }: { term: string }) {
   const [show, setShow] = useState(false);
   const [position, setPosition] = useState({ top: 0, left: 0 });
   const buttonRef = useRef<HTMLButtonElement>(null);
   const explanation = EXPLANATIONS[term];
-  
+
   useEffect(() => {
     if (show && buttonRef.current) {
       const rect = buttonRef.current.getBoundingClientRect();
@@ -62,9 +69,9 @@ function InfoButton({ term }: { term: string }) {
       });
     }
   }, [show]);
-  
+
   if (!explanation) return null;
-  
+
   return (
     <>
       <button
@@ -93,8 +100,7 @@ function InfoButton({ term }: { term: string }) {
       </button>
       {show && createPortal(
         <>
-          {/* Backdrop */}
-          <div 
+          <div
             style={{
               position: "fixed",
               top: 0,
@@ -105,7 +111,6 @@ function InfoButton({ term }: { term: string }) {
             }}
             onClick={() => setShow(false)}
           />
-          {/* Tooltip */}
           <div style={{
             position: "fixed",
             top: position.top,
@@ -124,7 +129,6 @@ function InfoButton({ term }: { term: string }) {
             textAlign: "left",
           }}>
             {explanation}
-            {/* Arrow */}
             <div style={{
               position: "absolute",
               bottom: -8,
@@ -147,11 +151,11 @@ function InfoButton({ term }: { term: string }) {
 
 function SectionHeader({ title, term }: { title: string; term?: string }) {
   return (
-    <div style={{ 
-      fontSize: 11, 
-      opacity: 0.6, 
-      marginBottom: 10, 
-      textTransform: "uppercase", 
+    <div style={{
+      fontSize: 11,
+      opacity: 0.6,
+      marginBottom: 10,
+      textTransform: "uppercase",
       letterSpacing: "0.5px",
       display: "flex",
       alignItems: "center"
@@ -162,12 +166,95 @@ function SectionHeader({ title, term }: { title: string; term?: string }) {
   );
 }
 
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SIGNAL COLORS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const SIGNAL_COLORS: Record<PredictionSignal, { bg: string; border: string; text: string }> = {
+  BULLISH: { bg: "rgba(34, 197, 94, 0.1)", border: "rgba(34, 197, 94, 0.3)", text: "#22c55e" },
+  BEARISH: { bg: "rgba(239, 68, 68, 0.1)", border: "rgba(239, 68, 68, 0.3)", text: "#ef4444" },
+  NEUTRAL: { bg: "rgba(148, 163, 184, 0.1)", border: "rgba(148, 163, 184, 0.3)", text: "#94a3b8" },
+};
+
+const SIGNAL_ICONS: Record<PredictionSignal, string> = {
+  BULLISH: "▲",
+  BEARISH: "▼",
+  NEUTRAL: "—",
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PROBABILITY GAUGE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function ProbabilityGauge({ probabilityUp, signal }: { probabilityUp: number; signal: PredictionSignal }) {
+  const colors = SIGNAL_COLORS[signal];
+  const pct = probabilityUp; // 0-100
+
+  return (
+    <div style={{ marginTop: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, opacity: 0.5, marginBottom: 4 }}>
+        <span>BEARISH 0%</span>
+        <span>50%</span>
+        <span>100% BULLISH</span>
+      </div>
+      {/* Gauge track */}
+      <div style={{
+        position: "relative",
+        height: 8,
+        background: "rgba(255,255,255,0.1)",
+        borderRadius: 4,
+        overflow: "hidden",
+      }}>
+        {/* Neutral zone (42-58%) */}
+        <div style={{
+          position: "absolute",
+          left: "42%",
+          width: "16%",
+          height: "100%",
+          background: "rgba(148, 163, 184, 0.15)",
+        }} />
+        {/* Fill */}
+        <div style={{
+          position: "absolute",
+          left: 0,
+          width: `${pct}%`,
+          height: "100%",
+          background: colors.text,
+          borderRadius: 4,
+          transition: "width 0.3s ease",
+        }} />
+      </div>
+      {/* Marker */}
+      <div style={{
+        position: "relative",
+        height: 12,
+      }}>
+        <div style={{
+          position: "absolute",
+          left: `${pct}%`,
+          transform: "translateX(-50%)",
+          width: 2,
+          height: 8,
+          background: colors.text,
+          borderRadius: 1,
+        }} />
+      </div>
+    </div>
+  );
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MAIN COMPONENT
+// ═══════════════════════════════════════════════════════════════════════════════
+
 export function PredictionCard({ ticker, initialData }: PredictionCardProps) {
-  const [prediction, setPrediction] = useState<any | null>(initialData ?? null);
+  const [prediction, setPrediction] = useState<PredictionResponse | null>(initialData ?? null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Sync with initialData from bundle when it arrives
   useEffect(() => {
     if (initialData !== undefined && initialData !== null) {
       setPrediction(initialData);
@@ -191,7 +278,7 @@ export function PredictionCard({ ticker, initialData }: PredictionCardProps) {
     <div style={{ background: "#1a1a1a", border: "1px solid #333", borderRadius: 10, padding: 16 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600, display: "flex", alignItems: "center" }}>
-          ML Return Prediction & Backtesting
+          ML Direction Forecast
           <InfoButton term="backtest" />
         </h3>
         <button
@@ -231,239 +318,551 @@ export function PredictionCard({ ticker, initialData }: PredictionCardProps) {
 
       {!prediction && !loading && !error && (
         <div style={{ opacity: 0.6, fontSize: 14, lineHeight: 1.6 }}>
-          Train a <strong>Random Forest Regression</strong> model on 5 years of historical data with 15+ technical indicators.
-          Includes backtesting with Sharpe ratio, drawdown analysis, and buy-and-hold comparison.
+          Train a <strong>Gradient Boosting Classifier</strong> on 5 years of historical data with {19} technical features.
+          Predicts <strong>5-day direction</strong> with calibrated probabilities. Includes confidence gating (NEUTRAL when uncertain),
+          purged walk-forward validation, bootstrap CIs, and factor attribution.
         </div>
       )}
 
-      {prediction && (
-        <div>
-          {/* Main Prediction */}
-          <div style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            gap: 16,
-            marginBottom: 16
-          }}>
-            {/* Prediction Box */}
-            <div style={{
-              background: prediction.prediction.direction === "UP"
-                ? "rgba(34, 197, 94, 0.1)"
-                : "rgba(239, 68, 68, 0.1)",
-              border: `1px solid ${prediction.prediction.direction === "UP" ? "rgba(34, 197, 94, 0.3)" : "rgba(239, 68, 68, 0.3)"}`,
-              borderRadius: 8,
-              padding: 16,
-              textAlign: "center"
-            }}>
-              <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 8, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                Next Day Prediction
-                <InfoButton term="prediction" />
-              </div>
-              <div style={{
-                fontSize: 28,
-                fontWeight: 700,
-                color: prediction.prediction.direction === "UP" ? "#22c55e" : "#ef4444"
-              }}>
-                {prediction.prediction.direction === "UP" ? "▲" : "▼"} {prediction.prediction.predicted_return > 0 ? "+" : ""}{prediction.prediction.predicted_return}%
-              </div>
-              <div style={{ fontSize: 14, marginTop: 8, opacity: 0.8 }}>
-                ${prediction.prediction.current_price} → ${prediction.prediction.predicted_price}
-              </div>
-              <div style={{
-                fontSize: 12,
-                marginTop: 8,
-                padding: "4px 8px",
-                background: "rgba(255,255,255,0.1)",
-                borderRadius: 4,
-                display: "inline-flex",
-                alignItems: "center"
-              }}>
-                Confidence: {prediction.prediction.confidence}
-                <InfoButton term="confidence" />
-              </div>
-            </div>
-
-            {/* Backtest Summary */}
-            <div style={{
-              background: "rgba(59, 130, 246, 0.1)",
-              border: "1px solid rgba(59, 130, 246, 0.3)",
-              borderRadius: 8,
-              padding: 16,
-              textAlign: "center"
-            }}>
-              <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 8, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                Strategy Backtest
-                <InfoButton term="backtest" />
-              </div>
-              <div style={{ fontSize: 28, fontWeight: 700, color: "#3b82f6", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                {prediction.backtest.sharpe_ratio}
-                <InfoButton term="sharpe_ratio" />
-              </div>
-              <div style={{ fontSize: 12, opacity: 0.7 }}>Sharpe Ratio</div>
-              <div style={{
-                display: "flex",
-                justifyContent: "center",
-                gap: 16,
-                marginTop: 12,
-                fontSize: 13
-              }}>
-                <span style={{ color: prediction.backtest.total_return > 0 ? "#22c55e" : "#ef4444" }}>
-                  Return: {prediction.backtest.total_return > 0 ? "+" : ""}{prediction.backtest.total_return}%
-                </span>
-                <span style={{ color: "#ef4444", display: "flex", alignItems: "center" }}>
-                  Max DD: {prediction.backtest.max_drawdown}%
-                  <InfoButton term="max_drawdown" />
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Detailed Metrics Grid */}
-          <div style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr 1fr",
-            gap: 16,
-            marginBottom: 16
-          }}>
-            {/* Model Performance */}
-            <div style={{ background: "rgba(255,255,255,0.02)", borderRadius: 8, padding: 12 }}>
-              <SectionHeader title="Model Performance" />
-              <MetricRow label="Direction Accuracy" value={`${prediction.model_metrics.direction_accuracy}%`} term="direction_accuracy" />
-              <MetricRow label="Test R²" value={prediction.model_metrics.test_r2} term="r_squared" />
-              <MetricRow label="Test MSE" value={prediction.model_metrics.test_mse} term="mse" />
-              <MetricRow label="Training Samples" value={prediction.model_metrics.training_samples} term="training_samples" />
-            </div>
-
-            {/* Backtest Results */}
-            <div style={{ background: "rgba(255,255,255,0.02)", borderRadius: 8, padding: 12 }}>
-              <SectionHeader title="Backtest Results" term="backtest" />
-              <MetricRow label="Annual Return" value={`${prediction.backtest.annual_return}%`} highlight={prediction.backtest.annual_return > 0} term="annual_return" />
-              <MetricRow label="Annual Volatility" value={`${prediction.backtest.annual_volatility}%`} term="annual_volatility" />
-              <MetricRow label="Win Rate" value={`${prediction.backtest.win_rate}%`} term="win_rate" />
-              <MetricRow label="# Trades" value={prediction.backtest.num_trades} term="num_trades" />
-            </div>
-
-            {/* vs Buy & Hold */}
-            <div style={{ background: "rgba(255,255,255,0.02)", borderRadius: 8, padding: 12 }}>
-              <SectionHeader title="vs Buy & Hold" />
-              <MetricRow label="Strategy Sharpe" value={prediction.backtest.sharpe_ratio} term="sharpe_ratio" />
-              <MetricRow label="B&H Sharpe" value={prediction.backtest.buy_hold_sharpe} term="buy_hold_sharpe" />
-              <MetricRow label="B&H Return" value={`${prediction.backtest.buy_hold_return}%`} term="buy_hold_return" />
-              <MetricRow 
-                label="Alpha" 
-                value={`${prediction.backtest.strategy_vs_buyhold > 0 ? "+" : ""}${prediction.backtest.strategy_vs_buyhold}%`}
-                highlight={prediction.backtest.strategy_vs_buyhold > 0}
-                negative={prediction.backtest.strategy_vs_buyhold < 0}
-                term="alpha"
-              />
-            </div>
-          </div>
-
-          {/* Feature Importance & Technical Indicators */}
-          <div style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            gap: 16,
-            marginBottom: 16
-          }}>
-            {/* Top Features */}
-            <div style={{ background: "rgba(255,255,255,0.02)", borderRadius: 8, padding: 12 }}>
-              <SectionHeader title="Top Features (Importance)" term="feature_importance" />
-              {prediction.top_features.map((f: any, i: number) => (
-                <div key={`${f.feature}-${i}`} style={{ marginBottom: 8 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 2 }}>
-                    <span style={{ opacity: 0.8 }}>{f.feature}</span>
-                    <span style={{ fontFamily: "monospace" }}>{f.importance}%</span>
-                  </div>
-                  <div style={{ 
-                    height: 4, 
-                    background: "rgba(255,255,255,0.1)", 
-                    borderRadius: 2,
-                    overflow: "hidden"
-                  }}>
-                    <div style={{ 
-                      width: `${f.importance * 3}%`, 
-                      height: "100%", 
-                      background: "#3b82f6",
-                      borderRadius: 2
-                    }} />
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Technical Indicators */}
-            <div style={{ background: "rgba(255,255,255,0.02)", borderRadius: 8, padding: 12 }}>
-              <SectionHeader title="Current Technical Indicators" />
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                <Indicator 
-                  label="RSI (14)" 
-                  value={prediction.technical_indicators.rsi_14}
-                  color={prediction.technical_indicators.rsi_14 > 70 ? "#ef4444" : prediction.technical_indicators.rsi_14 < 30 ? "#22c55e" : undefined}
-                  term="rsi"
-                />
-                <Indicator 
-                  label="Trend" 
-                  value={prediction.technical_indicators.trend}
-                  color={prediction.technical_indicators.trend === "BULLISH" ? "#22c55e" : "#ef4444"}
-                  term="trend"
-                />
-                <Indicator 
-                  label="MACD" 
-                  value={prediction.technical_indicators.macd.toFixed(4)}
-                  term="macd"
-                />
-                <Indicator 
-                  label="Volatility (20d)" 
-                  value={`${prediction.technical_indicators.volatility_20d}%`}
-                  term="volatility"
-                />
-                <Indicator 
-                  label="MA10 Ratio" 
-                  value={`${prediction.technical_indicators.ma_10_ratio > 0 ? "+" : ""}${prediction.technical_indicators.ma_10_ratio}%`}
-                  color={prediction.technical_indicators.ma_10_ratio > 0 ? "#22c55e" : "#ef4444"}
-                  term="ma_ratio"
-                />
-                <Indicator 
-                  label="Volume Ratio" 
-                  value={`${prediction.technical_indicators.volume_ratio}x`}
-                  term="volume_ratio"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Mini Cumulative Returns Chart */}
-          {prediction.backtest.cumulative_returns && (
-            <div style={{ background: "rgba(255,255,255,0.02)", borderRadius: 8, padding: 12 }}>
-              <SectionHeader title="Cumulative Returns (Test Period)" term="backtest" />
-              <CumulativeReturnsChart data={prediction.backtest.cumulative_returns} />
-            </div>
-          )}
-
-          {/* Disclaimer */}
-          <div style={{
-            fontSize: 11,
-            opacity: 0.5,
-            marginTop: 12,
-            padding: 8,
-            background: "rgba(255,255,255,0.02)",
-            borderRadius: 4,
-            textAlign: "center"
-          }}>
-            ⚠️ Educational ML model using Random Forest Regression with 15+ technical indicators.
-            Backtest includes transaction costs. Not financial advice.
-          </div>
-        </div>
-      )}
+      {prediction && <PredictionDisplay prediction={prediction} />}
     </div>
   );
 }
 
-function MetricRow({ label, value, highlight, negative, term }: { 
-  label: string; 
-  value: any; 
-  highlight?: boolean; 
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PREDICTION DISPLAY (broken out for readability)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function PredictionDisplay({ prediction }: { prediction: PredictionResponse }) {
+  const p = prediction.prediction;
+  const m = prediction.model_metrics;
+  const bt = prediction.backtest;
+  const q = prediction.model_quality;
+  const signal = p.signal as PredictionSignal;
+  const colors = SIGNAL_COLORS[signal];
+
+  return (
+    <div>
+      {/* ── Auto-Suppression Banner ────────────────────────────────────── */}
+      {q.suppressed && (
+        <div style={{
+          background: q.grade === "no_signal"
+            ? "rgba(239, 68, 68, 0.12)"
+            : "rgba(245, 158, 11, 0.12)",
+          border: `1px solid ${q.grade === "no_signal" ? "rgba(239, 68, 68, 0.4)" : "rgba(245, 158, 11, 0.4)"}`,
+          borderRadius: 8,
+          padding: 14,
+          marginBottom: 16,
+        }}>
+          <div style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            marginBottom: 6,
+            fontSize: 14,
+            fontWeight: 600,
+            color: q.grade === "no_signal" ? "#ef4444" : "#f59e0b",
+          }}>
+            {q.grade === "no_signal" ? "⚠ No Detectable Edge" : "⚠ Weak Signal"}
+          </div>
+          <div style={{ fontSize: 13, opacity: 0.8, lineHeight: 1.6, marginBottom: 8 }}>
+            {q.message}
+          </div>
+          {q.failures.length > 0 && (
+            <div style={{ fontSize: 11, opacity: 0.6, lineHeight: 1.7 }}>
+              {q.failures.map((f, i) => (
+                <div key={i} style={{ fontFamily: "monospace" }}>• {f}</div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Redeemed Banner (marginal — has issues but shows real signal) ── */}
+      {q.redeemed && !q.suppressed && (
+        <div style={{
+          background: "rgba(59, 130, 246, 0.1)",
+          border: "1px solid rgba(59, 130, 246, 0.3)",
+          borderRadius: 8,
+          padding: 14,
+          marginBottom: 16,
+        }}>
+          <div style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            marginBottom: 6,
+            fontSize: 14,
+            fontWeight: 600,
+            color: "#3b82f6",
+          }}>
+            Marginal Signal — Use With Caution
+          </div>
+          <div style={{ fontSize: 13, opacity: 0.8, lineHeight: 1.6, marginBottom: 8 }}>
+            {q.message}
+          </div>
+          {q.failures.length > 0 && (
+            <div style={{ fontSize: 11, opacity: 0.5, lineHeight: 1.7, marginBottom: 6 }}>
+              <div style={{ marginBottom: 2, fontWeight: 500 }}>Issues detected:</div>
+              {q.failures.map((f, i) => (
+                <div key={i} style={{ fontFamily: "monospace" }}>• {f}</div>
+              ))}
+            </div>
+          )}
+          {q.redemption_reasons.length > 0 && (
+            <div style={{ fontSize: 11, opacity: 0.6, lineHeight: 1.7 }}>
+              <div style={{ marginBottom: 2, fontWeight: 500, color: "#22c55e" }}>But the model shows real signal:</div>
+              {q.redemption_reasons.map((r, i) => (
+                <div key={i} style={{ fontFamily: "monospace", color: "#22c55e" }}>+ {r}</div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Signal + Probability Gauge ─────────────────────────────────── */}
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "1fr 1fr",
+        gap: 16,
+        marginBottom: 16,
+      }}>
+        {/* Signal Box */}
+        <div style={{
+          background: colors.bg,
+          border: `1px solid ${colors.border}`,
+          borderRadius: 8,
+          padding: 16,
+          textAlign: "center",
+        }}>
+          <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 8, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            {p.horizon_days}-Day Forecast
+            <InfoButton term="signal" />
+          </div>
+          {/* Big signal display */}
+          <div style={{
+            fontSize: 28,
+            fontWeight: 700,
+            color: colors.text,
+          }}>
+            {SIGNAL_ICONS[signal]} {signal}
+          </div>
+          <div style={{
+            fontSize: 18,
+            fontWeight: 600,
+            marginTop: 4,
+            fontFamily: "monospace",
+            color: colors.text,
+          }}>
+            {p.probability_up}% UP
+          </div>
+
+          {/* Probability Gauge */}
+          <ProbabilityGauge probabilityUp={p.probability_up} signal={signal} />
+
+          {/* Predicted return (secondary, smaller) */}
+          <div style={{
+            fontSize: 11,
+            marginTop: 8,
+            opacity: 0.6,
+            fontFamily: "monospace",
+          }}>
+            Magnitude est: {p.predicted_return > 0 ? "+" : ""}{p.predicted_return}%
+            &nbsp;(${p.current_price} → ${p.predicted_price})
+          </div>
+        </div>
+
+        {/* Backtest Summary */}
+        <div style={{
+          background: "rgba(59, 130, 246, 0.1)",
+          border: "1px solid rgba(59, 130, 246, 0.3)",
+          borderRadius: 8,
+          padding: 16,
+          textAlign: "center",
+        }}>
+          <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 8, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            Strategy Backtest
+            <InfoButton term="backtest" />
+          </div>
+          <div style={{ fontSize: 28, fontWeight: 700, color: "#3b82f6", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            {bt.sharpe_ratio}
+            <InfoButton term="sharpe_ratio" />
+          </div>
+          <div style={{ fontSize: 12, opacity: 0.7 }}>Sharpe Ratio</div>
+          <div style={{
+            display: "flex",
+            justifyContent: "center",
+            gap: 16,
+            marginTop: 12,
+            fontSize: 13,
+          }}>
+            <span style={{ color: bt.total_return > 0 ? "#22c55e" : "#ef4444" }}>
+              Return: {bt.total_return > 0 ? "+" : ""}{bt.total_return}%
+            </span>
+            <span style={{ color: "#ef4444", display: "flex", alignItems: "center" }}>
+              Max DD: {bt.max_drawdown}%
+              <InfoButton term="max_drawdown" />
+            </span>
+          </div>
+          <div style={{ fontSize: 11, opacity: 0.5, marginTop: 8 }}>
+            Selectivity: {bt.selectivity_pct}% of days traded
+          </div>
+        </div>
+      </div>
+
+      {/* ── Direction Accuracy vs Baseline ─────────────────────────────── */}
+      <div style={{
+        background: m.accuracy_vs_baseline > 0
+          ? "rgba(34, 197, 94, 0.08)"
+          : m.accuracy_vs_baseline < 0
+            ? "rgba(239, 68, 68, 0.08)"
+            : "rgba(255,255,255,0.02)",
+        border: `1px solid ${m.accuracy_vs_baseline > 0 ? "rgba(34, 197, 94, 0.2)" : m.accuracy_vs_baseline < 0 ? "rgba(239, 68, 68, 0.2)" : "#333"}`,
+        borderRadius: 8,
+        padding: 12,
+        marginBottom: 16,
+      }}>
+        <SectionHeader title="Direction Accuracy vs Baseline" term="accuracy_vs_baseline" />
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 10, opacity: 0.5, display: "flex", alignItems: "center" }}>
+              Model <InfoButton term="direction_accuracy" />
+            </div>
+            <div style={{ fontSize: 20, fontWeight: 700, fontFamily: "monospace" }}>
+              {m.direction_accuracy}%
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize: 10, opacity: 0.5, display: "flex", alignItems: "center" }}>
+              Baseline (Always UP) <InfoButton term="baseline_accuracy" />
+            </div>
+            <div style={{ fontSize: 20, fontWeight: 700, fontFamily: "monospace", opacity: 0.5 }}>
+              {m.baseline_accuracy}%
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize: 10, opacity: 0.5 }}>Edge vs Baseline</div>
+            <div style={{
+              fontSize: 20,
+              fontWeight: 700,
+              fontFamily: "monospace",
+              color: m.accuracy_vs_baseline > 0 ? "#22c55e" : m.accuracy_vs_baseline < 0 ? "#ef4444" : "inherit",
+            }}>
+              {m.accuracy_vs_baseline > 0 ? "+" : ""}{m.accuracy_vs_baseline}%
+            </div>
+          </div>
+          {m.gated_accuracy != null && (
+            <div>
+              <div style={{ fontSize: 10, opacity: 0.5, display: "flex", alignItems: "center" }}>
+                Gated Only ({m.gated_trades}/{m.gated_total}) <InfoButton term="gated_accuracy" />
+              </div>
+              <div style={{ fontSize: 20, fontWeight: 700, fontFamily: "monospace", color: "#3b82f6" }}>
+                {m.gated_accuracy}%
+              </div>
+            </div>
+          )}
+          <div>
+            <div style={{ fontSize: 10, opacity: 0.5, display: "flex", alignItems: "center" }}>
+              Info Coefficient <InfoButton term="information_coefficient" />
+            </div>
+            <div style={{
+              fontSize: 20,
+              fontWeight: 700,
+              fontFamily: "monospace",
+              color: m.information_coefficient > 0.05 ? "#22c55e" : m.information_coefficient > 0 ? "#f59e0b" : "#ef4444",
+            }}>
+              {m.information_coefficient.toFixed(4)}
+            </div>
+          </div>
+        </div>
+        {/* Bootstrap CI */}
+        {prediction.bootstrap_ci && (
+          <div style={{ fontSize: 11, opacity: 0.5, marginTop: 8, display: "flex", alignItems: "center" }}>
+            95% CI: [{prediction.bootstrap_ci.ci_95_low}%, {prediction.bootstrap_ci.ci_95_high}%]
+            <InfoButton term="bootstrap_ci" />
+          </div>
+        )}
+      </div>
+
+      {/* ── Walk-Forward Validation ────────────────────────────────────── */}
+      {prediction.walk_forward?.summary && (
+        <div style={{
+          background: "rgba(255,255,255,0.02)",
+          borderRadius: 8,
+          padding: 12,
+          marginBottom: 16,
+        }}>
+          <SectionHeader title={`Purged Walk-Forward (${prediction.walk_forward.summary.purge_window}d purge)`} term="walk_forward" />
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 8, marginBottom: 8 }}>
+            <MetricRow label="Avg Direction Acc" value={`${prediction.walk_forward.summary.direction_accuracy_mean}%`} term="direction_accuracy" />
+            <MetricRow label="Avg Baseline" value={`${prediction.walk_forward.summary.baseline_accuracy_mean}%`} term="baseline_accuracy" />
+            <MetricRow
+              label="Avg Edge"
+              value={`${prediction.walk_forward.summary.accuracy_vs_baseline_mean > 0 ? "+" : ""}${prediction.walk_forward.summary.accuracy_vs_baseline_mean}%`}
+              highlight={prediction.walk_forward.summary.accuracy_vs_baseline_mean > 0}
+              negative={prediction.walk_forward.summary.accuracy_vs_baseline_mean < 0}
+            />
+            <MetricRow label="Avg Sharpe" value={`${prediction.walk_forward.summary.sharpe_mean} ± ${prediction.walk_forward.summary.sharpe_std}`} term="sharpe_ratio" />
+            <MetricRow label="Positive Sharpe Folds" value={`${prediction.walk_forward.summary.positive_sharpe_pct}%`} />
+          </div>
+          {/* Per-fold detail */}
+          {prediction.walk_forward.folds.length > 0 && (
+            <div style={{ marginTop: 4, fontSize: 11, opacity: 0.6 }}>
+              {prediction.walk_forward.folds.map((f) => (
+                <div key={f.fold} style={{ display: "flex", justifyContent: "space-between", marginBottom: 2, fontFamily: "monospace" }}>
+                  <span>Fold {f.fold} ({f.test_start})</span>
+                  <span>
+                    Dir {f.direction_accuracy}%
+                    {f.accuracy_vs_baseline > 0 ? ` (+${f.accuracy_vs_baseline}%)` : ` (${f.accuracy_vs_baseline}%)`}
+                    {" | "}Sharpe {f.sharpe}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Detailed Metrics Grid ──────────────────────────────────────── */}
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "1fr 1fr 1fr",
+        gap: 16,
+        marginBottom: 16,
+      }}>
+        {/* Backtest Results */}
+        <div style={{ background: "rgba(255,255,255,0.02)", borderRadius: 8, padding: 12 }}>
+          <SectionHeader title="Backtest Results" term="backtest" />
+          <MetricRow label="Annual Return" value={`${bt.annual_return}%`} highlight={bt.annual_return > 0} term="annual_return" />
+          <MetricRow label="Annual Volatility" value={`${bt.annual_volatility}%`} term="annual_volatility" />
+          <MetricRow label="Calmar Ratio" value={bt.calmar_ratio} term="calmar_ratio" />
+          <MetricRow label="Win Rate" value={`${bt.win_rate}%`} term="win_rate" />
+          <MetricRow label="Trades" value={bt.num_trades} />
+        </div>
+
+        {/* vs Buy & Hold */}
+        <div style={{ background: "rgba(255,255,255,0.02)", borderRadius: 8, padding: 12 }}>
+          <SectionHeader title="vs Buy & Hold" />
+          <MetricRow label="Strategy Sharpe" value={bt.sharpe_ratio} term="sharpe_ratio" />
+          <MetricRow label="B&H Sharpe" value={bt.buy_hold_sharpe} term="buy_hold_sharpe" />
+          <MetricRow label="B&H Return" value={`${bt.buy_hold_return}%`} term="buy_hold_return" />
+          <MetricRow label="B&H Calmar" value={bt.buy_hold_calmar} term="calmar_ratio" />
+          <MetricRow
+            label="Alpha"
+            value={`${bt.strategy_vs_buyhold > 0 ? "+" : ""}${bt.strategy_vs_buyhold}%`}
+            highlight={bt.strategy_vs_buyhold > 0}
+            negative={bt.strategy_vs_buyhold < 0}
+            term="alpha"
+          />
+        </div>
+
+        {/* Model Info */}
+        <div style={{ background: "rgba(255,255,255,0.02)", borderRadius: 8, padding: 12 }}>
+          <SectionHeader title="Model Performance" />
+          <MetricRow label="Test R²" value={m.test_r2} term="r_squared" />
+          <MetricRow label="Train R²" value={m.train_r2} term="r_squared" />
+          <MetricRow label="Overfit Gap" value={`${(m.train_r2 - m.test_r2).toFixed(4)}`} />
+          <MetricRow label="Training Samples" value={m.training_samples} />
+          <MetricRow label="Model" value={m.model_type.replace("GradientBoosting", "GBM ")} />
+        </div>
+      </div>
+
+      {/* ── Factor Attribution ─────────────────────────────────────────── */}
+      {prediction.factor_attribution && !prediction.factor_attribution.error && prediction.factor_attribution.alpha_annualized != null && (
+        <div style={{
+          background: "rgba(168, 85, 247, 0.08)",
+          border: "1px solid rgba(168, 85, 247, 0.2)",
+          borderRadius: 8,
+          padding: 12,
+          marginBottom: 16,
+        }}>
+          <SectionHeader title="Factor Attribution (Alpha vs Beta)" term="factor_attribution" />
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+            gap: 12,
+            marginBottom: 8,
+          }}>
+            <div>
+              <div style={{ fontSize: 10, opacity: 0.5, display: "flex", alignItems: "center" }}>
+                Annualized Alpha <InfoButton term="factor_alpha" />
+              </div>
+              <div style={{
+                fontSize: 18,
+                fontWeight: 700,
+                fontFamily: "monospace",
+                color: prediction.factor_attribution.alpha_annualized > 0 ? "#22c55e" : "#ef4444",
+              }}>
+                {prediction.factor_attribution.alpha_annualized > 0 ? "+" : ""}{prediction.factor_attribution.alpha_annualized}%
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 10, opacity: 0.5, display: "flex", alignItems: "center" }}>
+                Market Beta <InfoButton term="factor_beta" />
+              </div>
+              <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "monospace" }}>
+                {prediction.factor_attribution.beta}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 10, opacity: 0.5 }}>Regression R²</div>
+              <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "monospace" }}>
+                {prediction.factor_attribution.r_squared}
+              </div>
+            </div>
+          </div>
+          {prediction.factor_attribution.interpretation && (
+            <div style={{ fontSize: 12, opacity: 0.6, lineHeight: 1.6 }}>
+              {prediction.factor_attribution.interpretation}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Feature Importance & Technical Indicators ──────────────────── */}
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "1fr 1fr",
+        gap: 16,
+        marginBottom: 16,
+      }}>
+        {/* Top Features */}
+        <div style={{ background: "rgba(255,255,255,0.02)", borderRadius: 8, padding: 12 }}>
+          <SectionHeader title="Top Features (Importance)" term="feature_importance" />
+          {prediction.top_features.map((f, i) => (
+            <div key={`${f.feature}-${i}`} style={{ marginBottom: 8 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 2 }}>
+                <span style={{ opacity: 0.8 }}>{f.feature}</span>
+                <span style={{ fontFamily: "monospace" }}>{f.importance}%</span>
+              </div>
+              <div style={{
+                height: 4,
+                background: "rgba(255,255,255,0.1)",
+                borderRadius: 2,
+                overflow: "hidden",
+              }}>
+                <div style={{
+                  width: `${f.importance * 3}%`,
+                  height: "100%",
+                  background: "#3b82f6",
+                  borderRadius: 2,
+                }} />
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Technical Indicators */}
+        <div style={{ background: "rgba(255,255,255,0.02)", borderRadius: 8, padding: 12 }}>
+          <SectionHeader title="Current Technical Indicators" />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <Indicator
+              label="RSI (14)"
+              value={prediction.technical_indicators.rsi_14}
+              color={prediction.technical_indicators.rsi_14 > 70 ? "#ef4444" : prediction.technical_indicators.rsi_14 < 30 ? "#22c55e" : undefined}
+              term="rsi"
+            />
+            <Indicator
+              label="Trend"
+              value={prediction.technical_indicators.trend}
+              color={prediction.technical_indicators.trend === "BULLISH" ? "#22c55e" : "#ef4444"}
+              term="trend"
+            />
+            <Indicator
+              label="MACD"
+              value={prediction.technical_indicators.macd.toFixed(4)}
+              term="macd"
+            />
+            <Indicator
+              label="Volatility (20d)"
+              value={`${prediction.technical_indicators.volatility_20d}%`}
+              term="volatility"
+            />
+            <Indicator
+              label="BB Position"
+              value={prediction.technical_indicators.bb_position.toFixed(2)}
+              color={prediction.technical_indicators.bb_position > 1 ? "#ef4444" : prediction.technical_indicators.bb_position < -1 ? "#22c55e" : undefined}
+              term="bb_position"
+            />
+            <Indicator
+              label="Vol Regime"
+              value={`${prediction.technical_indicators.vol_regime.toFixed(2)}x`}
+              color={prediction.technical_indicators.vol_regime > 1.3 ? "#ef4444" : prediction.technical_indicators.vol_regime < 0.7 ? "#22c55e" : undefined}
+              term="vol_regime"
+            />
+            <Indicator
+              label="MA10 Ratio"
+              value={`${prediction.technical_indicators.ma_10_ratio > 0 ? "+" : ""}${prediction.technical_indicators.ma_10_ratio}%`}
+              color={prediction.technical_indicators.ma_10_ratio > 0 ? "#22c55e" : "#ef4444"}
+              term="ma_ratio"
+            />
+            <Indicator
+              label="Volume Ratio"
+              value={`${prediction.technical_indicators.volume_ratio}x`}
+              term="volume_ratio"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* ── Model Health ───────────────────────────────────────────────── */}
+      <div style={{
+        background: "rgba(255,255,255,0.02)",
+        borderRadius: 8,
+        padding: 12,
+        marginBottom: 16,
+      }}>
+        <SectionHeader title="Model Health" term="model_health" />
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8 }}>
+          <MetricRow label="Horizon" value={prediction.model_health.horizon} />
+          <MetricRow label="Training Period" value={prediction.model_health.training_period} />
+          <MetricRow label="Training Days" value={prediction.model_health.training_days} />
+          <MetricRow
+            label="Vol Regime"
+            value={prediction.model_health.vol_regime}
+            highlight={prediction.model_health.vol_regime === "Low Volatility"}
+            negative={prediction.model_health.vol_regime === "High Volatility"}
+          />
+          <MetricRow label="Features Used" value={prediction.model_health.n_features} />
+        </div>
+      </div>
+
+      {/* ── Cumulative Returns Chart ───────────────────────────────────── */}
+      {bt.cumulative_returns && bt.cumulative_returns.length > 0 && (
+        <div style={{ background: "rgba(255,255,255,0.02)", borderRadius: 8, padding: 12, marginBottom: 12 }}>
+          <SectionHeader title="Cumulative Returns (Test Period)" term="backtest" />
+          <CumulativeReturnsChart data={bt.cumulative_returns} />
+        </div>
+      )}
+
+      {/* ── Disclaimer ─────────────────────────────────────────────────── */}
+      <div style={{
+        fontSize: 11,
+        opacity: 0.5,
+        padding: 8,
+        background: "rgba(255,255,255,0.02)",
+        borderRadius: 4,
+        textAlign: "center",
+        lineHeight: 1.6,
+      }}>
+        {prediction.model_health.disclaimer}
+        {" "}Confidence-gated: model sits flat when probability is between {p.confidence_thresholds.bearish_below}%–{p.confidence_thresholds.bullish_above}%.
+        {" "}Backtest uses weekly rebalancing with transaction costs. Not financial advice.
+      </div>
+    </div>
+  );
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// HELPER COMPONENTS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function MetricRow({ label, value, highlight, negative, term }: {
+  label: string;
+  value: any;
+  highlight?: boolean;
   negative?: boolean;
   term?: string;
 }) {
@@ -473,10 +872,10 @@ function MetricRow({ label, value, highlight, negative, term }: {
         {label}
         {term && <InfoButton term={term} />}
       </span>
-      <span style={{ 
-        fontFamily: "monospace", 
+      <span style={{
+        fontFamily: "monospace",
         fontWeight: 500,
-        color: highlight ? "#22c55e" : negative ? "#ef4444" : "inherit"
+        color: highlight ? "#22c55e" : negative ? "#ef4444" : "inherit",
       }}>
         {value}
       </span>
@@ -484,9 +883,9 @@ function MetricRow({ label, value, highlight, negative, term }: {
   );
 }
 
-function Indicator({ label, value, color, term }: { 
-  label: string; 
-  value: any; 
+function Indicator({ label, value, color, term }: {
+  label: string;
+  value: any;
   color?: string;
   term?: string;
 }) {
@@ -509,7 +908,6 @@ function CumulativeReturnsChart({ data }: { data: Array<{ date: string; strategy
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
 
-  // Guard against empty data array
   if (!data || data.length === 0) {
     return <svg width="100%" height={height}><text x="50%" y="50%" fill="#666" textAnchor="middle">No data</text></svg>;
   }
@@ -517,7 +915,7 @@ function CumulativeReturnsChart({ data }: { data: Array<{ date: string; strategy
   const allValues = data.flatMap(d => [d.strategy, d.buyHold]);
   const minVal = (allValues.length > 0 ? Math.min(...allValues) : 0) * 0.99;
   const maxVal = (allValues.length > 0 ? Math.max(...allValues) : 1) * 1.01;
-  const yRange = maxVal - minVal || 1; // Prevent division by zero
+  const yRange = maxVal - minVal || 1;
 
   const xScale = (i: number) => padding.left + (data.length > 1 ? (i / (data.length - 1)) * chartWidth : chartWidth / 2);
   const yScale = (val: number) => padding.top + chartHeight - ((val - minVal) / yRange) * chartHeight;

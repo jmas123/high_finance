@@ -1,32 +1,19 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 // RESEARCH PROJECTS – API methods
 // ═══════════════════════════════════════════════════════════════════════════════
-// Add these to your existing api object in lib/api.ts
-//
-// Also add the following imports at the top of api.ts:
-//   import type {
-//     ProjectSummary, ProjectDetail, ThesisBullet, Catalyst,
-//     ProjectRiskItem, ProjectPeer, DCFSnapshot, ProjectSourceItem,
-//   } from "./project_types";
+// Uses shared helpers from lib/api.ts (fetchWithTimeout, getAuthHeaders)
 
 import type {
   ProjectSummary, ProjectDetail, ThesisBullet, Catalyst,
   ProjectRiskItem, ProjectPeer, DCFSnapshot, ProjectSourceItem,
 } from "./types";
 
-const BASE = "/api/v1";
-const TOKEN_KEY = "hf_access_token";
+import { getAuthHeaders, fetchWithTimeout } from "../../lib/api";
 
-function getAuthHeaders(): Record<string, string> {
-  const token = localStorage.getItem(TOKEN_KEY);
-  if (token) {
-    return { Authorization: `Bearer ${token}` };
-  }
-  return {};
-}
+const BASE = "/api/v1";
 
 async function getJSON<T>(path: string): Promise<T> {
-  const res = await fetch(path, {
+  const res = await fetchWithTimeout(path, {
     headers: { ...getAuthHeaders() },
   });
   if (!res.ok) throw new Error(await res.text());
@@ -34,7 +21,7 @@ async function getJSON<T>(path: string): Promise<T> {
 }
 
 async function postJSONBody<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(path, {
+  const res = await fetchWithTimeout(path, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...getAuthHeaders() },
     body: JSON.stringify(body),
@@ -44,7 +31,7 @@ async function postJSONBody<T>(path: string, body: unknown): Promise<T> {
 }
 
 async function patchJSON<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(path, {
+  const res = await fetchWithTimeout(path, {
     method: "PATCH",
     headers: { "Content-Type": "application/json", ...getAuthHeaders() },
     body: JSON.stringify(body),
@@ -54,7 +41,7 @@ async function patchJSON<T>(path: string, body: unknown): Promise<T> {
 }
 
 async function putJSON<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(path, {
+  const res = await fetchWithTimeout(path, {
     method: "PUT",
     headers: { "Content-Type": "application/json", ...getAuthHeaders() },
     body: JSON.stringify(body),
@@ -64,7 +51,7 @@ async function putJSON<T>(path: string, body: unknown): Promise<T> {
 }
 
 async function del(path: string): Promise<void> {
-  const res = await fetch(path, {
+  const res = await fetchWithTimeout(path, {
     method: "DELETE",
     headers: { ...getAuthHeaders() },
   });
@@ -214,7 +201,7 @@ deleteDCFSnapshot: (projectId: number, snapshotId: number) =>
    * Returns a Blob that can be downloaded
    */
   exportProjectToExcel: async (projectId: number): Promise<Blob> => {
-    const res = await fetch(`${BASE}/projects/${projectId}/export/excel`, {
+    const res = await fetchWithTimeout(`${BASE}/projects/${projectId}/export/excel`, {
       headers: { ...getAuthHeaders() },
     });
 

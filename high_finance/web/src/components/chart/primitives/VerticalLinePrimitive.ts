@@ -136,7 +136,7 @@ export function hitTestVerticalLine(
  */
 export function dragVerticalLine(
   drawing: ChartDrawing,
-  handleType: "start" | "body",
+  _handleType: "start" | "body",
   newPoint: DrawingPoint
 ): DrawingPoint[] {
   // Only update the time, keep the price

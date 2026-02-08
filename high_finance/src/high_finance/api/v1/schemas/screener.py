@@ -30,6 +30,18 @@ class ScreenerFilters(BaseModel):
     ev_to_ebitda_min: Optional[float] = None
     ev_to_ebitda_max: Optional[float] = None
 
+    # Quality & Profitability
+    roe_min: Optional[float] = None
+    roe_max: Optional[float] = None
+    profit_margin_min: Optional[float] = None
+    profit_margin_max: Optional[float] = None
+    debt_to_equity_min: Optional[float] = None
+    debt_to_equity_max: Optional[float] = None
+    fcf_yield_min: Optional[float] = None
+    fcf_yield_max: Optional[float] = None
+    beta_min: Optional[float] = None
+    beta_max: Optional[float] = None
+
     # Growth & Dividend
     revenue_growth_min: Optional[float] = Field(None, description="Decimal, e.g., 0.1 = 10%")
     revenue_growth_max: Optional[float] = None
@@ -81,6 +93,13 @@ class ScreenerResult(BaseModel):
     pb_ratio: Optional[float] = None
     ev_to_ebitda: Optional[float] = None
 
+    # Quality & Profitability
+    roe: Optional[float] = None
+    profit_margin: Optional[float] = None
+    debt_to_equity: Optional[float] = None
+    fcf_yield: Optional[float] = None
+    beta: Optional[float] = None
+
     # Growth & Dividend
     revenue_growth: Optional[float] = None
     dividend_yield: Optional[float] = None
@@ -107,6 +126,7 @@ class ScreenerResponse(BaseModel):
     """Full response from the screener endpoint."""
     results: List[ScreenerResult]
     total_count: int
+    universe_total: int = 0
     filters_applied: Dict[str, Any]
     cached_at: Optional[datetime] = None
 

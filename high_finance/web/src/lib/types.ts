@@ -4,13 +4,166 @@ export type { ProjectSummary } from "../components/project/types";
 export type Company = {
   id: number;
   name: string;
+  short_name?: string;
   ticker: string;
   sector?: string | null;
   industry?: string | null;
 };
 
-export type Ownership = any;
-export type Leadership = any;
+// -- Prices --
+export type PriceEntry = {
+  date: string;
+  timestamp: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+};
+
+// -- Leadership --
+export type LeadershipMember = {
+  name?: string;
+  title?: string;
+  age?: number;
+  total_pay?: number;
+  year_born?: number;
+};
+
+export type Leadership = LeadershipMember[];
+
+// -- Ownership --
+export type OwnershipEntry = {
+  holder: string;
+  shares: number;
+  date_reported: string;
+  percent_out: number | null;
+  value: number | null;
+};
+
+export type Ownership = OwnershipEntry[];
+
+// -- Insider Trades --
+export type InsiderTrade = {
+  insider: string;
+  position: string;
+  transaction_type: string;
+  shares: number;
+  value: number | null;
+  date: string | null;
+  url: string | null;
+};
+
+export type InsiderSummary = {
+  total_trades: number;
+  buys: number;
+  sells: number;
+  buy_shares: number;
+  sell_shares: number;
+  net_shares: number;
+  buy_value: number;
+  sell_value: number;
+  net_value: number;
+  recent_trades: InsiderTrade[];
+};
+
+// -- Institutional Flow --
+export type Holder = {
+  holder: string;
+  shares: number;
+  value: number | null;
+  pct_held: number | null;
+  pct_change: number | null;
+  date_reported: string | null;
+};
+
+export type InstitutionalFlow = {
+  summary: {
+    institutional_ownership_pct: number;
+    insider_ownership_pct: number;
+    shares_outstanding: number;
+    float_shares: number;
+    total_institutional_holders: number;
+    total_mutual_fund_holders: number;
+    total_institutional_value: number;
+    total_institutional_shares: number;
+  };
+  top_institutional_holders: Holder[];
+  top_mutual_fund_holders: Holder[];
+  increasing_positions: Holder[];
+  decreasing_positions: Holder[];
+};
+
+// -- Options Overview --
+export type UnusualActivityEntry = {
+  type: "CALL" | "PUT";
+  strike: number;
+  volume: number;
+  open_interest: number;
+  volume_oi_ratio: number;
+  last_price: number;
+  implied_volatility: number;
+  moneyness: number;
+  premium_value: number;
+  signal: string;
+};
+
+export type StrikeVolume = {
+  strike: number;
+  call_volume: number;
+  put_volume: number;
+};
+
+export type OptionsOverview = {
+  ticker: string;
+  current_price: number | null;
+  expirations: string[];
+  put_call_ratio: number | null;
+  total_call_volume: number;
+  total_put_volume: number;
+  total_call_oi: number;
+  total_put_oi: number;
+  max_pain: number | null;
+  unusual_activity: UnusualActivityEntry[];
+  iv_percentile: number | null;
+  nearest_expiry_analysis: {
+    expiry: string;
+    days_to_expiry: number;
+    atm_strike: number | null;
+    atm_iv: number | null;
+    expected_move: number | null;
+    expected_move_pct: number | null;
+    strike_volume: StrikeVolume[];
+  } | null;
+};
+
+// -- Earnings --
+export type EarningsData = {
+  ticker: string;
+  next_earnings: {
+    date: string;
+    time: string;
+    eps_estimate: number | null;
+  } | null;
+  estimates: {
+    current_eps_estimate: number | null;
+    current_pe: number | null;
+    peg_ratio: number | null;
+    earnings_growth: number | null;
+    revenue_growth: number | null;
+  } | null;
+};
+
+export type EarningsHistoryEntry = {
+  date: string;
+  quarter: string;
+  eps_estimate: number | null;
+  eps_actual: number | null;
+  surprise_pct: number | null;
+  beat: boolean | null;
+  one_day_move: number | null;
+  five_day_move: number | null;
+};
 export type Politician = {
   id: number;
   name: string;
@@ -106,12 +259,18 @@ export type NewsHeadline = {
   sentiment: { compound: number; pos: number; neu: number; neg: number };
 };
 
+export type SECFiling = {
+  form: string;
+  date: string;
+  url?: string | null;
+};
+
 export type NewsBundle = {
   ticker: string;
   avg_headline_sentiment: number | null;
   headlines: NewsHeadline[];
-  filings: any[];
-  x_posts: any[];
+  filings: SECFiling[];
+  x_posts: Record<string, unknown>[];
 };
 
 
@@ -928,6 +1087,16 @@ export type ScreenerFilters = {
   pb_ratio_max?: number;
   ev_to_ebitda_min?: number;
   ev_to_ebitda_max?: number;
+  roe_min?: number;
+  roe_max?: number;
+  profit_margin_min?: number;
+  profit_margin_max?: number;
+  debt_to_equity_min?: number;
+  debt_to_equity_max?: number;
+  fcf_yield_min?: number;
+  fcf_yield_max?: number;
+  beta_min?: number;
+  beta_max?: number;
   revenue_growth_min?: number;
   revenue_growth_max?: number;
   dividend_yield_min?: number;
@@ -958,6 +1127,11 @@ export type ScreenerResult = {
   forward_pe: number | null;
   pb_ratio: number | null;
   ev_to_ebitda: number | null;
+  roe: number | null;
+  profit_margin: number | null;
+  debt_to_equity: number | null;
+  fcf_yield: number | null;
+  beta: number | null;
   revenue_growth: number | null;
   dividend_yield: number | null;
   price_vs_200ma: number | null;
@@ -973,6 +1147,8 @@ export type ScreenerResult = {
 export type ScreenerResponse = {
   results: ScreenerResult[];
   total: number;
+  total_count: number;
+  universe_total: number;
   filters_applied: ScreenerFilters;
   cached_at: string | null;
 };
@@ -1103,4 +1279,210 @@ export type PrivateCompanySummary = {
   latest_valuation: number | null;
   investor_count: number;
   public_investor_count: number;
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// INVESTMENT MEMO TYPES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export type MemoSummary = {
+  id: number;
+  ticker: string;
+  created_at: string;
+  content_preview: string;
+};
+
+export type MemoDetail = {
+  id: number;
+  ticker: string;
+  content: string;
+  model_used: string | null;
+  created_at: string;
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// AI HISTORY TYPES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export type AIHistoryItem = {
+  id: number;
+  ticker: string;
+  analysis_type: string;
+  content_preview: string;
+  created_at: string;
+};
+
+export type AIHistoryDetail = {
+  id: number;
+  ticker: string;
+  analysis_type: string;
+  content: string;
+  model_used: string | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  created_at: string;
+};
+
+export type AIHistoryTypeCount = {
+  analysis_type: string;
+  count: number;
+};
+
+export type AIHistoryStats = {
+  total_count: number;
+  by_type: AIHistoryTypeCount[];
+  total_input_tokens: number;
+  total_output_tokens: number;
+  estimated_cost_usd: number;
+  budget_usd: number;
+  budget_remaining_usd: number;
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ML PREDICTION TYPES (v2 — GBM Classifier with Confidence Gating)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export type PredictionSignal = "BULLISH" | "BEARISH" | "NEUTRAL";
+
+export type PredictionResult = {
+  signal: PredictionSignal;
+  probability_up: number;       // 0-100
+  probability_down: number;     // 0-100
+  predicted_return: number;     // percentage
+  current_price: number;
+  predicted_price: number;
+  horizon_days: number;
+  confidence_thresholds: {
+    bullish_above: number;
+    bearish_below: number;
+  };
+  // Backwards-compatible
+  direction: "UP" | "DOWN";
+  confidence: string;
+};
+
+export type PredictionModelMetrics = {
+  direction_accuracy: number;
+  baseline_accuracy: number;
+  accuracy_vs_baseline: number;
+  gated_accuracy: number | null;
+  gated_trades: number;
+  gated_total: number;
+  information_coefficient: number;
+  train_r2: number;
+  test_r2: number;
+  training_samples: number;
+  test_samples: number;
+  model_type: string;
+  horizon_days: number;
+};
+
+export type PredictionBootstrapCI = {
+  n_bootstrap: number;
+  mean: number;
+  std: number;
+  ci_95_low: number;
+  ci_95_high: number;
+  ci_note: string;
+};
+
+export type PredictionModelHealth = {
+  horizon: string;
+  training_period: string;
+  training_days: number;
+  vol_regime: string;
+  vol_regime_value: number;
+  n_features: number;
+  disclaimer: string;
+};
+
+export type PredictionWalkForwardFold = {
+  fold: number;
+  train_size: number;
+  test_size: number;
+  purge_days: number;
+  test_start: string;
+  test_end: string;
+  direction_accuracy: number;
+  baseline_accuracy: number;
+  accuracy_vs_baseline: number;
+  sharpe: number;
+  total_return: number;
+};
+
+export type PredictionWalkForwardSummary = {
+  n_folds: number;
+  purge_window: number;
+  sharpe_mean: number;
+  sharpe_std: number;
+  sharpe_min: number;
+  sharpe_max: number;
+  direction_accuracy_mean: number;
+  direction_accuracy_std: number;
+  baseline_accuracy_mean: number;
+  accuracy_vs_baseline_mean: number;
+  positive_sharpe_pct: number;
+};
+
+export type PredictionBacktest = {
+  sharpe_ratio: number;
+  annual_return: number;
+  annual_volatility: number;
+  total_return: number;
+  max_drawdown: number;
+  calmar_ratio: number;
+  win_rate: number;
+  num_trades: number;
+  trades_taken: number;
+  trades_total: number;
+  selectivity_pct: number;
+  buy_hold_sharpe: number;
+  buy_hold_return: number;
+  buy_hold_calmar: number;
+  strategy_vs_buyhold: number;
+  cumulative_returns: Array<{ date: string; strategy: number; buyHold: number }>;
+};
+
+export type PredictionModelQuality = {
+  grade: "no_signal" | "weak" | "marginal" | "acceptable";
+  suppressed: boolean;
+  redeemed: boolean;
+  message: string | null;
+  failures: string[];
+  redemption_reasons: string[];
+  overfit_gap: number;
+};
+
+export type PredictionResponse = {
+  ticker: string;
+  prediction: PredictionResult;
+  model_metrics: PredictionModelMetrics;
+  backtest: PredictionBacktest;
+  walk_forward: {
+    folds: PredictionWalkForwardFold[];
+    summary: PredictionWalkForwardSummary | null;
+  };
+  bootstrap_ci: PredictionBootstrapCI;
+  factor_attribution: {
+    alpha_annualized: number | null;
+    beta: number | null;
+    r_squared: number | null;
+    interpretation?: string;
+    error?: string;
+  };
+  top_features: Array<{ feature: string; importance: number }>;
+  model_quality: PredictionModelQuality;
+  model_health: PredictionModelHealth;
+  technical_indicators: {
+    rsi_14: number;
+    macd: number;
+    macd_signal: number;
+    trend: string;
+    volatility_20d: number;
+    volume_ratio: number;
+    ma_10_ratio: number;
+    ma_20_ratio: number;
+    bb_position: number;
+    vol_regime: number;
+  };
 };

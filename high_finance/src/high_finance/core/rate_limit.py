@@ -17,25 +17,33 @@ Usage:
         ...
 """
 
+import logging
+
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
+logger = logging.getLogger(__name__)
+
 
 def get_identifier(request: Request) -> str:
     """
     Get a unique identifier for rate limiting.
 
-    Uses the Authorization header if present (for authenticated users),
+    Uses the decoded JWT user ID if present (for authenticated users),
     otherwise falls back to IP address.
     """
     auth_header = request.headers.get("Authorization")
     if auth_header and auth_header.startswith("Bearer "):
-        # Use token as identifier for authenticated users
-        # This ensures rate limits are per-user, not per-IP
-        return f"user:{auth_header[7:20]}"  # Use first 13 chars of token
+        try:
+            from high_finance.core.security import decode_token
+            token_data = decode_token(auth_header[7:])
+            if token_data and token_data.user_id:
+                return f"user:{token_data.user_id}"
+        except Exception:
+            logger.debug("Failed to decode token for rate limiting, falling back to IP")
     return get_remote_address(request)
 
 

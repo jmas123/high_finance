@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { SavedScreen } from "../../lib/types";
 
 type Props = {
@@ -11,12 +11,38 @@ type Props = {
 export function SavedScreensPanel({ screens, onLoad, onDelete, onSave }: Props) {
   const [newScreenName, setNewScreenName] = useState("");
   const [showSaveInput, setShowSaveInput] = useState(false);
+  const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
+
+  // Auto-clear undo toast after 5 seconds
+  useEffect(() => {
+    if (pendingDeleteId == null) return;
+    const timer = setTimeout(() => {
+      onDelete(pendingDeleteId);
+      setPendingDeleteId(null);
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [pendingDeleteId, onDelete]);
 
   const handleSave = () => {
     if (newScreenName.trim()) {
       onSave(newScreenName.trim());
       setNewScreenName("");
       setShowSaveInput(false);
+    }
+  };
+
+  const handleDeleteClick = (screenId: number) => {
+    setPendingDeleteId(screenId);
+  };
+
+  const handleUndoDelete = () => {
+    setPendingDeleteId(null);
+  };
+
+  const handleConfirmDelete = () => {
+    if (pendingDeleteId != null) {
+      onDelete(pendingDeleteId);
+      setPendingDeleteId(null);
     }
   };
 
@@ -39,9 +65,14 @@ export function SavedScreensPanel({ screens, onLoad, onDelete, onSave }: Props) 
     if (f.market_cap_min != null) parts.push(`Mkt Cap > $${(f.market_cap_min / 1000).toFixed(0)}B`);
     if (f.has_insider_buys_90d) parts.push("Insider buys");
     if (f.congress_net_value_90d_min != null) parts.push("Congress activity");
+    if (f.roe_min != null) parts.push(`ROE > ${(f.roe_min * 100).toFixed(0)}%`);
+    if (f.debt_to_equity_max != null) parts.push(`D/E < ${f.debt_to_equity_max}`);
 
-    return parts.length > 0 ? parts.slice(0, 3).join(" • ") : "No filters";
+    return parts.length > 0 ? parts.slice(0, 3).join(" \u2022 ") : "No filters";
   };
+
+  // Filter out the pending-delete screen from display
+  const visibleScreens = screens.filter(s => s.id !== pendingDeleteId);
 
   return (
     <div style={{
@@ -108,10 +139,7 @@ export function SavedScreensPanel({ screens, onLoad, onDelete, onSave }: Props) 
               Save
             </button>
             <button
-              onClick={() => {
-                setShowSaveInput(false);
-                setNewScreenName("");
-              }}
+              onClick={() => { setShowSaveInput(false); setNewScreenName(""); }}
               style={{
                 padding: "6px 12px",
                 background: "transparent",
@@ -128,7 +156,55 @@ export function SavedScreensPanel({ screens, onLoad, onDelete, onSave }: Props) 
         )}
       </div>
 
-      {screens.length === 0 ? (
+      {/* Undo toast */}
+      {pendingDeleteId != null && (
+        <div style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          padding: "8px 12px",
+          background: "#3b1818",
+          border: "1px solid #ef4444",
+          borderRadius: 6,
+          marginBottom: 12,
+          fontSize: 12,
+        }}>
+          <span>Screen deleted.</span>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              onClick={handleUndoDelete}
+              style={{
+                padding: "4px 10px",
+                background: "transparent",
+                border: "1px solid #ef4444",
+                borderRadius: 4,
+                color: "#ef4444",
+                fontSize: 11,
+                cursor: "pointer",
+                fontWeight: 500,
+              }}
+            >
+              Undo
+            </button>
+            <button
+              onClick={handleConfirmDelete}
+              style={{
+                padding: "4px 10px",
+                background: "#ef4444",
+                border: "none",
+                borderRadius: 4,
+                color: "#fff",
+                fontSize: 11,
+                cursor: "pointer",
+              }}
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
+
+      {visibleScreens.length === 0 && pendingDeleteId == null ? (
         <div style={{
           padding: 20,
           textAlign: "center",
@@ -139,7 +215,7 @@ export function SavedScreensPanel({ screens, onLoad, onDelete, onSave }: Props) 
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {screens.map(screen => (
+          {visibleScreens.map(screen => (
             <div
               key={screen.id}
               style={{
@@ -195,7 +271,7 @@ export function SavedScreensPanel({ screens, onLoad, onDelete, onSave }: Props) 
                   Load
                 </button>
                 <button
-                  onClick={() => onDelete(screen.id)}
+                  onClick={() => handleDeleteClick(screen.id)}
                   style={{
                     padding: "6px 10px",
                     background: "transparent",

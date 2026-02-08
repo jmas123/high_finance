@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { api } from "../../lib/api";
 import { useAuth } from "../../lib/auth";
 import type { ScreenerFilters, ScreenerResponse, SavedScreen } from "../../lib/types";
@@ -8,30 +8,24 @@ import { SavedScreensPanel } from "./SavedScreensPanel";
 
 const STORAGE_KEY = "hf_screener_filters";
 
-// Load filters from localStorage
+const DEFAULT_FILTERS: ScreenerFilters = {
+  sort_by: "market_cap",
+  sort_order: "desc",
+  limit: 50,
+};
+
 function loadFilters(): ScreenerFilters {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      return JSON.parse(saved);
-    }
-  } catch (e) {
-    console.error("Failed to load screener filters:", e);
-  }
-  return {
-    sort_by: "market_cap",
-    sort_order: "desc",
-    limit: 50,
-  };
+    if (saved) return JSON.parse(saved);
+  } catch {}
+  return { ...DEFAULT_FILTERS };
 }
 
-// Save filters to localStorage
 function saveFilters(filters: ScreenerFilters) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(filters));
-  } catch (e) {
-    console.error("Failed to save screener filters:", e);
-  }
+  } catch {}
 }
 
 type Props = {
@@ -47,6 +41,12 @@ export function ScreenerCard({ onSelectTicker }: Props) {
   const [savedScreens, setSavedScreens] = useState<SavedScreen[]>([]);
   const [showSaved, setShowSaved] = useState(false);
   const [sectorCounts, setSectorCounts] = useState<Record<string, number>>({});
+  const [liveCount, setLiveCount] = useState<number | null>(null);
+  const [universeTotal, setUniverseTotal] = useState<number>(0);
+
+  // Ref to track the latest filters for debouncing
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const countTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Load sector counts on mount
   useEffect(() => {
@@ -67,28 +67,50 @@ export function ScreenerCard({ onSelectTicker }: Props) {
     }
   }, [isAuthenticated, user?.id]);
 
-  const runScreen = useCallback(async (f: ScreenerFilters = filters) => {
+  const runScreen = useCallback(async (f: ScreenerFilters) => {
     setLoading(true);
     setError(null);
     try {
       const data = await api.screener(f);
       setResults(data);
+      setLiveCount(data.total_count ?? data.total);
+      setUniverseTotal(data.universe_total ?? 0);
     } catch (e: any) {
       setError(e?.message ?? "Failed to run screener");
     } finally {
       setLoading(false);
     }
-  }, [filters]);
+  }, []);
 
   // Run initial screen on mount
   useEffect(() => {
-    runScreen();
+    runScreen(filters);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleApplyFilters = () => {
-    setFilters({ ...filters, offset: 0 }); // Reset pagination
-    runScreen({ ...filters, offset: 0 });
-  };
+  // Debounced live count as filters change (fast — count only)
+  const fetchLiveCount = useCallback((f: ScreenerFilters) => {
+    if (countTimerRef.current) clearTimeout(countTimerRef.current);
+    countTimerRef.current = setTimeout(async () => {
+      try {
+        const data = await api.screenerCount(f);
+        setLiveCount(data.count);
+        setUniverseTotal(data.universe_total);
+      } catch {}
+    }, 200);
+  }, []);
+
+  // Debounced auto-run when filters change (300ms)
+  const handleFilterChange = useCallback((newFilters: ScreenerFilters) => {
+    setFilters(newFilters);
+    // Fetch live count immediately (fast)
+    fetchLiveCount(newFilters);
+    // Debounce full results fetch
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = setTimeout(() => {
+      runScreen({ ...newFilters, offset: 0 });
+    }, 300);
+  }, [fetchLiveCount, runScreen]);
 
   const handleSort = (column: string) => {
     const newOrder = filters.sort_by === column && filters.sort_order === "desc" ? "asc" : "desc";
@@ -136,13 +158,17 @@ export function ScreenerCard({ onSelectTicker }: Props) {
   };
 
   const handleClearFilters = () => {
-    const clearedFilters: ScreenerFilters = {
-      sort_by: "market_cap",
-      sort_order: "desc",
-      limit: 50,
-    };
-    setFilters(clearedFilters);
-    runScreen(clearedFilters);
+    const cleared = { ...DEFAULT_FILTERS };
+    setFilters(cleared);
+    runScreen(cleared);
+    setLiveCount(null);
+  };
+
+  // Apply a preset (replaces all filters + runs immediately)
+  const handlePreset = (preset: ScreenerFilters) => {
+    const merged = { ...DEFAULT_FILTERS, ...preset };
+    setFilters(merged);
+    runScreen(merged);
   };
 
   return (
@@ -190,10 +216,12 @@ export function ScreenerCard({ onSelectTicker }: Props) {
       {/* Filters */}
       <ScreenerFiltersPanel
         filters={filters}
-        onChange={setFilters}
-        onApply={handleApplyFilters}
+        onChange={handleFilterChange}
         onClear={handleClearFilters}
+        onPreset={handlePreset}
         sectorCounts={sectorCounts}
+        liveCount={liveCount}
+        universeTotal={universeTotal}
       />
 
       {/* Error */}
@@ -220,6 +248,7 @@ export function ScreenerCard({ onSelectTicker }: Props) {
         limit={filters.limit ?? 50}
         offset={filters.offset ?? 0}
         onPageChange={handlePageChange}
+        universeTotal={universeTotal}
       />
     </div>
   );

@@ -47,6 +47,10 @@ class Settings(BaseSettings):
     # Alerting (optional)
     SLACK_WEBHOOK_URL: str | None = None
 
+    # AI features (memo generation)
+    ANTHROPIC_API_KEY: str | None = None
+    AI_MONTHLY_BUDGET_USD: float = 20.0
+
     # Optional in dev; required only when you use those features
     SEC_API_KEY: str | None = None
 

@@ -3,6 +3,7 @@ import { Globe, LayoutGrid, Activity, Percent } from "lucide-react";
 import MacroOverlayCard from "./MacroOverlayCard";
 import SectorHeatmapCard from "./SectorHeatMap";
 import RateImpactCard from "./RateImpactCard";
+import type { MacroResponse, SectorResponse, RateImpactResponse } from "../../lib/types";
 
 type Tab = "overview" | "macro" | "sectors" | "rates";
 
@@ -12,9 +13,9 @@ interface BroaderMarketContextProps {
   showMacro?: boolean;
   showSectors?: boolean;
   showRateImpact?: boolean;
-  initialMacroData?: any;
-  initialSectorsData?: any;
-  initialRateImpactData?: any;
+  initialMacroData?: MacroResponse | null;
+  initialSectorsData?: SectorResponse | null;
+  initialRateImpactData?: RateImpactResponse | null;
 }
 
 const C = {

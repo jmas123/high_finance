@@ -14,11 +14,24 @@ spec:
       labels:
         app: high-finance
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
       containers:
         - name: high-finance
           image: your-docker-image:latest
           ports:
             - containerPort: 8000
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
           env:
             - name: DATABASE_URL
               valueFrom:
@@ -30,6 +43,52 @@ spec:
                 secretKeyRef:
                   name: redis-secret
                   key: redis_url
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: app-secret
+                  key: secret_key
+            - name: ADMIN_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: app-secret
+                  key: admin_api_key
+            - name: GROQ_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: api-keys
+                  key: groq_api_key
+            - name: QUIVER_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: api-keys
+                  key: quiver_api_key
+            - name: FRED_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: api-keys
+                  key: fred_api_key
+            - name: ALLOWED_ORIGINS
+              valueFrom:
+                configMapKeyRef:
+                  name: app-config
+                  key: allowed_origins
+            - name: DEBUG
+              value: "False"
+            - name: PYTHONPATH
+              value: /app/src
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 30
 ---
 apiVersion: v1
 kind: Service

@@ -29,7 +29,7 @@ export function renderChannel(
   isSelected: boolean,
   isHovered: boolean
 ): void {
-  const { canvas, chartWidth, chartHeight } = ctx;
+  const { canvas, chartWidth, chartHeight: _chartHeight } = ctx;
 
   if (drawing.points.length < 2) return;
 
@@ -41,7 +41,6 @@ export function renderChannel(
   const style = drawing.style;
 
   // Calculate channel height (use half the price difference)
-  const priceDiff = Math.abs(drawing.points[1].price - drawing.points[0].price) * 0.5;
   const channelOffset = Math.abs(p2.y - p1.y) * 0.5;
 
   // Draw the main trend line
@@ -204,7 +203,7 @@ export function hitTestChannel(
  * Calculate new points when dragging a channel.
  */
 export function dragChannel(
-  drawing: ChartDrawing,
+  _drawing: ChartDrawing,
   handleType: "start" | "end" | "body",
   newPoint: DrawingPoint,
   originalPoints: DrawingPoint[]

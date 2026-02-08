@@ -51,6 +51,13 @@ class ScreenerCache(Base):
     pb_ratio = Column(Numeric(10, 2))
     ev_to_ebitda = Column(Numeric(10, 2))
 
+    # Profitability & Quality
+    roe = Column(Numeric(10, 4))           # Return on equity (decimal)
+    profit_margin = Column(Numeric(10, 4)) # Net profit margin (decimal)
+    debt_to_equity = Column(Numeric(10, 2))
+    fcf_yield = Column(Numeric(10, 4))     # Free cash flow yield (decimal)
+    beta = Column(Numeric(8, 4))
+
     # Growth & Dividend
     revenue_growth = Column(Numeric(8, 4))
     dividend_yield = Column(Numeric(8, 4))

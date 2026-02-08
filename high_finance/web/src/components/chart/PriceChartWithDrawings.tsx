@@ -147,7 +147,7 @@ export function PriceChartWithDrawings({
     cancelDrawing,
     clearPendingDrawing,
     currentStyle,
-    setCurrentStyle,
+    setCurrentStyle: _setCurrentStyle,
     textInput,
   } = drawingState;
 
@@ -160,7 +160,7 @@ export function PriceChartWithDrawings({
     clearError,
     createDrawing,
     deleteDrawing,
-    deleteAllDrawings,
+    deleteAllDrawings: _deleteAllDrawings,
   } = persistence;
 
   // Indicator state

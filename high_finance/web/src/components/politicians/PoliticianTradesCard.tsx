@@ -51,15 +51,15 @@ function hitRateColor(hitRate: number | null | undefined): string {
 
 interface PoliticianTradesCardProps {
   ticker: string;
-  initialData?: PoliticianTradeWithContext[] | any[] | null;
+  initialData?: PoliticianTradeWithContext[] | null;
 }
 
 // Helper to flatten bundle data to FlatRow format
-function flattenTradeData(data: any[] | null): FlatRow[] {
+function flattenTradeData(data: PoliticianTradeWithContext[] | null): FlatRow[] {
   if (!data) return [];
-  return data.map((r: any) => ({
-    ...(r.trade || r),
-    politician: r.politician ?? (r.trade as any)?.politician ?? r,
+  return data.map((r) => ({
+    ...r.trade,
+    politician: r.politician ?? r.trade.politician ?? ({} as Politician),
     context: r.context,
   }));
 }
@@ -97,8 +97,8 @@ export function PoliticianTradesCard({ ticker, initialData }: PoliticianTradesCa
         }));
 
         if (mounted) setRows(flattened);
-      } catch (e: any) {
-        if (mounted) setError(e?.message ?? "Failed to load politician trades");
+      } catch (e) {
+        if (mounted) setError(e instanceof Error ? e.message : "Failed to load politician trades");
       } finally {
         if (mounted) setLoading(false);
       }

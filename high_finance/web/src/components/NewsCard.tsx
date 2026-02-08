@@ -1,26 +1,8 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
+import type { NewsBundle } from "../lib/types";
 
-type Headline = {
-  title: string;
-  url: string | null;
-  published: string | null;
-  source: string | null;
-  sentiment: {
-    compound: number;
-    pos: number;
-    neu: number;
-    neg: number;
-  };
-};
-
-type NewsResponse = {
-  ticker: string;
-  avg_headline_sentiment: number | null;
-  headlines: Headline[];
-  filings: any[];
-  x_posts: any[];
-};
+type NewsResponse = NewsBundle;
 
 function sentimentLabel(score: number | null) {
   if (score == null) return { label: "Neutral", color: "#6b7280" };
@@ -65,8 +47,8 @@ export function NewsCard({ ticker, initialData }: NewsCardProps) {
       try {
         const res = await api.news(ticker);
         if (mounted) setData(res);
-      } catch (e: any) {
-        if (mounted) setError(e?.message ?? "Failed to load news");
+      } catch (e) {
+        if (mounted) setError(e instanceof Error ? e.message : "Failed to load news");
       } finally {
         if (mounted) setLoading(false);
       }

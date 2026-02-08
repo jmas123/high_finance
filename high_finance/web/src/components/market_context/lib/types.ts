@@ -17,8 +17,8 @@ export interface SectorData {
 
 export interface SectorResponse {
   sectors: SectorData[];
-  market_leader: string;
-  market_laggard: string;
+  market_leader: string | null;
+  market_laggard: string | null;
   breadth: {
     positive: number;
     negative: number;

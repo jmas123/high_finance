@@ -1,16 +1,8 @@
 import { useEffect, useState, useRef } from "react";
 import { api } from "../../lib/api";
+import type { EarningsHistoryEntry } from "../../lib/types";
 
-type EarningsHistory = {
-  date: string;
-  quarter: string;
-  eps_estimate: number | null;
-  eps_actual: number | null;
-  surprise_pct: number | null;
-  beat: boolean | null;
-  one_day_move: number | null;
-  five_day_move: number | null;
-};
+type EarningsHistory = EarningsHistoryEntry;
 
 type EarningsData = {
   ticker: string;
@@ -85,8 +77,8 @@ export function EarningsCard({ ticker, initialData }: EarningsCardProps) {
             setHistory(historyData);
           }
         }
-      } catch (e: any) {
-        if (mounted) setError(e?.message ?? "Failed to load earnings");
+      } catch (e) {
+        if (mounted) setError(e instanceof Error ? e.message : "Failed to load earnings");
       } finally {
         if (mounted) setLoading(false);
       }

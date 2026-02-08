@@ -3,13 +3,13 @@ import type { Warning } from "../../lib/types";
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 
-function ReferenceMarker({ 
-  reference, 
+function ReferenceMarker({
+  reference,
   positionPct,
-  min,
-  max,
-}: { 
-  reference: SliderReference; 
+  min: _min,
+  max: _max,
+}: {
+  reference: SliderReference;
   positionPct: number;
   min: number;
   max: number;

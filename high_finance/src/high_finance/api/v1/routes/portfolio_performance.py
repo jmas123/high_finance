@@ -6,8 +6,9 @@ Endpoints for portfolio performance vs benchmark comparison.
 
 import logging
 import re
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
+from high_finance.core.rate_limit import limiter
 from high_finance.api.v1.schemas.portfolio_performance import (
     PortfolioPerformanceRequest,
     PortfolioPerformanceResponse,
@@ -30,7 +31,8 @@ router = APIRouter()
 
 
 @router.post("/performance", response_model=PortfolioPerformanceResponse)
-async def portfolio_performance(request: PortfolioPerformanceRequest):
+@limiter.limit("10/minute")
+async def portfolio_performance(request: Request, request_body: PortfolioPerformanceRequest):
     """
     Get portfolio performance compared to benchmarks.
 
@@ -53,7 +55,7 @@ async def portfolio_performance(request: PortfolioPerformanceRequest):
     - Outperformance vs each benchmark (YTD)
     """
     try:
-        if not request.positions:
+        if not request_body.positions:
             raise HTTPException(
                 status_code=400,
                 detail="At least one position is required"
@@ -61,7 +63,7 @@ async def portfolio_performance(request: PortfolioPerformanceRequest):
 
         # Validate and filter positions (limit to MAX_POSITIONS, validate tickers)
         valid_positions = []
-        for p in request.positions[:MAX_POSITIONS]:
+        for p in request_body.positions[:MAX_POSITIONS]:
             ticker_upper = p.ticker.upper()
             if validate_ticker(ticker_upper):
                 valid_positions.append({
@@ -80,7 +82,7 @@ async def portfolio_performance(request: PortfolioPerformanceRequest):
 
         # Validate and filter benchmarks (limit to MAX_BENCHMARKS)
         benchmarks = [
-            b.upper() for b in (request.benchmarks or ["SPY"])[:MAX_BENCHMARKS]
+            b.upper() for b in (request_body.benchmarks or ["SPY"])[:MAX_BENCHMARKS]
             if validate_ticker(b.upper())
         ]
         if not benchmarks:
@@ -92,9 +94,9 @@ async def portfolio_performance(request: PortfolioPerformanceRequest):
 
     except HTTPException:
         raise
-    except Exception as e:
-        logger.exception(f"Error calculating portfolio performance: {e}")
+    except Exception:
+        logger.exception("Error calculating portfolio performance")
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to calculate portfolio performance: {str(e)}"
+            detail="Failed to calculate portfolio performance"
         )

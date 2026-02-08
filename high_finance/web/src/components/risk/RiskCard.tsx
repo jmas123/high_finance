@@ -61,14 +61,14 @@ export function RiskCard({ ticker, initialData }: RiskCardProps) {
       if (!res.ok) throw new Error(await res.text());
       const json = (await res.json()) as RiskBundle;
       setData(json);
-    } catch (e: any) {
-      setErr(e?.message ?? "Failed to load risk");
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Failed to load risk");
     } finally {
       setLoading(false);
     }
   }, [ticker, period, horizon, sims, volMultiplier, includeEarningsShock, drawdownThreshold, targetPriceOffset, data?.as_of_close]);
 
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
     // Use initial data from bundle on first load if available and params haven't changed

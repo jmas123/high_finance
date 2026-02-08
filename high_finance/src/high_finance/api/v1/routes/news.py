@@ -3,7 +3,7 @@ import logging
 from fastapi import APIRouter, HTTPException, Query, Depends
 from sqlalchemy.orm import Session
 
-from high_finance.api.deps import get_db
+from high_finance.db.session import get_db
 from high_finance.services.news import get_news_bundle
 
 logger = logging.getLogger(__name__)

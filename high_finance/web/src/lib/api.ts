@@ -2,8 +2,8 @@
 import type {
   Company,
   Fundamentals,
-  Ownership,
-  Leadership,
+  OwnershipEntry,
+  LeadershipMember,
   CompsResponse,
   FinancialStatementsResponse,
   NewsBundle,
@@ -22,6 +22,23 @@ import type {
   PortfolioPerformanceResponse,
   PrivateCompanySummary,
   PrivateCompanyProfile,
+  MemoSummary,
+  MemoDetail,
+  AIHistoryItem,
+  AIHistoryDetail,
+  AIHistoryStats,
+  PriceEntry,
+  InstitutionalFlow,
+  Holder,
+  InsiderTrade,
+  InsiderSummary,
+  OptionsOverview,
+  EarningsData,
+  EarningsHistoryEntry,
+  PredictionResponse,
+  MacroResponse,
+  SectorResponse,
+  RateImpactResponse,
 } from "./types";
 import type {
   CalendarEventsRequest,
@@ -32,7 +49,7 @@ import type {
 const BASE = "/api/v1";
 const TOKEN_KEY = "hf_access_token";
 
-function getAuthHeaders(): Record<string, string> {
+export function getAuthHeaders(): Record<string, string> {
   const token = localStorage.getItem(TOKEN_KEY);
   if (token) {
     return { Authorization: `Bearer ${token}` };
@@ -42,7 +59,7 @@ function getAuthHeaders(): Record<string, string> {
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 
-function fetchWithTimeout(
+export function fetchWithTimeout(
   url: string,
   init?: RequestInit,
   timeoutMs = DEFAULT_TIMEOUT_MS,
@@ -54,15 +71,28 @@ function fetchWithTimeout(
   );
 }
 
+function handleResponseError(res: Response): void {
+  if (res.status === 401 && localStorage.getItem(TOKEN_KEY)) {
+    // Token expired or invalid — notify auth layer
+    window.dispatchEvent(new CustomEvent("hf:session-expired"));
+  }
+}
+
 async function getJSON<T>(path: string): Promise<T> {
-  const res = await fetchWithTimeout(path);
-  if (!res.ok) throw new Error(await res.text());
+  const res = await fetchWithTimeout(path, { headers: getAuthHeaders() });
+  if (!res.ok) {
+    handleResponseError(res);
+    throw new Error(await res.text());
+  }
   return res.json();
 }
 
 async function postJSON<T>(path: string): Promise<T> {
-  const res = await fetchWithTimeout(path, { method: "POST" });
-  if (!res.ok) throw new Error(await res.text());
+  const res = await fetchWithTimeout(path, { method: "POST", headers: getAuthHeaders() });
+  if (!res.ok) {
+    handleResponseError(res);
+    throw new Error(await res.text());
+  }
   return res.json();
 }
 
@@ -93,28 +123,28 @@ export interface TickerBundleResponse {
   // Core data
   company: Company | null;
   fundamentals: Fundamentals | null;
-  prices: any[];
-  leadership: any[];
+  prices: PriceEntry[];
+  leadership: LeadershipMember[];
   financials: FinancialStatementsResponse | null;
   comps: CompsResponse | null;
 
   // Component data (previously fetched individually by each card)
   risk: RiskBundle | null;
   valuation: ValuationBundle | null;
-  institutional_flow: any | null;
-  insider_trades: any[];
-  insider_summary: any | null;
+  institutional_flow: InstitutionalFlow | null;
+  insider_trades: InsiderTrade[];
+  insider_summary: InsiderSummary | null;
   politician_trades: PoliticianTradeWithContext[];
-  options_overview: any | null;
+  options_overview: OptionsOverview | null;
   iv_context: IVContext | null;
-  earnings: any | null;
+  earnings: EarningsData | null;
   news: NewsBundle | null;
-  prediction: any | null;
+  prediction: PredictionResponse | null;
 
   // Market context (shared across all tickers)
-  macro_indicators: any | null;
-  sectors: any | null;
-  rate_impact: any | null;
+  macro_indicators: MacroResponse | null;
+  sectors: SectorResponse | null;
+  rate_impact: RateImpactResponse | null;
 
   // Error tracking for partial failures
   errors: Record<string, string>;
@@ -168,20 +198,20 @@ export const api = {
   // ====================
 
   ownership: (ticker: string) =>
-    getJSON<any>(`${BASE}/ownership/${encodeURIComponent(ticker)}`),
+    getJSON<OwnershipEntry[]>(`${BASE}/ownership/${encodeURIComponent(ticker)}`),
 
   leadership: (ticker: string) =>
-    getJSON<any>(`${BASE}/leadership/${encodeURIComponent(ticker)}`),
+    getJSON<LeadershipMember[]>(`${BASE}/leadership/${encodeURIComponent(ticker)}`),
 
   prices: (ticker: string, period: string = "1y") =>
-    getJSON<any[]>(`${BASE}/prices/${encodeURIComponent(ticker)}?period=${period}`),
+    getJSON<PriceEntry[]>(`${BASE}/prices/${encodeURIComponent(ticker)}?period=${period}`),
 
   /**
    * Fetch price history for a specific date range.
    * Used for infinite scroll / loading more historical data.
    */
   pricesByDateRange: (ticker: string, start: string, end: string) =>
-    getJSON<any[]>(
+    getJSON<PriceEntry[]>(
       `${BASE}/prices/${encodeURIComponent(ticker)}?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`
     ),
 
@@ -191,10 +221,10 @@ export const api = {
   ),
 
   analyzeFinancials: (ticker: string) =>
-    postJSON<{ analysis: string }>(`${BASE}/financials/${encodeURIComponent(ticker)}/analyze`),
+    postJSON<{ analysis: string; id: number | null }>(`${BASE}/financials/${encodeURIComponent(ticker)}/analyze`),
 
   prediction: (ticker: string) =>
-    getJSON<any>(`${BASE}/predictions/${encodeURIComponent(ticker)}`),
+    getJSON<PredictionResponse>(`${BASE}/predictions/${encodeURIComponent(ticker)}`),
 
   search: (query: string) =>
     getJSON<Array<{ symbol: string; name: string; exchange: string; type: string }>>(
@@ -202,22 +232,22 @@ export const api = {
     ),
 
   insiderTrades: (ticker: string, limit: number = 50) =>
-    getJSON<any[]>(`${BASE}/insider/${encodeURIComponent(ticker)}?limit=${limit}`),
+    getJSON<InsiderTrade[]>(`${BASE}/insider/${encodeURIComponent(ticker)}?limit=${limit}`),
 
   insiderSummary: (ticker: string) =>
-    getJSON<any>(`${BASE}/insider/${encodeURIComponent(ticker)}/summary`),
+    getJSON<InsiderSummary>(`${BASE}/insider/${encodeURIComponent(ticker)}/summary`),
 
   institutionalHolders: (ticker: string) =>
-    getJSON<any[]>(`${BASE}/institutional/${encodeURIComponent(ticker)}`),
+    getJSON<Holder[]>(`${BASE}/institutional/${encodeURIComponent(ticker)}`),
 
   institutionalFlow: (ticker: string) =>
-    getJSON<any>(`${BASE}/institutional/${encodeURIComponent(ticker)}/flow`),
+    getJSON<InstitutionalFlow>(`${BASE}/institutional/${encodeURIComponent(ticker)}/flow`),
   // Add to the api object
     earnings: (ticker: string) =>
-    getJSON<any>(`${BASE}/earnings/${encodeURIComponent(ticker)}`),
+    getJSON<EarningsData>(`${BASE}/earnings/${encodeURIComponent(ticker)}`),
 
     earningsHistory: (ticker: string) =>
-    getJSON<any[]>(`${BASE}/earnings/${encodeURIComponent(ticker)}/history`),
+    getJSON<EarningsHistoryEntry[]>(`${BASE}/earnings/${encodeURIComponent(ticker)}/history`),
 
     upcomingEarnings: (tickers: string[], daysAhead: number = 14) =>
     fetch(`${BASE}/earnings/upcoming?days_ahead=${daysAhead}`, {
@@ -228,10 +258,10 @@ export const api = {
 
     // Add to the api object
     optionsOverview: (ticker: string) =>
-    getJSON<any>(`${BASE}/options/${encodeURIComponent(ticker)}`),
+    getJSON<OptionsOverview>(`${BASE}/options/${encodeURIComponent(ticker)}`),
 
     optionsChain: (ticker: string, expiry: string) =>
-    getJSON<any>(`${BASE}/options/${encodeURIComponent(ticker)}/chain/${encodeURIComponent(expiry)}`),
+    getJSON<Record<string, unknown>>(`${BASE}/options/${encodeURIComponent(ticker)}/chain/${encodeURIComponent(expiry)}`),
 
     news: (ticker: string) =>
         getJSON<NewsBundle>(`${BASE}/news/${encodeURIComponent(ticker)}`),
@@ -255,7 +285,7 @@ valuation: (ticker: string, params?: Partial<{growth:number;margin:number;tax:nu
     q.set("min_amount", String(minAmount));
     q.set("days", String(days));
     q.set("limit", String(limit));
-    return getJSON<any[]>(`${BASE}/notifications/congress-trades?${q.toString()}`);
+    return getJSON<PoliticianTradeWithContext[]>(`${BASE}/notifications/congress-trades?${q.toString()}`);
   },
 
   politicianTrades: (ticker: string, limit: number = 50) =>
@@ -369,6 +399,16 @@ valuation: (ticker: string, params?: Partial<{growth:number;margin:number;tax:nu
     if (filters.pb_ratio_max != null) q.set("pb_ratio_max", String(filters.pb_ratio_max));
     if (filters.ev_to_ebitda_min != null) q.set("ev_to_ebitda_min", String(filters.ev_to_ebitda_min));
     if (filters.ev_to_ebitda_max != null) q.set("ev_to_ebitda_max", String(filters.ev_to_ebitda_max));
+    if (filters.roe_min != null) q.set("roe_min", String(filters.roe_min));
+    if (filters.roe_max != null) q.set("roe_max", String(filters.roe_max));
+    if (filters.profit_margin_min != null) q.set("profit_margin_min", String(filters.profit_margin_min));
+    if (filters.profit_margin_max != null) q.set("profit_margin_max", String(filters.profit_margin_max));
+    if (filters.debt_to_equity_min != null) q.set("debt_to_equity_min", String(filters.debt_to_equity_min));
+    if (filters.debt_to_equity_max != null) q.set("debt_to_equity_max", String(filters.debt_to_equity_max));
+    if (filters.fcf_yield_min != null) q.set("fcf_yield_min", String(filters.fcf_yield_min));
+    if (filters.fcf_yield_max != null) q.set("fcf_yield_max", String(filters.fcf_yield_max));
+    if (filters.beta_min != null) q.set("beta_min", String(filters.beta_min));
+    if (filters.beta_max != null) q.set("beta_max", String(filters.beta_max));
     if (filters.revenue_growth_min != null) q.set("revenue_growth_min", String(filters.revenue_growth_min));
     if (filters.revenue_growth_max != null) q.set("revenue_growth_max", String(filters.revenue_growth_max));
     if (filters.dividend_yield_min != null) q.set("dividend_yield_min", String(filters.dividend_yield_min));
@@ -387,6 +427,47 @@ valuation: (ticker: string, params?: Partial<{growth:number;margin:number;tax:nu
     if (filters.offset != null) q.set("offset", String(filters.offset));
     const qs = q.toString();
     return getJSON<ScreenerResponse>(`${BASE}/screener${qs ? `?${qs}` : ""}`);
+  },
+
+  /**
+   * Get live count of matching stocks (no results, just count)
+   */
+  screenerCount: (filters: ScreenerFilters = {}) => {
+    const q = new URLSearchParams();
+    if (filters.market_cap_min != null) q.set("market_cap_min", String(filters.market_cap_min));
+    if (filters.market_cap_max != null) q.set("market_cap_max", String(filters.market_cap_max));
+    if (filters.pe_ratio_min != null) q.set("pe_ratio_min", String(filters.pe_ratio_min));
+    if (filters.pe_ratio_max != null) q.set("pe_ratio_max", String(filters.pe_ratio_max));
+    if (filters.forward_pe_min != null) q.set("forward_pe_min", String(filters.forward_pe_min));
+    if (filters.forward_pe_max != null) q.set("forward_pe_max", String(filters.forward_pe_max));
+    if (filters.pb_ratio_min != null) q.set("pb_ratio_min", String(filters.pb_ratio_min));
+    if (filters.pb_ratio_max != null) q.set("pb_ratio_max", String(filters.pb_ratio_max));
+    if (filters.ev_to_ebitda_min != null) q.set("ev_to_ebitda_min", String(filters.ev_to_ebitda_min));
+    if (filters.ev_to_ebitda_max != null) q.set("ev_to_ebitda_max", String(filters.ev_to_ebitda_max));
+    if (filters.roe_min != null) q.set("roe_min", String(filters.roe_min));
+    if (filters.roe_max != null) q.set("roe_max", String(filters.roe_max));
+    if (filters.profit_margin_min != null) q.set("profit_margin_min", String(filters.profit_margin_min));
+    if (filters.profit_margin_max != null) q.set("profit_margin_max", String(filters.profit_margin_max));
+    if (filters.debt_to_equity_min != null) q.set("debt_to_equity_min", String(filters.debt_to_equity_min));
+    if (filters.debt_to_equity_max != null) q.set("debt_to_equity_max", String(filters.debt_to_equity_max));
+    if (filters.fcf_yield_min != null) q.set("fcf_yield_min", String(filters.fcf_yield_min));
+    if (filters.fcf_yield_max != null) q.set("fcf_yield_max", String(filters.fcf_yield_max));
+    if (filters.beta_min != null) q.set("beta_min", String(filters.beta_min));
+    if (filters.beta_max != null) q.set("beta_max", String(filters.beta_max));
+    if (filters.revenue_growth_min != null) q.set("revenue_growth_min", String(filters.revenue_growth_min));
+    if (filters.revenue_growth_max != null) q.set("revenue_growth_max", String(filters.revenue_growth_max));
+    if (filters.dividend_yield_min != null) q.set("dividend_yield_min", String(filters.dividend_yield_min));
+    if (filters.dividend_yield_max != null) q.set("dividend_yield_max", String(filters.dividend_yield_max));
+    if (filters.price_vs_200ma_min != null) q.set("price_vs_200ma_min", String(filters.price_vs_200ma_min));
+    if (filters.price_vs_200ma_max != null) q.set("price_vs_200ma_max", String(filters.price_vs_200ma_max));
+    if (filters.price_vs_52w_high_min != null) q.set("price_vs_52w_high_min", String(filters.price_vs_52w_high_min));
+    if (filters.price_vs_52w_high_max != null) q.set("price_vs_52w_high_max", String(filters.price_vs_52w_high_max));
+    if (filters.sectors) q.set("sectors", filters.sectors);
+    if (filters.has_insider_buys_90d != null) q.set("has_insider_buys_90d", String(filters.has_insider_buys_90d));
+    if (filters.insider_net_shares_90d_min != null) q.set("insider_net_shares_90d_min", String(filters.insider_net_shares_90d_min));
+    if (filters.congress_net_value_90d_min != null) q.set("congress_net_value_90d_min", String(filters.congress_net_value_90d_min));
+    const qs = q.toString();
+    return getJSON<{ count: number; universe_total: number }>(`${BASE}/screener/count${qs ? `?${qs}` : ""}`);
   },
 
   /**
@@ -678,6 +759,128 @@ valuation: (ticker: string, params?: Partial<{growth:number;margin:number;tax:nu
     });
     if (!res.ok) throw new Error(await res.text());
     return res.json();
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // INVESTMENT MEMO API
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Generate an investment memo via SSE streaming.
+   * Uses fetch() + ReadableStream (not EventSource, because POST + auth headers).
+   * Returns an AbortController for cancellation.
+   */
+  generateMemo: (
+    ticker: string,
+    onChunk: (text: string) => void,
+    onDone: (savedId: number | null) => void,
+    onError: (error: string) => void,
+  ): AbortController => {
+    const controller = new AbortController();
+
+    (async () => {
+      try {
+        const res = await fetch(`${BASE}/memo/${encodeURIComponent(ticker)}`, {
+          method: "POST",
+          headers: getAuthHeaders(),
+          signal: controller.signal,
+        });
+
+        if (!res.ok) {
+          handleResponseError(res);
+          const body = await res.json().catch(() => ({ detail: "Memo generation failed" }));
+          onError(body.detail || body.message || `Error ${res.status}`);
+          return;
+        }
+
+        const reader = res.body?.getReader();
+        if (!reader) {
+          onError("No response stream");
+          return;
+        }
+
+        const decoder = new TextDecoder();
+        let savedId: number | null = null;
+        let buffer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          // Buffer partial reads — ReadableStream chunks don't align with SSE boundaries
+          buffer += decoder.decode(value, { stream: true });
+
+          // SSE events are terminated by "\n\n" — only process complete ones
+          const events = buffer.split("\n\n");
+          buffer = events.pop() || ""; // last element may be incomplete
+
+          for (const event of events) {
+            for (const line of event.split("\n")) {
+              if (!line.startsWith("data: ")) continue;
+              const payload = line.slice(6);
+
+              if (payload === "[DONE]") {
+                onDone(savedId);
+                return;
+              }
+              if (payload.startsWith("[SAVED:")) {
+                const idStr = payload.slice(7, -1);
+                savedId = parseInt(idStr, 10) || null;
+                continue;
+              }
+              if (payload.startsWith("[ERROR]")) {
+                onError(payload.slice(8));
+                return;
+              }
+              // Chunks are JSON-encoded to preserve newlines
+              try {
+                onChunk(JSON.parse(payload));
+              } catch {
+                onChunk(payload);
+              }
+            }
+          }
+        }
+
+        onDone(savedId);
+      } catch (e) {
+        if (e instanceof Error && e.name !== "AbortError") {
+          onError(e.message || "Connection lost");
+        } else if (!(e instanceof Error)) {
+          onError("Connection lost");
+        }
+      }
+    })();
+
+    return controller;
+  },
+
+  memoHistory: (ticker: string, limit: number = 20) =>
+    getJSON<MemoSummary[]>(
+      `${BASE}/memo/${encodeURIComponent(ticker)}/history?limit=${limit}`
+    ),
+
+  memoDetail: (memoId: number) =>
+    getJSON<MemoDetail>(`${BASE}/memo/detail/${memoId}`),
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // AI HISTORY API
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  aiHistory: {
+    list: (type?: string, limit = 50, offset = 0) => {
+      const q = new URLSearchParams();
+      if (type) q.set("type", type);
+      q.set("limit", String(limit));
+      q.set("offset", String(offset));
+      return getJSON<AIHistoryItem[]>(`${BASE}/ai-history?${q.toString()}`);
+    },
+
+    detail: (id: number) =>
+      getJSON<AIHistoryDetail>(`${BASE}/ai-history/${id}`),
+
+    stats: () =>
+      getJSON<AIHistoryStats>(`${BASE}/ai-history/stats`),
   },
 };
 

@@ -19,6 +19,12 @@ from typing import Any, Dict, List, Optional
 from high_finance.services.financials import get_financial_statements
 from high_finance.core.cache import get_cached, get_or_compute, set_cached, valuation_ttl
 from high_finance.services.yf_cache import get_yf_info
+from high_finance.utils.yf_fields import (
+    REVENUE, OPERATING_INCOME, EBITDA, NET_INCOME, DEPRECIATION,
+    PRETAX_INCOME, TAX_PROVISION,
+    CASH, SHORT_TERM_INVESTMENTS, CASH_AND_STI,
+    LONG_TERM_DEBT, SHORT_TERM_DEBT, TOTAL_DEBT,
+)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -217,7 +223,7 @@ def _compute_smart_defaults(
     for i in range(4):
         col = _get_column_by_index(annual_is, i)
         if col:
-            rev = _get_line(annual_is, col, ["Total Revenue", "TotalRevenue", "Revenue"])
+            rev = _get_line(annual_is, col, REVENUE)
             if rev and rev > 0:
                 revenues.append(rev)
     
@@ -257,9 +263,9 @@ def _compute_smart_defaults(
     # Operating margin
     col = _latest_column(annual_is)
     if col:
-        revenue = _get_line(annual_is, col, ["Total Revenue", "TotalRevenue", "Revenue"])
-        op_income = _get_line(annual_is, col, ["Operating Income", "OperatingIncome", "EBIT"])
-        ebitda = _get_line(annual_is, col, ["EBITDA", "Ebitda"])
+        revenue = _get_line(annual_is, col, REVENUE)
+        op_income = _get_line(annual_is, col, OPERATING_INCOME)
+        ebitda = _get_line(annual_is, col, EBITDA)
         
         if revenue and revenue > 0:
             if op_income is not None:
@@ -276,8 +282,8 @@ def _compute_smart_defaults(
     for i in range(4):
         col = _get_column_by_index(annual_is, i)
         if col:
-            rev = _get_line(annual_is, col, ["Total Revenue", "TotalRevenue", "Revenue"])
-            op = _get_line(annual_is, col, ["Operating Income", "OperatingIncome", "EBIT"])
+            rev = _get_line(annual_is, col, REVENUE)
+            op = _get_line(annual_is, col, OPERATING_INCOME)
             if rev and rev > 0 and op is not None:
                 margins.append(op / rev)
     
@@ -303,8 +309,8 @@ def _compute_smart_defaults(
     # Effective tax rate
     col = _latest_column(annual_is)
     if col:
-        pretax = _get_line(annual_is, col, ["Pretax Income", "Income Before Tax", "EBT"])
-        tax_expense = _get_line(annual_is, col, ["Tax Provision", "Income Tax Expense", "Tax Expense"])
+        pretax = _get_line(annual_is, col, PRETAX_INCOME)
+        tax_expense = _get_line(annual_is, col, TAX_PROVISION)
         if pretax and pretax > 0 and tax_expense is not None:
             effective_rate = tax_expense / pretax
             if 0 < effective_rate < 0.50:
@@ -987,7 +993,7 @@ async def _compute_bundle(
     if not col:
         return {"ticker": ticker, "error": "No annual income statement available"}
 
-    revenue = _get_line(annual_is, col, ["Total Revenue", "TotalRevenue", "Revenue", "Total revenue"])
+    revenue = _get_line(annual_is, col, REVENUE)
     revenue0 = _safe(revenue, 0.0)
     if revenue0 <= 0:
         return {"ticker": ticker, "error": "Could not read revenue from financials"}
@@ -1021,26 +1027,26 @@ async def _compute_bundle(
 
     warnings = _generate_warnings(base_inputs, smart_defaults, sector)
 
-    ebitda = _get_line(annual_is, col, ["EBITDA", "Ebitda", "Normalized EBITDA"])
+    ebitda = _get_line(annual_is, col, EBITDA)
     if not ebitda:
-        op_income = _get_line(annual_is, col, ["Operating Income", "OperatingIncome", "EBIT"])
-        da = _get_line(annual_is, col, ["Depreciation And Amortization", "DepreciationAndAmortization"])
+        op_income = _get_line(annual_is, col, OPERATING_INCOME)
+        da = _get_line(annual_is, col, DEPRECIATION)
         if op_income and da:
             ebitda = op_income + da
 
-    net_income = _get_line(annual_is, col, ["Net Income", "NetIncome", "Net Income Common Stockholders"])
+    net_income = _get_line(annual_is, col, NET_INCOME)
 
     bs_col = _latest_column(annual_bs)
     net_debt = 0.0
     if bs_col:
-        cash_equiv = _get_line(annual_bs, bs_col, ["Cash And Cash Equivalents", "CashAndCashEquivalents"])
-        short_term_inv = _get_line(annual_bs, bs_col, ["Short Term Investments", "ShortTermInvestments"])
-        agg_liquidity = _get_line(annual_bs, bs_col, ["Cash Cash Equivalents And Short Term Investments"])
+        cash_equiv = _get_line(annual_bs, bs_col, CASH)
+        short_term_inv = _get_line(annual_bs, bs_col, SHORT_TERM_INVESTMENTS)
+        agg_liquidity = _get_line(annual_bs, bs_col, CASH_AND_STI)
         cash_total = _safe(agg_liquidity or (_safe(cash_equiv, 0) + _safe(short_term_inv, 0)), 0.0)
 
-        long_term_debt = _get_line(annual_bs, bs_col, ["Long Term Debt", "LongTermDebt"])
-        short_term_debt = _get_line(annual_bs, bs_col, ["Short Term Debt", "Current Portion Of Long Term Debt"])
-        total_debt = _get_line(annual_bs, bs_col, ["Total Debt", "TotalDebt"])
+        long_term_debt = _get_line(annual_bs, bs_col, LONG_TERM_DEBT)
+        short_term_debt = _get_line(annual_bs, bs_col, SHORT_TERM_DEBT)
+        total_debt = _get_line(annual_bs, bs_col, TOTAL_DEBT)
         debt_total = _safe(total_debt or (_safe(long_term_debt, 0) + _safe(short_term_debt, 0)), 0.0)
 
         net_debt = debt_total - cash_total

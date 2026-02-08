@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, HTTPException, Depends, Query, Request, Body
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -16,6 +18,8 @@ from high_finance.api.v1.schemas.politician import PoliticianTradeOut
 from high_finance.services.politicians import get_company_politician_trades, ensure_company_trades_fresh
 
 from high_finance.api.v1.schemas.company import ComparableAnalysis
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -158,8 +162,9 @@ async def export_company_comps(
             template=data.get("template", {"label": "Standard", "metrics": ["market_cap", "pe_ratio"]}),
             format=body.format,
         )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Export generation failed: {str(e)}")
+    except Exception:
+        logger.exception("Export generation failed for %s", ticker)
+        raise HTTPException(status_code=500, detail="Export generation failed")
 
     # Generate filename
     safe_ticker = sanitize_filename(ticker)

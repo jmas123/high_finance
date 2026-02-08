@@ -18,12 +18,6 @@ import type {
 } from "../types/indicators";
 import {
   DEFAULT_INDICATOR_CONFIGS,
-  DEFAULT_SMA_CONFIG,
-  DEFAULT_EMA_CONFIG,
-  DEFAULT_BOLLINGER_CONFIG,
-  DEFAULT_VOLUME_CONFIG,
-  DEFAULT_RSI_CONFIG,
-  DEFAULT_MACD_CONFIG,
 } from "../types/indicators";
 
 const STORAGE_KEY = "chart-indicators";
@@ -151,7 +145,7 @@ export function useIndicatorState(ticker: string): UseIndicatorStateReturn {
       setConfigs((prev) =>
         prev.map((config) =>
           config.type === type
-            ? { ...config, style: { ...config.style, ...style } }
+            ? ({ ...config, style: { ...config.style, ...style } } as IndicatorConfig)
             : config
         )
       );

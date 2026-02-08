@@ -1,8 +1,8 @@
 FROM python:3.11-slim
 
 # Set environment variables
-ENV PYTHONDONTWRITEBYTECODE 1
-ENV PYTHONUNBUFFERED 1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 ENV TZ=America/New_York
 
 # Set the working directory
@@ -23,6 +23,10 @@ COPY ./src ./src
 
 # Set PYTHONPATH
 ENV PYTHONPATH=/app/src
+
+# Create non-root user
+RUN adduser --disabled-password --gecos '' appuser
+USER appuser
 
 # Default command (can be overridden in docker-compose)
 # For worker: rq worker default --url $REDIS_URL

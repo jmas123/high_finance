@@ -1,20 +1,19 @@
-import React from "react";
+
+
 
 interface FundamentalsProps {
   data: {
-    pe_ratio?: number;
-    forward_pe?: number;
-    eps?: number;
-    dividend_yield?: number;
-    revenue?: number;
-    profit_margin?: number;
-    beta?: number;
-    fifty_day_avg?: number;
-    two_hundred_day_avg?: number;
-    
-    // NEW FIELDS MUST BE DEFINED HERE
-    ev_to_ebitda?: number;
-    revenue_growth?: number;
+    pe_ratio?: number | null;
+    forward_pe?: number | null;
+    eps?: number | null;
+    dividend_yield?: number | null;
+    revenue?: number | null;
+    profit_margin?: number | null;
+    beta?: number | null;
+    fifty_day_avg?: number | null;
+    two_hundred_day_avg?: number | null;
+    ev_to_ebitda?: number | null;
+    revenue_growth?: number | null;
   };
 }
 

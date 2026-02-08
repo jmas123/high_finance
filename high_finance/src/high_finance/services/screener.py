@@ -23,6 +23,11 @@ SORT_FIELDS = {
     "forward_pe": ScreenerCache.forward_pe,
     "pb_ratio": ScreenerCache.pb_ratio,
     "ev_to_ebitda": ScreenerCache.ev_to_ebitda,
+    "roe": ScreenerCache.roe,
+    "profit_margin": ScreenerCache.profit_margin,
+    "debt_to_equity": ScreenerCache.debt_to_equity,
+    "fcf_yield": ScreenerCache.fcf_yield,
+    "beta": ScreenerCache.beta,
     "revenue_growth": ScreenerCache.revenue_growth,
     "dividend_yield": ScreenerCache.dividend_yield,
     "price_vs_200ma": ScreenerCache.price_vs_200ma,
@@ -49,6 +54,17 @@ async def run_screen(
     pb_ratio_max: Optional[float] = None,
     ev_to_ebitda_min: Optional[float] = None,
     ev_to_ebitda_max: Optional[float] = None,
+    # Quality & Profitability
+    roe_min: Optional[float] = None,
+    roe_max: Optional[float] = None,
+    profit_margin_min: Optional[float] = None,
+    profit_margin_max: Optional[float] = None,
+    debt_to_equity_min: Optional[float] = None,
+    debt_to_equity_max: Optional[float] = None,
+    fcf_yield_min: Optional[float] = None,
+    fcf_yield_max: Optional[float] = None,
+    beta_min: Optional[float] = None,
+    beta_max: Optional[float] = None,
     # Growth & Dividend
     revenue_growth_min: Optional[float] = None,
     revenue_growth_max: Optional[float] = None,
@@ -129,6 +145,46 @@ async def run_screen(
     if ev_to_ebitda_max is not None:
         filters.append(ScreenerCache.ev_to_ebitda.isnot(None))
         filters.append(ScreenerCache.ev_to_ebitda <= ev_to_ebitda_max)
+
+    # ROE
+    if roe_min is not None:
+        filters.append(ScreenerCache.roe.isnot(None))
+        filters.append(ScreenerCache.roe >= roe_min)
+    if roe_max is not None:
+        filters.append(ScreenerCache.roe.isnot(None))
+        filters.append(ScreenerCache.roe <= roe_max)
+
+    # Profit margin
+    if profit_margin_min is not None:
+        filters.append(ScreenerCache.profit_margin.isnot(None))
+        filters.append(ScreenerCache.profit_margin >= profit_margin_min)
+    if profit_margin_max is not None:
+        filters.append(ScreenerCache.profit_margin.isnot(None))
+        filters.append(ScreenerCache.profit_margin <= profit_margin_max)
+
+    # Debt/Equity
+    if debt_to_equity_min is not None:
+        filters.append(ScreenerCache.debt_to_equity.isnot(None))
+        filters.append(ScreenerCache.debt_to_equity >= debt_to_equity_min)
+    if debt_to_equity_max is not None:
+        filters.append(ScreenerCache.debt_to_equity.isnot(None))
+        filters.append(ScreenerCache.debt_to_equity <= debt_to_equity_max)
+
+    # FCF Yield
+    if fcf_yield_min is not None:
+        filters.append(ScreenerCache.fcf_yield.isnot(None))
+        filters.append(ScreenerCache.fcf_yield >= fcf_yield_min)
+    if fcf_yield_max is not None:
+        filters.append(ScreenerCache.fcf_yield.isnot(None))
+        filters.append(ScreenerCache.fcf_yield <= fcf_yield_max)
+
+    # Beta
+    if beta_min is not None:
+        filters.append(ScreenerCache.beta.isnot(None))
+        filters.append(ScreenerCache.beta >= beta_min)
+    if beta_max is not None:
+        filters.append(ScreenerCache.beta.isnot(None))
+        filters.append(ScreenerCache.beta <= beta_max)
 
     # Revenue growth
     if revenue_growth_min is not None:
@@ -221,6 +277,11 @@ async def run_screen(
             "forward_pe": float(cache.forward_pe) if cache.forward_pe else None,
             "pb_ratio": float(cache.pb_ratio) if cache.pb_ratio else None,
             "ev_to_ebitda": float(cache.ev_to_ebitda) if cache.ev_to_ebitda else None,
+            "roe": float(cache.roe) if cache.roe else None,
+            "profit_margin": float(cache.profit_margin) if cache.profit_margin else None,
+            "debt_to_equity": float(cache.debt_to_equity) if cache.debt_to_equity else None,
+            "fcf_yield": float(cache.fcf_yield) if cache.fcf_yield else None,
+            "beta": float(cache.beta) if cache.beta else None,
             "revenue_growth": float(cache.revenue_growth) if cache.revenue_growth else None,
             "dividend_yield": float(cache.dividend_yield) if cache.dividend_yield else None,
             "price_vs_200ma": float(cache.price_vs_200ma) if cache.price_vs_200ma else None,
@@ -234,6 +295,22 @@ async def run_screen(
         })
 
     return results, total_count, cached_at
+
+
+async def get_universe_total(db: Session) -> int:
+    """Return total count of active stocks in the universe."""
+    return db.query(func.count(ScreenerUniverse.ticker)).filter(
+        ScreenerUniverse.is_active == True
+    ).scalar() or 0
+
+
+async def get_screen_count(
+    db: Session,
+    **filter_kwargs,
+) -> int:
+    """Return just the count matching filters (no results). Used for live count."""
+    _, total_count, _ = await run_screen(db, limit=0, offset=0, **filter_kwargs)
+    return total_count
 
 
 async def get_sector_counts(db: Session) -> Dict[str, int]:

@@ -1,7 +1,6 @@
 import { useState } from "react";
 import type { ScreenerFilters } from "../../lib/types";
 
-// GICS Sector names (as used by S&P 500)
 const SECTORS = [
   "Information Technology",
   "Health Care",
@@ -16,29 +15,79 @@ const SECTORS = [
   "Communication Services",
 ];
 
+// Preset screens — teach users what the screener can do
+const PRESETS: { label: string; filters: Partial<ScreenerFilters> }[] = [
+  {
+    label: "Large Cap Value",
+    filters: { market_cap_min: 10000, pe_ratio_max: 20, dividend_yield_min: 0.02 },
+  },
+  {
+    label: "GARP",
+    filters: { revenue_growth_min: 0.15, forward_pe_max: 30 },
+  },
+  {
+    label: "Insider Conviction",
+    filters: { has_insider_buys_90d: true, insider_net_shares_90d_min: 10000 },
+  },
+  {
+    label: "Congress Favorites",
+    filters: { congress_net_value_90d_min: 50000 },
+  },
+  {
+    label: "Beaten Down",
+    filters: { price_vs_52w_high_max: -0.30 },
+  },
+];
+
 type Props = {
   filters: ScreenerFilters;
   onChange: (filters: ScreenerFilters) => void;
-  onApply: () => void;
   onClear: () => void;
+  onPreset: (preset: ScreenerFilters) => void;
   sectorCounts: Record<string, number>;
+  liveCount: number | null;
+  universeTotal: number;
 };
 
-type FilterSection = "valuation" | "momentum" | "signals" | "sectors";
+type FilterSection = "valuation" | "quality" | "momentum" | "signals" | "sectors";
 
-export function ScreenerFiltersPanel({ filters, onChange, onApply, onClear, sectorCounts }: Props) {
+// Count active filters per section
+function countSectionFilters(filters: ScreenerFilters, section: FilterSection): number {
+  const keys: Record<FilterSection, (keyof ScreenerFilters)[]> = {
+    valuation: [
+      "market_cap_min", "market_cap_max", "pe_ratio_min", "pe_ratio_max",
+      "forward_pe_min", "forward_pe_max", "pb_ratio_min", "pb_ratio_max",
+      "ev_to_ebitda_min", "ev_to_ebitda_max", "dividend_yield_min", "dividend_yield_max",
+    ],
+    quality: [
+      "roe_min", "roe_max", "profit_margin_min", "profit_margin_max",
+      "debt_to_equity_min", "debt_to_equity_max", "fcf_yield_min", "fcf_yield_max",
+      "beta_min", "beta_max",
+    ],
+    momentum: [
+      "revenue_growth_min", "revenue_growth_max",
+      "price_vs_200ma_min", "price_vs_200ma_max",
+      "price_vs_52w_high_min", "price_vs_52w_high_max",
+    ],
+    signals: [
+      "has_insider_buys_90d", "insider_net_shares_90d_min", "congress_net_value_90d_min",
+    ],
+    sectors: ["sectors"],
+  };
+  return (keys[section] || []).filter(k => filters[k] !== undefined).length;
+}
+
+export function ScreenerFiltersPanel({
+  filters, onChange, onClear, onPreset, sectorCounts, liveCount, universeTotal,
+}: Props) {
   const [expandedSections, setExpandedSections] = useState<Set<FilterSection>>(
     new Set(["valuation", "sectors"])
   );
 
   const toggleSection = (section: FilterSection) => {
-    const newSet = new Set(expandedSections);
-    if (newSet.has(section)) {
-      newSet.delete(section);
-    } else {
-      newSet.add(section);
-    }
-    setExpandedSections(newSet);
+    const s = new Set(expandedSections);
+    if (s.has(section)) s.delete(section); else s.add(section);
+    setExpandedSections(s);
   };
 
   const updateFilter = (key: keyof ScreenerFilters, value: any) => {
@@ -49,11 +98,7 @@ export function ScreenerFiltersPanel({ filters, onChange, onApply, onClear, sect
 
   const toggleSector = (sector: string) => {
     const current = new Set(selectedSectors);
-    if (current.has(sector)) {
-      current.delete(sector);
-    } else {
-      current.add(sector);
-    }
+    if (current.has(sector)) current.delete(sector); else current.add(sector);
     updateFilter("sectors", Array.from(current).join(",") || undefined);
   };
 
@@ -74,18 +119,82 @@ export function ScreenerFiltersPanel({ filters, onChange, onApply, onClear, sect
     display: "block",
   };
 
-  const sectionHeaderStyle: React.CSSProperties = {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: "8px 0",
-    cursor: "pointer",
-    borderBottom: "1px solid #333",
-  };
-
-  const activeFiltersCount = Object.entries(filters).filter(
+  const totalActiveFilters = Object.entries(filters).filter(
     ([k, v]) => v !== undefined && !["sort_by", "sort_order", "limit", "offset"].includes(k)
   ).length;
+
+  const sectionHeader = (section: FilterSection, label: string) => {
+    const count = countSectionFilters(filters, section);
+    return (
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          padding: "8px 0",
+          cursor: "pointer",
+          borderBottom: "1px solid #333",
+        }}
+        onClick={() => toggleSection(section)}
+      >
+        <span style={{ fontSize: 12, fontWeight: 500 }}>
+          {label}
+          {count > 0 && (
+            <span style={{
+              background: "#3b82f6",
+              padding: "1px 5px",
+              borderRadius: 10,
+              fontSize: 9,
+              marginLeft: 6,
+              color: "#fff",
+            }}>
+              {count}
+            </span>
+          )}
+        </span>
+        <span style={{ color: "#666" }}>{expandedSections.has(section) ? "−" : "+"}</span>
+      </div>
+    );
+  };
+
+  // Helper for min/max range input pair
+  const rangeInput = (
+    label: string,
+    minKey: keyof ScreenerFilters,
+    maxKey: keyof ScreenerFilters,
+    opts?: { step?: string; pct?: boolean },
+  ) => {
+    const pct = opts?.pct;
+    return (
+      <div>
+        <label style={labelStyle}>{label}</label>
+        <div style={{ display: "flex", gap: 4 }}>
+          <input
+            type="number"
+            step={opts?.step}
+            placeholder="Min"
+            value={pct && filters[minKey] != null ? (filters[minKey] as number) * 100 : (filters[minKey] ?? "")}
+            onChange={e => {
+              const raw = e.target.value ? Number(e.target.value) : undefined;
+              updateFilter(minKey, raw != null && pct ? raw / 100 : raw);
+            }}
+            style={inputStyle}
+          />
+          <input
+            type="number"
+            step={opts?.step}
+            placeholder="Max"
+            value={pct && filters[maxKey] != null ? (filters[maxKey] as number) * 100 : (filters[maxKey] ?? "")}
+            onChange={e => {
+              const raw = e.target.value ? Number(e.target.value) : undefined;
+              updateFilter(maxKey, raw != null && pct ? raw / 100 : raw);
+            }}
+            style={inputStyle}
+          />
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div style={{
@@ -94,6 +203,7 @@ export function ScreenerFiltersPanel({ filters, onChange, onApply, onClear, sect
       borderRadius: 10,
       padding: 16,
     }}>
+      {/* Header with live count */}
       <div style={{
         display: "flex",
         justifyContent: "space-between",
@@ -101,7 +211,8 @@ export function ScreenerFiltersPanel({ filters, onChange, onApply, onClear, sect
         marginBottom: 12,
       }}>
         <span style={{ fontSize: 14, fontWeight: 600 }}>
-          Filters {activeFiltersCount > 0 && (
+          Filters
+          {totalActiveFilters > 0 && (
             <span style={{
               background: "#3b82f6",
               padding: "2px 6px",
@@ -109,254 +220,115 @@ export function ScreenerFiltersPanel({ filters, onChange, onApply, onClear, sect
               fontSize: 10,
               marginLeft: 6,
             }}>
-              {activeFiltersCount}
+              {totalActiveFilters}
+            </span>
+          )}
+          {liveCount != null && (
+            <span style={{ fontSize: 12, color: "#888", fontWeight: 400, marginLeft: 12 }}>
+              {liveCount.toLocaleString()} {universeTotal > 0 ? `of ${universeTotal.toLocaleString()} stocks` : "matches"}
             </span>
           )}
         </span>
-        <div style={{ display: "flex", gap: 8 }}>
+        <button
+          onClick={onClear}
+          style={{
+            padding: "6px 12px",
+            background: "transparent",
+            border: "1px solid #444",
+            borderRadius: 4,
+            color: "#888",
+            fontSize: 11,
+            cursor: "pointer",
+          }}
+        >
+          Clear All
+        </button>
+      </div>
+
+      {/* Presets */}
+      <div style={{
+        display: "flex",
+        flexWrap: "wrap",
+        gap: 6,
+        marginBottom: 14,
+        paddingBottom: 12,
+        borderBottom: "1px solid #333",
+      }}>
+        <span style={{ fontSize: 11, color: "#666", alignSelf: "center", marginRight: 4 }}>Quick:</span>
+        {PRESETS.map(p => (
           <button
-            onClick={onClear}
+            key={p.label}
+            onClick={() => onPreset(p.filters)}
             style={{
-              padding: "6px 12px",
-              background: "transparent",
+              padding: "4px 10px",
+              background: "#262626",
               border: "1px solid #444",
-              borderRadius: 4,
-              color: "#888",
+              borderRadius: 999,
+              color: "#ccc",
               fontSize: 11,
               cursor: "pointer",
+              transition: "all 0.15s",
+            }}
+            onMouseEnter={e => {
+              (e.currentTarget as HTMLElement).style.borderColor = "#3b82f6";
+              (e.currentTarget as HTMLElement).style.color = "#fff";
+            }}
+            onMouseLeave={e => {
+              (e.currentTarget as HTMLElement).style.borderColor = "#444";
+              (e.currentTarget as HTMLElement).style.color = "#ccc";
             }}
           >
-            Clear All
+            {p.label}
           </button>
-          <button
-            onClick={onApply}
-            style={{
-              padding: "6px 12px",
-              background: "#3b82f6",
-              border: "none",
-              borderRadius: 4,
-              color: "#fff",
-              fontSize: 11,
-              cursor: "pointer",
-              fontWeight: 500,
-            }}
-          >
-            Apply Filters
-          </button>
-        </div>
+        ))}
       </div>
 
       {/* Valuation Section */}
       <div>
-        <div style={sectionHeaderStyle} onClick={() => toggleSection("valuation")}>
-          <span style={{ fontSize: 12, fontWeight: 500 }}>Valuation</span>
-          <span style={{ color: "#666" }}>{expandedSections.has("valuation") ? "−" : "+"}</span>
-        </div>
+        {sectionHeader("valuation", "Valuation")}
         {expandedSections.has("valuation") && (
-          <div style={{ padding: "12px 0", display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
-            <div>
-              <label style={labelStyle}>Market Cap (M$)</label>
-              <div style={{ display: "flex", gap: 4 }}>
-                <input
-                  type="number"
-                  placeholder="Min"
-                  value={filters.market_cap_min ?? ""}
-                  onChange={e => updateFilter("market_cap_min", e.target.value ? Number(e.target.value) : undefined)}
-                  style={inputStyle}
-                />
-                <input
-                  type="number"
-                  placeholder="Max"
-                  value={filters.market_cap_max ?? ""}
-                  onChange={e => updateFilter("market_cap_max", e.target.value ? Number(e.target.value) : undefined)}
-                  style={inputStyle}
-                />
-              </div>
-            </div>
-            <div>
-              <label style={labelStyle}>P/E Ratio</label>
-              <div style={{ display: "flex", gap: 4 }}>
-                <input
-                  type="number"
-                  placeholder="Min"
-                  value={filters.pe_ratio_min ?? ""}
-                  onChange={e => updateFilter("pe_ratio_min", e.target.value ? Number(e.target.value) : undefined)}
-                  style={inputStyle}
-                />
-                <input
-                  type="number"
-                  placeholder="Max"
-                  value={filters.pe_ratio_max ?? ""}
-                  onChange={e => updateFilter("pe_ratio_max", e.target.value ? Number(e.target.value) : undefined)}
-                  style={inputStyle}
-                />
-              </div>
-            </div>
-            <div>
-              <label style={labelStyle}>Forward P/E</label>
-              <div style={{ display: "flex", gap: 4 }}>
-                <input
-                  type="number"
-                  placeholder="Min"
-                  value={filters.forward_pe_min ?? ""}
-                  onChange={e => updateFilter("forward_pe_min", e.target.value ? Number(e.target.value) : undefined)}
-                  style={inputStyle}
-                />
-                <input
-                  type="number"
-                  placeholder="Max"
-                  value={filters.forward_pe_max ?? ""}
-                  onChange={e => updateFilter("forward_pe_max", e.target.value ? Number(e.target.value) : undefined)}
-                  style={inputStyle}
-                />
-              </div>
-            </div>
-            <div>
-              <label style={labelStyle}>P/B Ratio</label>
-              <div style={{ display: "flex", gap: 4 }}>
-                <input
-                  type="number"
-                  placeholder="Min"
-                  value={filters.pb_ratio_min ?? ""}
-                  onChange={e => updateFilter("pb_ratio_min", e.target.value ? Number(e.target.value) : undefined)}
-                  style={inputStyle}
-                />
-                <input
-                  type="number"
-                  placeholder="Max"
-                  value={filters.pb_ratio_max ?? ""}
-                  onChange={e => updateFilter("pb_ratio_max", e.target.value ? Number(e.target.value) : undefined)}
-                  style={inputStyle}
-                />
-              </div>
-            </div>
-            <div>
-              <label style={labelStyle}>EV/EBITDA</label>
-              <div style={{ display: "flex", gap: 4 }}>
-                <input
-                  type="number"
-                  placeholder="Min"
-                  value={filters.ev_to_ebitda_min ?? ""}
-                  onChange={e => updateFilter("ev_to_ebitda_min", e.target.value ? Number(e.target.value) : undefined)}
-                  style={inputStyle}
-                />
-                <input
-                  type="number"
-                  placeholder="Max"
-                  value={filters.ev_to_ebitda_max ?? ""}
-                  onChange={e => updateFilter("ev_to_ebitda_max", e.target.value ? Number(e.target.value) : undefined)}
-                  style={inputStyle}
-                />
-              </div>
-            </div>
-            <div>
-              <label style={labelStyle}>Dividend Yield (%)</label>
-              <div style={{ display: "flex", gap: 4 }}>
-                <input
-                  type="number"
-                  step="0.01"
-                  placeholder="Min"
-                  value={filters.dividend_yield_min != null ? filters.dividend_yield_min * 100 : ""}
-                  onChange={e => updateFilter("dividend_yield_min", e.target.value ? Number(e.target.value) / 100 : undefined)}
-                  style={inputStyle}
-                />
-                <input
-                  type="number"
-                  step="0.01"
-                  placeholder="Max"
-                  value={filters.dividend_yield_max != null ? filters.dividend_yield_max * 100 : ""}
-                  onChange={e => updateFilter("dividend_yield_max", e.target.value ? Number(e.target.value) / 100 : undefined)}
-                  style={inputStyle}
-                />
-              </div>
-            </div>
+          <div style={{ padding: "12px 0", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
+            {rangeInput("Market Cap (M$)", "market_cap_min", "market_cap_max")}
+            {rangeInput("P/E Ratio", "pe_ratio_min", "pe_ratio_max")}
+            {rangeInput("Forward P/E", "forward_pe_min", "forward_pe_max")}
+            {rangeInput("P/B Ratio", "pb_ratio_min", "pb_ratio_max")}
+            {rangeInput("EV/EBITDA", "ev_to_ebitda_min", "ev_to_ebitda_max")}
+            {rangeInput("Dividend Yield (%)", "dividend_yield_min", "dividend_yield_max", { step: "0.01", pct: true })}
+          </div>
+        )}
+      </div>
+
+      {/* Quality & Profitability Section */}
+      <div>
+        {sectionHeader("quality", "Quality & Profitability")}
+        {expandedSections.has("quality") && (
+          <div style={{ padding: "12px 0", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
+            {rangeInput("ROE (%)", "roe_min", "roe_max", { step: "0.01", pct: true })}
+            {rangeInput("Profit Margin (%)", "profit_margin_min", "profit_margin_max", { step: "0.01", pct: true })}
+            {rangeInput("Debt/Equity", "debt_to_equity_min", "debt_to_equity_max", { step: "0.1" })}
+            {rangeInput("FCF Yield (%)", "fcf_yield_min", "fcf_yield_max", { step: "0.01", pct: true })}
+            {rangeInput("Beta", "beta_min", "beta_max", { step: "0.1" })}
           </div>
         )}
       </div>
 
       {/* Momentum Section */}
       <div>
-        <div style={sectionHeaderStyle} onClick={() => toggleSection("momentum")}>
-          <span style={{ fontSize: 12, fontWeight: 500 }}>Momentum & Growth</span>
-          <span style={{ color: "#666" }}>{expandedSections.has("momentum") ? "−" : "+"}</span>
-        </div>
+        {sectionHeader("momentum", "Momentum & Growth")}
         {expandedSections.has("momentum") && (
-          <div style={{ padding: "12px 0", display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
-            <div>
-              <label style={labelStyle}>Revenue Growth (%)</label>
-              <div style={{ display: "flex", gap: 4 }}>
-                <input
-                  type="number"
-                  step="0.01"
-                  placeholder="Min"
-                  value={filters.revenue_growth_min != null ? filters.revenue_growth_min * 100 : ""}
-                  onChange={e => updateFilter("revenue_growth_min", e.target.value ? Number(e.target.value) / 100 : undefined)}
-                  style={inputStyle}
-                />
-                <input
-                  type="number"
-                  step="0.01"
-                  placeholder="Max"
-                  value={filters.revenue_growth_max != null ? filters.revenue_growth_max * 100 : ""}
-                  onChange={e => updateFilter("revenue_growth_max", e.target.value ? Number(e.target.value) / 100 : undefined)}
-                  style={inputStyle}
-                />
-              </div>
-            </div>
-            <div>
-              <label style={labelStyle}>Price vs 200MA (%)</label>
-              <div style={{ display: "flex", gap: 4 }}>
-                <input
-                  type="number"
-                  step="0.01"
-                  placeholder="Min"
-                  value={filters.price_vs_200ma_min != null ? filters.price_vs_200ma_min * 100 : ""}
-                  onChange={e => updateFilter("price_vs_200ma_min", e.target.value ? Number(e.target.value) / 100 : undefined)}
-                  style={inputStyle}
-                />
-                <input
-                  type="number"
-                  step="0.01"
-                  placeholder="Max"
-                  value={filters.price_vs_200ma_max != null ? filters.price_vs_200ma_max * 100 : ""}
-                  onChange={e => updateFilter("price_vs_200ma_max", e.target.value ? Number(e.target.value) / 100 : undefined)}
-                  style={inputStyle}
-                />
-              </div>
-            </div>
-            <div>
-              <label style={labelStyle}>% from 52W High</label>
-              <div style={{ display: "flex", gap: 4 }}>
-                <input
-                  type="number"
-                  step="0.01"
-                  placeholder="Min"
-                  value={filters.price_vs_52w_high_min != null ? filters.price_vs_52w_high_min * 100 : ""}
-                  onChange={e => updateFilter("price_vs_52w_high_min", e.target.value ? Number(e.target.value) / 100 : undefined)}
-                  style={inputStyle}
-                />
-                <input
-                  type="number"
-                  step="0.01"
-                  placeholder="Max"
-                  value={filters.price_vs_52w_high_max != null ? filters.price_vs_52w_high_max * 100 : ""}
-                  onChange={e => updateFilter("price_vs_52w_high_max", e.target.value ? Number(e.target.value) / 100 : undefined)}
-                  style={inputStyle}
-                />
-              </div>
-            </div>
+          <div style={{ padding: "12px 0", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
+            {rangeInput("Revenue Growth (%)", "revenue_growth_min", "revenue_growth_max", { step: "0.01", pct: true })}
+            {rangeInput("Price vs 200MA (%)", "price_vs_200ma_min", "price_vs_200ma_max", { step: "0.01", pct: true })}
+            {rangeInput("% from 52W High", "price_vs_52w_high_min", "price_vs_52w_high_max", { step: "0.01", pct: true })}
           </div>
         )}
       </div>
 
       {/* Smart Money Signals */}
       <div>
-        <div style={sectionHeaderStyle} onClick={() => toggleSection("signals")}>
-          <span style={{ fontSize: 12, fontWeight: 500 }}>Smart Money Signals</span>
-          <span style={{ color: "#666" }}>{expandedSections.has("signals") ? "−" : "+"}</span>
-        </div>
+        {sectionHeader("signals", "Smart Money Signals")}
         {expandedSections.has("signals") && (
-          <div style={{ padding: "12px 0", display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+          <div style={{ padding: "12px 0", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
             <div>
               <label style={{
                 display: "flex",
@@ -400,14 +372,7 @@ export function ScreenerFiltersPanel({ filters, onChange, onApply, onClear, sect
 
       {/* Sectors */}
       <div>
-        <div style={sectionHeaderStyle} onClick={() => toggleSection("sectors")}>
-          <span style={{ fontSize: 12, fontWeight: 500 }}>
-            Sectors {selectedSectors.length > 0 && (
-              <span style={{ color: "#3b82f6" }}>({selectedSectors.length})</span>
-            )}
-          </span>
-          <span style={{ color: "#666" }}>{expandedSections.has("sectors") ? "−" : "+"}</span>
-        </div>
+        {sectionHeader("sectors", "Sectors")}
         {expandedSections.has("sectors") && (
           <div style={{ padding: "12px 0", display: "flex", flexWrap: "wrap", gap: 6 }}>
             {SECTORS.map(sector => {

@@ -216,7 +216,7 @@ export function hitTestMeasure(
  * Calculate new points when dragging a measure tool.
  */
 export function dragMeasure(
-  drawing: ChartDrawing,
+  _drawing: ChartDrawing,
   handleType: "start" | "end" | "body",
   newPoint: DrawingPoint,
   originalPoints: DrawingPoint[]

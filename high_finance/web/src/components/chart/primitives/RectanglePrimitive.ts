@@ -127,7 +127,7 @@ export function hitTestRectangle(
  * Calculate new points when dragging a rectangle.
  */
 export function dragRectangle(
-  drawing: ChartDrawing,
+  _drawing: ChartDrawing,
   handleType: "start" | "end" | "body",
   newPoint: DrawingPoint,
   originalPoints: DrawingPoint[]

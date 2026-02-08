@@ -3,44 +3,9 @@ import { api } from "../../lib/api";
 import { getWatchlist, getPortfolio } from "../personalization/storage";
 import type { CompanyNotification } from "./types";
 import { bundleToCompanyNotifs } from "./companyAnnouncements";
+import type { PoliticianTradeWithContext } from "../../lib/types";
 
-type TradeContextReason = { type: string; title: string; detail: string };
-type TradeContext = {
-  relevance_score: number;
-  relevance_label: string;
-  reasons: TradeContextReason[];
-};
-
-type Politician = {
-  id: number;
-  name: string;
-  chamber: string | null;
-  state: string | null;
-  district: string | null;
-  party: string | null;
-  hit_rate?: number | null;
-  avg_return_pct?: number | null;
-};
-
-type PoliticianTrade = {
-  id: number;
-  politician_id: number;
-  company_id: number | null;
-  issuer_raw: string | null;
-  ticker_raw: string | null;
-  transaction_date: string | null;
-  disclosure_date: string | null;
-  transaction_type: string | null;
-  amount_min: number | null;
-  amount_max: number | null;
-  source_url: string | null;
-};
-
-type CongressTradeNotification = {
-  trade: PoliticianTrade;
-  politician: Politician;
-  context: TradeContext;
-};
+type CongressTradeNotification = PoliticianTradeWithContext;
 
 function fmtMoneyRange(min?: number | null, max?: number | null) {
   const f = (x: number) =>

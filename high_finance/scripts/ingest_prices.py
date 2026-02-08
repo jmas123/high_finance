@@ -5,7 +5,7 @@ This populates the prices table needed for win rate calculations.
 
 Usage:
     source .venv/bin/activate
-    DATABASE_URL="postgresql://user:jude2000@localhost:5432/high_finance" python scripts/ingest_prices.py
+    DATABASE_URL="postgresql://user:pass@localhost:5432/high_finance" python scripts/ingest_prices.py
 """
 
 import os
@@ -24,7 +24,11 @@ from high_finance.db.models.company import Company
 
 
 def get_db():
-    database_url = os.environ.get("DATABASE_URL", "postgresql://user:jude2000@localhost:5432/high_finance")
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        print("ERROR: DATABASE_URL environment variable is required.")
+        print("Example: DATABASE_URL='postgresql://user:pass@localhost:5432/high_finance' python scripts/ingest_prices.py")
+        sys.exit(1)
     engine = create_engine(database_url)
     Session = sessionmaker(bind=engine)
     return Session()

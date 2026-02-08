@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
-import type { ValuationBundle, Warning, SliderReference, ValuationScenarioInputs } from "../../lib/types";
+import type { ValuationBundle, Warning, SliderReference } from "../../lib/types";
 import { MultiplesTable } from "./MultiplesTable";
 import { FairValueRangeBar } from "./FairValueRangeBar";
 import { TornadoChart } from "./TornadoChart";

@@ -2,7 +2,7 @@ import { memo } from "react";
 
 export const DistributionChart = memo(function DistributionChart({
   distribution,
-  currentPrice,
+  currentPrice: _currentPrice,
 }: {
   distribution: Array<{
     return_min: number;

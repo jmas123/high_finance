@@ -30,7 +30,7 @@ export function renderFibRetracement(
   isSelected: boolean,
   isHovered: boolean
 ): void {
-  const { canvas, chartWidth } = ctx;
+  const { canvas } = ctx;
 
   if (drawing.points.length < 2) return;
 
@@ -89,7 +89,7 @@ export function renderFibRetracementPreview(
   style: DrawingStyle,
   ctx: RenderContext
 ): void {
-  const { canvas, chartWidth } = ctx;
+  const { canvas } = ctx;
 
   if (points.length < 1) return;
 
@@ -105,9 +105,6 @@ export function renderFibRetracementPreview(
   if (!p2) return;
 
   canvas.globalAlpha = 0.6;
-
-  const price1 = points[0].price;
-  const price2 = points[1].price;
 
   // Draw preview levels
   for (const fib of FIB_LEVELS) {
@@ -178,7 +175,7 @@ export function hitTestFibRetracement(
  * Calculate new points when dragging a Fibonacci retracement.
  */
 export function dragFibRetracement(
-  drawing: ChartDrawing,
+  _drawing: ChartDrawing,
   handleType: "start" | "end" | "body",
   newPoint: DrawingPoint,
   originalPoints: DrawingPoint[]

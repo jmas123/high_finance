@@ -44,7 +44,12 @@ const InstitutionalFlowCard = lazy(() =>
 const PoliticianTradesCard = lazy(() =>
   import("./components/politicians/PoliticianTradesCard").then(m => ({ default: m.PoliticianTradesCard }))
 );
-import type { CompsResponse, FinancialStatementsResponse, RiskBundle, ValuationBundle, NewsBundle, IVContext, PoliticianTradeWithContext } from "./lib/types";
+import type {
+  CompsResponse, FinancialStatementsResponse, RiskBundle, ValuationBundle, NewsBundle,
+  IVContext, PoliticianTradeWithContext, Company, Fundamentals, PriceEntry, LeadershipMember,
+  InstitutionalFlow, InsiderTrade, InsiderSummary, OptionsOverview, EarningsData,
+  PredictionResponse, MacroResponse, SectorResponse, RateImpactResponse,
+} from "./lib/types";
 import type { TickerBundleResponse } from "./lib/api";
 import { LeadershipTable } from "./components/LeadershipTable";
 import { SearchBar } from "./components/SearchBar";
@@ -67,6 +72,12 @@ import { SaveToProjectButton } from "./components/project/SaveToProjectButton";
 // ── Stock Screener (lazy loaded) ────────────────────────────────────────────
 const ScreenerCard = lazy(() =>
   import("./components/screener").then(m => ({ default: m.ScreenerCard }))
+);
+const MemoModal = lazy(() =>
+  import("./components/memo/MemoModal").then(m => ({ default: m.MemoModal }))
+);
+const AIHistoryView = lazy(() =>
+  import("./components/ai/AIHistoryView").then(m => ({ default: m.AIHistoryView }))
 );
 
 // ── Calendar ────────────────────────────────────────────────────────────────
@@ -213,8 +224,15 @@ type DCFState = {
 // MAIN APP COMPONENT (Layout + Routes)
 // ══════════════════════════════════════════════════════════════════════════════
 export default function App() {
-  const { user, isAuthenticated, isLoading: authLoading, logout } = useAuth();
+  const { user, isAuthenticated, isLoading: authLoading, logout, sessionExpired, clearSessionExpired } = useAuth();
   const [showAuthModal, setShowAuthModal] = useState(false);
+
+  // Auto-open auth modal when session expires
+  useEffect(() => {
+    if (sessionExpired) {
+      setShowAuthModal(true);
+    }
+  }, [sessionExpired]);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -225,6 +243,7 @@ export default function App() {
     if (location.pathname.startsWith("/projects")) return "projects";
     if (location.pathname === "/signals") return "signals";
     if (location.pathname.startsWith("/private")) return "private";
+    if (location.pathname === "/ai-history") return "ai-history";
     return "dashboard";
   };
 
@@ -277,7 +296,10 @@ export default function App() {
             Signals
           </Link>
           <Link to="/private" style={getNavLinkStyle(activeTab === "private")}>
-            Private Cos
+            Private Companies
+          </Link>
+          <Link to="/ai-history" style={getNavLinkStyle(activeTab === "ai-history")}>
+            AI History
           </Link>
         </div>
 
@@ -291,6 +313,7 @@ export default function App() {
               <Route path="/projects" element={<ProjectsListView />} />
               <Route path="/projects/:projectId" element={<ProjectView />} />
               <Route path="/signals" element={<SignalsView />} />
+              <Route path="/ai-history" element={<AIHistoryView />} />
               <Route path="/private" element={<PrivateCompanyList />} />
               <Route path="/private/:slug" element={<PrivateCompanyProfileView />} />
               <Route path="*" element={<NotFoundView />} />
@@ -300,7 +323,7 @@ export default function App() {
       </div>
 
       {/* Auth Modal */}
-      <AuthModal isOpen={showAuthModal} onClose={() => setShowAuthModal(false)} />
+      <AuthModal isOpen={showAuthModal} onClose={() => { setShowAuthModal(false); clearSessionExpired(); }} />
     </div>
   );
 }
@@ -408,7 +431,7 @@ function ProjectsListView() {
               setRefreshKey((n) => n + 1);
               navigate(`/projects/${p.id}`);
             })
-            .catch((e: any) => setError(e?.message ?? "Failed to create project"));
+            .catch((e) => setError(e instanceof Error ? e.message : "Failed to create project"));
         }}
         refreshKey={refreshKey}
       />
@@ -480,28 +503,29 @@ function ProjectView() {
 // Replaces 19 individual useState hooks with a single dispatch.
 // One dispatch({ type: 'LOAD_SUCCESS', bundle }) → single reconciliation pass.
 type TickerState = {
-  company: any | null;
-  fundamentals: any | null;
-  prices: any[];
-  leadership: any[];
+  company: Company | null;
+  fundamentals: Fundamentals | null;
+  prices: PriceEntry[];
+  leadership: LeadershipMember[];
   financials: FinancialStatementsResponse | null;
   comps: CompsResponse | null;
   riskData: RiskBundle | null;
   valuationData: ValuationBundle | null;
-  institutionalFlow: any | null;
-  insiderTrades: any[];
-  insiderSummary: any | null;
+  institutionalFlow: InstitutionalFlow | null;
+  insiderTrades: InsiderTrade[];
+  insiderSummary: InsiderSummary | null;
   politicianTrades: PoliticianTradeWithContext[];
-  optionsOverview: any | null;
+  optionsOverview: OptionsOverview | null;
   ivContext: IVContext | null;
-  earningsData: any | null;
+  earningsData: EarningsData | null;
   newsData: NewsBundle | null;
-  predictionData: any | null;
-  macroIndicators: any | null;
-  sectorsData: any | null;
-  rateImpact: any | null;
+  predictionData: PredictionResponse | null;
+  macroIndicators: MacroResponse | null;
+  sectorsData: SectorResponse | null;
+  rateImpact: RateImpactResponse | null;
   loading: boolean;
   error: string | null;
+  dataWarnings: string[];
 };
 
 type TickerAction =
@@ -509,8 +533,9 @@ type TickerAction =
   | { type: 'LOAD_SUCCESS'; bundle: TickerBundleResponse }
   | { type: 'LOAD_ERROR'; error: string }
   | { type: 'SET_ERROR'; error: string }
-  | { type: 'UPDATE_PRICES'; prices: any[] }
-  | { type: 'UPDATE_COMPS'; comps: CompsResponse };
+  | { type: 'UPDATE_PRICES'; prices: PriceEntry[] }
+  | { type: 'UPDATE_COMPS'; comps: CompsResponse }
+  | { type: 'DISMISS_WARNINGS' };
 
 const initialTickerState: TickerState = {
   company: null,
@@ -535,6 +560,7 @@ const initialTickerState: TickerState = {
   rateImpact: null,
   loading: false,
   error: null,
+  dataWarnings: [],
 };
 
 function tickerReducer(state: TickerState, action: TickerAction): TickerState {
@@ -567,6 +593,9 @@ function tickerReducer(state: TickerState, action: TickerAction): TickerState {
         rateImpact: b.rate_impact,
         loading: false,
         error: null,
+        dataWarnings: Object.keys(b.errors).length > 0
+          ? Object.entries(b.errors).map(([k, v]) => `${k}: ${v}`)
+          : [],
       };
     }
     case 'LOAD_ERROR':
@@ -577,6 +606,8 @@ function tickerReducer(state: TickerState, action: TickerAction): TickerState {
       return { ...state, error: action.error };
     case 'UPDATE_COMPS':
       return { ...state, comps: action.comps };
+    case 'DISMISS_WARNINGS':
+      return { ...state, dataWarnings: [] };
     default:
       return state;
   }
@@ -601,10 +632,11 @@ function TickerView() {
     company, fundamentals, prices, leadership, financials, comps,
     riskData, valuationData, institutionalFlow, insiderSummary,
     politicianTrades, optionsOverview, ivContext, earningsData, newsData,
-    predictionData, macroIndicators, sectorsData, rateImpact, loading, error,
+    predictionData, macroIndicators, sectorsData, rateImpact, loading, error, dataWarnings: _dataWarnings,
   } = state;
 
   const [showAddPosition, setShowAddPosition] = useState(false);
+  const [showMemoModal, setShowMemoModal] = useState(false);
 
   // Check if we came from a project (for return button)
   const returnProjectId = sessionStorage.getItem("hf_return_project");
@@ -659,8 +691,8 @@ function TickerView() {
       if (Object.keys(bundle.errors).length > 0) {
         console.warn("Partial load failures:", bundle.errors);
       }
-    } catch (e: any) {
-      dispatch({ type: 'LOAD_ERROR', error: e?.message ?? "Unknown error" });
+    } catch (e) {
+      dispatch({ type: 'LOAD_ERROR', error: e instanceof Error ? e.message : "Unknown error" });
     } finally {
       fetchingRef.current = null;
     }
@@ -680,7 +712,7 @@ function TickerView() {
     try {
       const p = await api.prices(ticker, period);
       dispatch({ type: 'UPDATE_PRICES', prices: p });
-    } catch (e: any) {
+    } catch (e) {
       console.error("Failed to load prices:", e);
     }
   }, [ticker]);
@@ -712,7 +744,7 @@ function TickerView() {
       if (olderPrices && olderPrices.length > 0) {
         // Prepend older data to existing prices
         // Use a Map to deduplicate by date (in case of overlap)
-        const merged = new Map<string, any>();
+        const merged = new Map<string, PriceEntry>();
 
         // Add older data first
         for (const p of olderPrices) {
@@ -733,7 +765,7 @@ function TickerView() {
 
         dispatch({ type: 'UPDATE_PRICES', prices: mergedArray });
       }
-    } catch (e: any) {
+    } catch (e) {
       console.error("Failed to load more prices:", e);
       // Don't show error to user - infinite scroll failures are non-critical
     } finally {
@@ -775,8 +807,8 @@ function TickerView() {
         title,
       });
       navigate(`/projects/${p.id}`);
-    } catch (e: any) {
-      dispatch({ type: 'SET_ERROR', error: e?.message ?? "Failed to create project" });
+    } catch (e) {
+      dispatch({ type: 'SET_ERROR', error: e instanceof Error ? e.message : "Failed to create project" });
     }
   }
 
@@ -864,6 +896,32 @@ function TickerView() {
             onCreateNew={createProjectFromTicker}
             onOpenProject={(projectId) => navigate(`/projects/${projectId}`)}
           />
+        )}
+
+        {/* ── Generate AI Memo (stocks only, auth required) ── */}
+        {isStock && (
+          <button
+            onClick={() => {
+              if (!isAuthenticated) {
+                alert("Sign in to generate AI investment memos.");
+                return;
+              }
+              setShowMemoModal(true);
+            }}
+            style={{
+              background: "#f59e0b20",
+              border: "1px solid #f59e0b40",
+              borderRadius: 8,
+              color: "#f59e0b",
+              fontSize: 13,
+              fontWeight: 600,
+              padding: "6px 14px",
+              cursor: "pointer",
+              transition: "all 0.15s",
+            }}
+          >
+            {"\uD83D\uDCDD"} Generate Memo
+          </button>
         )}
 
         {/* ── Return to Project button (shown when came from project DCF flow) ── */}
@@ -990,7 +1048,7 @@ function TickerView() {
           <div style={{ ...styles.cardContainer, padding: 20 }}>
             <BroaderMarketContext
               ticker={ticker}
-              sector={sector}
+              sector={sector ?? undefined}
               showMacro={true}
               showSectors={true}
               showRateImpact={true}
@@ -1073,6 +1131,17 @@ function TickerView() {
               ticker={ticker}
             />
           </div>
+        </Suspense>
+      )}
+
+      {/* ── AI Investment Memo Modal ── */}
+      {showMemoModal && (
+        <Suspense fallback={null}>
+          <MemoModal
+            ticker={ticker}
+            isOpen={showMemoModal}
+            onClose={() => setShowMemoModal(false)}
+          />
         </Suspense>
       )}
     </>
@@ -1180,16 +1249,16 @@ function AddPositionInline({
 // ==========================================
 // ETF FUNDAMENTALS CARD COMPONENT
 // ==========================================
-function ETFFundamentalsCard({ data }: { data: any }) {
+function ETFFundamentalsCard({ data }: { data: Fundamentals }) {
   if (!data) return null;
 
-  const formatPercent = (val: number | null) => {
-    if (val === null || val === undefined) return "—";
+  const formatPercent = (val: number | null | undefined) => {
+    if (val == null) return "—";
     return `${(val * 100).toFixed(2)}%`;
   };
 
-  const formatMoney = (val: number | null) => {
-    if (val === null || val === undefined) return "—";
+  const formatMoney = (val: number | null | undefined) => {
+    if (val == null) return "—";
     if (val >= 1e12) return `$${(val / 1e12).toFixed(2)}T`;
     if (val >= 1e9) return `$${(val / 1e9).toFixed(2)}B`;
     if (val >= 1e6) return `$${(val / 1e6).toFixed(2)}M`;
@@ -1253,10 +1322,10 @@ function ETFFundamentalsCard({ data }: { data: any }) {
             style={{
               fontSize: 18,
               fontWeight: 600,
-              color: data.expense_ratio && data.expense_ratio < 0.002 ? "#22c55e" : "#fff",
+              color: data.expense_ratio != null && data.expense_ratio < 0.002 ? "#22c55e" : "#fff",
             }}
           >
-            {data.expense_ratio !== null ? `${(data.expense_ratio * 100).toFixed(2)}%` : "—"}
+            {data.expense_ratio != null ? `${(data.expense_ratio * 100).toFixed(2)}%` : "—"}
           </div>
         </div>
 
@@ -1304,7 +1373,7 @@ function ETFFundamentalsCard({ data }: { data: any }) {
                 fontSize: 16,
                 fontWeight: 600,
                 color:
-                  data.ytd_return > 0 ? "#22c55e" : data.ytd_return < 0 ? "#ef4444" : "#fff",
+                  data.ytd_return != null && data.ytd_return > 0 ? "#22c55e" : data.ytd_return != null && data.ytd_return < 0 ? "#ef4444" : "#fff",
               }}
             >
               {formatPercent(data.ytd_return)}
@@ -1325,9 +1394,9 @@ function ETFFundamentalsCard({ data }: { data: any }) {
                 fontSize: 16,
                 fontWeight: 600,
                 color:
-                  data.three_year_return > 0
+                  data.three_year_return != null && data.three_year_return > 0
                     ? "#22c55e"
-                    : data.three_year_return < 0
+                    : data.three_year_return != null && data.three_year_return < 0
                     ? "#ef4444"
                     : "#fff",
               }}
@@ -1350,9 +1419,9 @@ function ETFFundamentalsCard({ data }: { data: any }) {
                 fontSize: 16,
                 fontWeight: 600,
                 color:
-                  data.five_year_return > 0
+                  data.five_year_return != null && data.five_year_return > 0
                     ? "#22c55e"
-                    : data.five_year_return < 0
+                    : data.five_year_return != null && data.five_year_return < 0
                     ? "#ef4444"
                     : "#fff",
               }}

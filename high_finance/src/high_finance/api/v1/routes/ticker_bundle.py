@@ -7,13 +7,14 @@ Returns ALL ticker page data in a single request to eliminate browser connection
 import asyncio
 import logging
 from typing import Optional, Any
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
-from high_finance.db.session import get_db
+from high_finance.db.session import get_db, SessionLocal
+from high_finance.core.rate_limit import limiter
 
 # Core data services
 from high_finance.services.fundamentals import get_company_fundamentals
@@ -75,7 +76,9 @@ router = APIRouter()
 
 
 @router.get("/{ticker}")
+@limiter.limit("10/minute")
 async def get_ticker_bundle(
+    request: Request,
     ticker: str,
     period: str = Query("1y", description="Price history period"),
     db: Session = Depends(get_db),
@@ -101,30 +104,34 @@ async def get_ticker_bundle(
         """Single call for company + fundamentals + comps."""
         try:
             return await get_company_fundamentals(ticker, db, fetch_peers=True)
-        except Exception as e:
-            errors["comps"] = str(e)
+        except Exception:
+            logger.exception("Bundle: comps failed for %s", ticker)
+            errors["comps"] = "Failed to load"
             return None
 
     async def fetch_prices():
         try:
             return await get_price_history(ticker, period)
-        except Exception as e:
-            errors["prices"] = str(e)
+        except Exception:
+            logger.exception("Bundle: prices failed for %s", ticker)
+            errors["prices"] = "Failed to load"
             return []
 
     async def fetch_leadership():
         try:
             result = await get_leadership_data(ticker, db)
             return result or []
-        except Exception as e:
-            errors["leadership"] = str(e)
+        except Exception:
+            logger.exception("Bundle: leadership failed for %s", ticker)
+            errors["leadership"] = "Failed to load"
             return []
 
     async def fetch_financials():
         try:
             return await get_financial_statements(ticker)
-        except Exception as e:
-            errors["financials"] = str(e)
+        except Exception:
+            logger.exception("Bundle: financials failed for %s", ticker)
+            errors["financials"] = "Failed to load"
             return None
 
     async def fetch_risk():
@@ -138,106 +145,121 @@ async def get_ticker_bundle(
                 vol_multiplier=1.0,
                 include_earnings_shock=False,
             )
-        except Exception as e:
-            errors["risk"] = str(e)
+        except Exception:
+            logger.exception("Bundle: risk failed for %s", ticker)
+            errors["risk"] = "Failed to load"
             return None
 
     async def fetch_valuation():
         try:
             # Use smart defaults (no explicit params)
             return await get_valuation_bundle(ticker)
-        except Exception as e:
-            errors["valuation"] = str(e)
+        except Exception:
+            logger.exception("Bundle: valuation failed for %s", ticker)
+            errors["valuation"] = "Failed to load"
             return None
 
     async def fetch_institutional_flow():
         try:
             return await get_institutional_flow(ticker)
-        except Exception as e:
-            errors["institutional_flow"] = str(e)
+        except Exception:
+            logger.exception("Bundle: institutional_flow failed for %s", ticker)
+            errors["institutional_flow"] = "Failed to load"
             return None
 
     async def fetch_insider_trades():
         try:
             trades = await get_insider_trades(ticker)
             return trades[:50] if trades else []
-        except Exception as e:
-            errors["insider_trades"] = str(e)
+        except Exception:
+            logger.exception("Bundle: insider_trades failed for %s", ticker)
+            errors["insider_trades"] = "Failed to load"
             return []
 
     async def fetch_insider_summary():
         try:
             return await get_insider_summary(ticker)
-        except Exception as e:
-            errors["insider_summary"] = str(e)
+        except Exception:
+            logger.exception("Bundle: insider_summary failed for %s", ticker)
+            errors["insider_summary"] = "Failed to load"
             return None
 
     async def fetch_politician_trades():
+        # Use a dedicated session — the shared `db` session is used by other
+        # concurrent bundle tasks, and get_company_politician_trades may call
+        # db.commit() (via _backfill_company_ids), which expires all objects
+        # and corrupts the shared session for other tasks.
+        local_db = SessionLocal()
         try:
-            def _fetch_sync():
-                trades = get_company_politician_trades(db, ticker, limit=50)
-                results = []
-                for t in trades:
-                    pol = None
-                    if t.politician:
-                        pol = {
-                            "id": t.politician.id,
-                            "name": t.politician.name,
-                            "party": t.politician.party,
-                            "chamber": t.politician.chamber,
-                            "state": t.politician.state,
-                            "district": t.politician.district,
-                            "hit_rate": None,
-                            "avg_return_pct": None,
-                        }
-                    results.append({
-                        "trade": {
-                            "id": t.id,
-                            "politician_id": t.politician_id,
-                            "company_id": t.company_id,
-                            "issuer_raw": t.issuer_raw,
-                            "ticker_raw": t.ticker_raw,
-                            "transaction_date": t.transaction_date.isoformat() if t.transaction_date else None,
-                            "disclosure_date": t.disclosure_date.isoformat() if t.disclosure_date else None,
-                            "transaction_type": t.transaction_type,
-                            "amount_min": t.amount_min,
-                            "amount_max": t.amount_max,
-                            "source_url": t.source_url,
-                        },
-                        "politician": pol,
-                    })
-                return results
-            return await asyncio.to_thread(_fetch_sync)
-        except Exception as e:
-            errors["politician_trades"] = str(e)
+            trades = get_company_politician_trades(local_db, ticker, limit=50)
+            results = []
+            for t in trades:
+                pol = None
+                if t.politician:
+                    pol = {
+                        "id": t.politician.id,
+                        "name": t.politician.name,
+                        "party": t.politician.party,
+                        "chamber": t.politician.chamber,
+                        "state": t.politician.state,
+                        "district": t.politician.district,
+                        "hit_rate": None,
+                        "avg_return_pct": None,
+                    }
+                results.append({
+                    "trade": {
+                        "id": t.id,
+                        "politician_id": t.politician_id,
+                        "company_id": t.company_id,
+                        "issuer_raw": t.issuer_raw,
+                        "ticker_raw": t.ticker_raw,
+                        "transaction_date": t.transaction_date.isoformat() if t.transaction_date else None,
+                        "disclosure_date": t.disclosure_date.isoformat() if t.disclosure_date else None,
+                        "transaction_type": t.transaction_type,
+                        "amount_min": t.amount_min,
+                        "amount_max": t.amount_max,
+                        "source_url": t.source_url,
+                    },
+                    "politician": pol,
+                })
+            return results
+        except Exception:
+            logger.exception("Bundle: politician_trades failed for %s", ticker)
+            errors["politician_trades"] = "Failed to load"
             return []
+        finally:
+            local_db.close()
 
     async def fetch_options_overview():
         try:
             return await get_options_overview(ticker)
-        except Exception as e:
-            errors["options_overview"] = str(e)
+        except Exception:
+            logger.exception("Bundle: options_overview failed for %s", ticker)
+            errors["options_overview"] = "Failed to load"
             return None
 
     async def fetch_iv_context():
         try:
             return await get_iv_context(ticker)
-        except Exception as e:
-            errors["iv_context"] = str(e)
+        except Exception:
+            logger.exception("Bundle: iv_context failed for %s", ticker)
+            errors["iv_context"] = "Failed to load"
             return None
 
     async def fetch_earnings():
         try:
             return await get_earnings_calendar(ticker)
-        except Exception as e:
-            errors["earnings"] = str(e)
+        except Exception:
+            logger.exception("Bundle: earnings failed for %s", ticker)
+            errors["earnings"] = "Failed to load"
             return None
 
     async def fetch_news():
         try:
             return await get_news_bundle(db, ticker, limit=20)
-        except Exception as e:
-            errors["news"] = str(e)
+        except Exception:
+            logger.exception("Bundle: news failed for %s", ticker)
+            errors["news"] = "Failed to load"
             return None
 
     async def fetch_prediction():
@@ -247,8 +269,9 @@ async def get_ticker_bundle(
                 errors["prediction"] = result["error"]
                 return None
             return result
-        except Exception as e:
-            errors["prediction"] = str(e)
+        except Exception:
+            logger.exception("Bundle: prediction failed for %s", ticker)
+            errors["prediction"] = "Failed to load"
             return None
 
     async def fetch_macro_indicators():
@@ -256,8 +279,9 @@ async def get_ticker_bundle(
             indicators = await market_service.get_macro_indicators()
             payload = [ind.model_dump(mode="json") for ind in indicators]
             return {"indicators": payload, "summary": _macro_summary(payload)}
-        except Exception as e:
-            errors["macro_indicators"] = str(e)
+        except Exception:
+            logger.exception("Bundle: macro_indicators failed for %s", ticker)
+            errors["macro_indicators"] = "Failed to load"
             return None
 
     async def fetch_sectors():
@@ -274,8 +298,9 @@ async def get_ticker_bundle(
                     "unchanged": sum(1 for s in sectors if s.performance_1d == 0),
                 },
             }
-        except Exception as e:
-            errors["sectors"] = str(e)
+        except Exception:
+            logger.exception("Bundle: sectors failed for %s", ticker)
+            errors["sectors"] = "Failed to load"
             return None
 
     async def fetch_rate_impact():
@@ -295,8 +320,9 @@ async def get_ticker_bundle(
                     a.sector for a in analyses if a.impact_direction == "negative"
                 ],
             }
-        except Exception as e:
-            errors["rate_impact"] = str(e)
+        except Exception:
+            logger.exception("Bundle: rate_impact failed for %s", ticker)
+            errors["rate_impact"] = "Failed to load"
             return None
 
     # ═══════════════════════════════════════════════════════════════════════════
@@ -312,16 +338,16 @@ async def get_ticker_bundle(
             logger.warning("Bundle task %s timed out after %ss", name, timeout_s)
             return None
 
-    FAST = 8    # Most tasks should complete in <8s
-    SLOW = 12   # Heavy tasks (ML, comps with peers) get 12s
+    FAST = 12   # Light tasks: single yfinance call or DB query
+    SLOW = 20   # Heavy tasks: multiple API calls, Monte Carlo, ML, peer comps
 
     results = await asyncio.gather(
-        with_timeout(fetch_comps_full(), SLOW, "comps"),             # 0
+        with_timeout(fetch_comps_full(), SLOW, "comps"),             # 0  (peers = many yfinance calls)
         with_timeout(fetch_prices(), FAST, "prices"),                # 1
         with_timeout(fetch_leadership(), FAST, "leadership"),        # 2
-        with_timeout(fetch_financials(), FAST, "financials"),        # 3
-        with_timeout(fetch_risk(), FAST, "risk"),                    # 4
-        with_timeout(fetch_valuation(), FAST, "valuation"),          # 5
+        with_timeout(fetch_financials(), SLOW, "financials"),        # 3  (up to 6 yfinance calls)
+        with_timeout(fetch_risk(), SLOW, "risk"),                    # 4  (Monte Carlo simulation)
+        with_timeout(fetch_valuation(), SLOW, "valuation"),          # 5  (DCF + financial data)
         with_timeout(fetch_institutional_flow(), FAST, "inst_flow"), # 6
         with_timeout(fetch_insider_trades(), FAST, "insider"),       # 7
         with_timeout(fetch_insider_summary(), FAST, "insider_sum"),  # 8
@@ -330,7 +356,7 @@ async def get_ticker_bundle(
         with_timeout(fetch_iv_context(), FAST, "iv_context"),        # 11
         with_timeout(fetch_earnings(), FAST, "earnings"),            # 12
         with_timeout(fetch_news(), FAST, "news"),                    # 13
-        with_timeout(fetch_prediction(), SLOW, "prediction"),        # 14
+        with_timeout(fetch_prediction(), SLOW, "prediction"),        # 14 (ML training)
         with_timeout(fetch_macro_indicators(), FAST, "macro"),       # 15
         with_timeout(fetch_sectors(), FAST, "sectors"),              # 16
         with_timeout(fetch_rate_impact(), FAST, "rate_impact"),      # 17
@@ -345,10 +371,11 @@ async def get_ticker_bundle(
         prediction, macro_indicators, sectors, rate_impact
     ) = results
 
-    # Handle any exceptions that weren't caught
+    # Handle any exceptions that weren't caught by per-task try/except
     def safe_result(val, key, default=None):
         if isinstance(val, Exception):
-            errors[key] = str(val)
+            logger.error("Bundle task %s raised uncaught exception: %s", key, val)
+            errors[key] = "Failed to load"
             return default
         return val
 

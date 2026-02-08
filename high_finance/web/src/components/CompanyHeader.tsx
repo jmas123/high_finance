@@ -1,18 +1,18 @@
 // src/components/CompanyHeader.tsx
 
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 
 interface CompanyHeaderProps {
   company: {
     name?: string;
     ticker?: string;
-    sector?: string;
-    industry?: string;
-    market_cap?: number;
+    sector?: string | null;
+    industry?: string | null;
+    market_cap?: number | null;
   };
   fundamentals: {
-    fifty_two_week_high?: number;
-    fifty_two_week_low?: number;
+    fifty_two_week_high?: number | null;
+    fifty_two_week_low?: number | null;
 
     // ✅ Add these (preferred) so "Today" matches Yahoo more closely
     regular_market_price?: number;
@@ -69,7 +69,7 @@ function getMarketStatus(): { isOpen: boolean; status: string; nextEvent: string
 }
 
 
-function formatMarketCap(value: number | undefined): string {
+function formatMarketCap(value: number | null | undefined): string {
   if (!value) return "—";
   if (value >= 1e12) return `$${(value / 1e12).toFixed(2)}T`;
   if (value >= 1e9) return `$${(value / 1e9).toFixed(2)}B`;

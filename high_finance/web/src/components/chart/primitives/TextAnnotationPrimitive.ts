@@ -47,11 +47,6 @@ export function renderTextAnnotation(
 
   // Draw handle if selected
   if (isSelected || isHovered) {
-    // Calculate text bounds for handle positioning
-    canvas.font = `${style.fontSize}px sans-serif`;
-    const metrics = canvas.measureText(drawing.text_content);
-    const textWidth = metrics.width;
-
     drawHandle(canvas, p.x - 8, p.y, style, isSelected);
   }
 }
@@ -136,8 +131,8 @@ export function hitTestTextAnnotation(
  * Calculate new point when dragging a text annotation.
  */
 export function dragTextAnnotation(
-  drawing: ChartDrawing,
-  handleType: "start" | "body",
+  _drawing: ChartDrawing,
+  _handleType: "start" | "body",
   newPoint: DrawingPoint
 ): DrawingPoint[] {
   return [newPoint];

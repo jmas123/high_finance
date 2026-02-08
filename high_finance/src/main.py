@@ -6,6 +6,7 @@ High Finance API
 import asyncio
 import logging
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,7 +23,7 @@ from high_finance.api.v1.routes import (
     prices, financials, predictions, search, politicians,
     insider, institutional, earnings, options, news, risk, valuation, notifications, market,
     project, screener, auth, user_data, export, admin, calendar, chart_drawing, portfolio_performance,
-    private_companies, ticker_bundle
+    private_companies, ticker_bundle, memo, ai_history
 )
 
 # Configure logging
@@ -43,10 +44,20 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self'; "
+            "style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data:; "
+            "connect-src 'self'"
+        )
 
         # Cache-Control: let browsers cache ticker/market data to avoid redundant round-trips
         path = request.url.path
-        if path.startswith("/api/v1/ticker/"):
+        if path.startswith("/api/v1/auth/"):
+            response.headers["Cache-Control"] = "no-store"
+        elif path.startswith("/api/v1/ticker/"):
             response.headers["Cache-Control"] = "public, max-age=60, stale-while-revalidate=300"
         elif path.startswith("/api/v1/market/"):
             response.headers["Cache-Control"] = "public, max-age=30"
@@ -56,6 +67,23 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Startup/shutdown lifecycle for the application."""
+    # Startup: configure thread pool for blocking yfinance/feedparser calls
+    executor = ThreadPoolExecutor(max_workers=40)
+    loop = asyncio.get_running_loop()
+    loop.set_default_executor(executor)
+    logger.info("Thread pool executor configured with max_workers=40")
+    yield
+    # Shutdown: clean up Redis connection
+    try:
+        await close_redis()
+        logger.info("Redis connection closed")
+    except Exception:
+        logger.warning("Failed to close Redis connection during shutdown", exc_info=True)
+
+
 app = FastAPI(
     title="High Finance API",
     description="Research platform for investors and finance students",
@@ -63,23 +91,8 @@ app = FastAPI(
     docs_url="/docs" if settings.DEBUG else None,
     redoc_url="/redoc" if settings.DEBUG else None,
     default_response_class=ORJSONResponse,
+    lifespan=lifespan,
 )
-
-
-@app.on_event("startup")
-async def startup_event():
-    """Configure thread pool for blocking yfinance/feedparser calls."""
-    executor = ThreadPoolExecutor(max_workers=40)
-    loop = asyncio.get_running_loop()
-    loop.set_default_executor(executor)
-    logger.info("Thread pool executor configured with max_workers=40")
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Clean up Redis connection."""
-    await close_redis()
-    logger.info("Redis connection closed")
 
 # Rate limiter
 app.state.limiter = limiter
@@ -132,6 +145,8 @@ app.include_router(chart_drawing.router, prefix="/api/v1/drawings", tags=["drawi
 app.include_router(portfolio_performance.router, prefix="/api/v1/portfolio", tags=["portfolio"])
 app.include_router(private_companies.router, prefix="/api/v1/private-companies", tags=["private-companies"])
 app.include_router(ticker_bundle.router, prefix="/api/v1/ticker", tags=["ticker-bundle"])
+app.include_router(memo.router, prefix="/api/v1/memo", tags=["memo"])
+app.include_router(ai_history.router, prefix="/api/v1/ai-history", tags=["ai-history"])
 
 
 @app.exception_handler(Exception)

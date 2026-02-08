@@ -1,6 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { api } from "../lib/api";
 import type { FinancialStatementsResponse } from "../lib/types";
+import { renderMarkdown } from "./common/MarkdownRenderer";
 
 interface FinancialStatementsProps {
   data: FinancialStatementsResponse;
@@ -70,6 +71,7 @@ function formatDate(dateStr: string, period: "quarterly" | "annual"): string {
 export function FinancialStatements({ data, ticker }: FinancialStatementsProps) {
   const [activeTab, setActiveTab] = useState("income_statement");
   const [analysis, setAnalysis] = useState<string | null>(null);
+  const [analysisSavedId, setAnalysisSavedId] = useState<number | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [period, setPeriod] = useState<"quarterly" | "annual">("quarterly");
@@ -119,15 +121,22 @@ const statementData =
   async function handleAnalyze() {
     setAnalyzing(true);
     setAnalysisError(null);
+    setAnalysisSavedId(null);
     try {
       const result = await api.analyzeFinancials(ticker);
       setAnalysis(result.analysis);
+      setAnalysisSavedId(result.id);
     } catch (e: any) {
       setAnalysisError(e?.message ?? "Failed to generate analysis");
     } finally {
       setAnalyzing(false);
     }
   }
+
+  const renderedAnalysis = useMemo(() => {
+    if (!analysis) return null;
+    return renderMarkdown(analysis);
+  }, [analysis]);
 
   async function handleExport() {
     setExporting(true);
@@ -311,24 +320,31 @@ const statementData =
           padding: 16,
           marginBottom: 16,
         }}>
-          <div style={{ 
-            display: "flex", 
-            alignItems: "center", 
-            gap: 8, 
+          <div style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
             marginBottom: 12,
             fontSize: 14,
             fontWeight: 600,
             color: "#8b5cf6"
           }}>
             <span>✨</span> AI Analysis
+            {analysisSavedId != null && (
+              <span style={{
+                fontSize: 11,
+                fontWeight: 500,
+                color: "#22c55e",
+                background: "#22c55e20",
+                padding: "2px 8px",
+                borderRadius: 4,
+              }}>
+                Saved
+              </span>
+            )}
           </div>
-          <div style={{ 
-            fontSize: 14, 
-            lineHeight: 1.7, 
-            whiteSpace: "pre-wrap",
-            opacity: 0.9 
-          }}>
-            {analysis}
+          <div style={{ fontSize: 14, lineHeight: 1.7 }}>
+            {renderedAnalysis}
           </div>
         </div>
       )}

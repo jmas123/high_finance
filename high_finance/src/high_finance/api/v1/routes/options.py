@@ -1,10 +1,13 @@
+import logging
+
 from fastapi import APIRouter, HTTPException, Query
 
 from high_finance.services.options_flow import get_options_overview, get_options_chain
 from high_finance.services.options_decay import simulate_option_decay, get_decay_simulation_for_contract, get_iv_context, get_contract_iv
 
-router = APIRouter()
+logger = logging.getLogger(__name__)
 
+router = APIRouter()
 
 
 @router.get("/{ticker}")
@@ -88,8 +91,9 @@ async def run_decay_simulation(
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Simulation error: {str(e)}")
+    except Exception:
+        logger.exception("Decay simulation failed for %s", ticker)
+        raise HTTPException(status_code=500, detail="Simulation failed")
 
 
 @router.get("/{ticker}/decay-simulation/{expiry}/{strike}")
@@ -113,5 +117,6 @@ async def get_decay_for_contract(
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+    except Exception:
+        logger.exception("Decay simulation for contract failed: %s %s %s", ticker, expiry, strike)
+        raise HTTPException(status_code=500, detail="Simulation failed")

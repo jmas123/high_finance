@@ -1,0 +1,6 @@
+# Dev-only dependencies — not needed in production containers
+-r requirements.txt
+pytest
+pytest-asyncio
+ruff
+black

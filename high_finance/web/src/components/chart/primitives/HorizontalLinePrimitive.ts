@@ -126,7 +126,7 @@ export function hitTestHorizontalLine(
  */
 export function dragHorizontalLine(
   drawing: ChartDrawing,
-  handleType: "start" | "body",
+  _handleType: "start" | "body",
   newPoint: DrawingPoint
 ): DrawingPoint[] {
   // Only update the price, keep the time

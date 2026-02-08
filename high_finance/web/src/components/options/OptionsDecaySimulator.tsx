@@ -1,7 +1,6 @@
 import { useEffect, useState, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import {
-  LineChart,
   Line,
   XAxis,
   YAxis,
@@ -12,7 +11,7 @@ import {
   ComposedChart,
 } from "recharts";
 import { api } from "../../lib/api";
-import type { OptionDecaySimulation, IVContext } from "../../lib/types";
+import type { OptionDecaySimulation, IVContext, OptionsOverview } from "../../lib/types";
 
 // ===== EXPLANATIONS =====
 const EXPLANATIONS: Record<string, string> = {
@@ -493,8 +492,8 @@ function IVSelector({
 // ===== MAIN COMPONENT =====
 interface OptionDecaySimulatorProps {
   ticker: string;
-  initialOptionsData?: any;
-  initialIVContext?: any;
+  initialOptionsData?: OptionsOverview | null;
+  initialIVContext?: IVContext | null;
 }
 
 export function OptionDecaySimulator({ ticker, initialOptionsData, initialIVContext }: OptionDecaySimulatorProps) {
@@ -623,8 +622,8 @@ export function OptionDecaySimulator({ ticker, initialOptionsData, initialIVCont
         option_type: selectedType,
       });
       setSimulation(result);
-    } catch (e: any) {
-      setSimError(e?.message || "Simulation failed");
+    } catch (e) {
+      setSimError(e instanceof Error ? e.message : "Simulation failed");
     } finally {
       setSimLoading(false);
     }

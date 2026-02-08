@@ -12,16 +12,36 @@ Usage:
 """
 
 import asyncio
+import logging
+import time
 
 import yfinance as yf
 
 from high_finance.core.cache import get_or_compute, fundamentals_ttl
 
+logger = logging.getLogger(__name__)
 
-def _fetch_yf_info_sync(ticker: str) -> dict:
-    """Blocking yfinance call — runs in thread pool. Returns raw info dict."""
-    stock = yf.Ticker(ticker)
-    return stock.info or {}
+
+def _fetch_yf_info_sync(ticker: str, max_retries: int = 2) -> dict:
+    """Blocking yfinance call — runs in thread pool. Returns raw info dict.
+
+    Retries on transient Yahoo 401 errors with a short back-off.
+    """
+    for attempt in range(max_retries + 1):
+        try:
+            stock = yf.Ticker(ticker)
+            return stock.info or {}
+        except Exception as exc:
+            is_retryable = "401" in str(exc) or "Unauthorized" in str(exc)
+            if is_retryable and attempt < max_retries:
+                wait = 1.5 * (attempt + 1)
+                logger.warning(
+                    "yfinance 401 for %s (attempt %d/%d), retrying in %.1fs",
+                    ticker, attempt + 1, max_retries + 1, wait,
+                )
+                time.sleep(wait)
+                continue
+            raise
 
 
 async def get_yf_info(ticker: str) -> dict:
