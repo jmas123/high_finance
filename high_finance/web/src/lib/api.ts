@@ -39,6 +39,11 @@ import type {
   MacroResponse,
   SectorResponse,
   RateImpactResponse,
+  BacktestResponse,
+  LeaderboardResponse,
+  AISuggestion,
+  AIRiskAssessment,
+  EarningsAnalysisResponse,
 } from "./types";
 import type {
   CalendarEventsRequest,
@@ -256,6 +261,16 @@ export const api = {
         body: JSON.stringify(tickers),
     }).then(res => res.json()),
 
+    analyzeEarnings: (ticker: string) =>
+      postJSON<EarningsAnalysisResponse>(
+        `${BASE}/earnings-analysis/${encodeURIComponent(ticker)}/analyze`
+      ),
+
+    earningsAnalysisLatest: (ticker: string) =>
+      getJSON<EarningsAnalysisResponse>(
+        `${BASE}/earnings-analysis/${encodeURIComponent(ticker)}/latest`
+      ),
+
     // Add to the api object
     optionsOverview: (ticker: string) =>
     getJSON<OptionsOverview>(`${BASE}/options/${encodeURIComponent(ticker)}`),
@@ -268,6 +283,9 @@ export const api = {
     risk: (ticker: string, period = "1y") =>
   getJSON<RiskBundle>(`${BASE}/risk/${encodeURIComponent(ticker)}?period=${period}`),
 
+  riskAIAssessment: (ticker: string) =>
+    getJSON<AIRiskAssessment>(`${BASE}/risk/${encodeURIComponent(ticker)}/ai-assessment`),
+
 valuation: (ticker: string, params?: Partial<{growth:number;margin:number;tax:number;wacc:number;terminal_g:number;}>) => {
   const q = new URLSearchParams();
   if (params?.growth != null) q.set("growth", String(params.growth));
@@ -278,6 +296,9 @@ valuation: (ticker: string, params?: Partial<{growth:number;margin:number;tax:nu
   const qs = q.toString();
   return getJSON<ValuationBundle>(`${BASE}/valuation/${encodeURIComponent(ticker)}${qs ? `?${qs}` : ""}`);
 },
+
+valuationAISuggest: (ticker: string) =>
+  postJSON<AISuggestion>(`${BASE}/valuation/${encodeURIComponent(ticker)}/ai-suggest`),
 
 
   congressTradeNotifications: (minAmount: number = 50000, days: number = 7, limit: number = 100) => {
@@ -514,6 +535,61 @@ valuation: (ticker: string, params?: Partial<{growth:number;margin:number;tax:nu
       if (!res.ok && res.status !== 204) throw new Error("Failed to delete saved screen");
       return true;
     }),
+
+  /**
+   * Export screener results as Excel file
+   * Returns a Blob that can be downloaded
+   */
+  screenerExportExcel: async (filters: ScreenerFilters = {}): Promise<Blob> => {
+    const q = new URLSearchParams();
+    if (filters.market_cap_min != null) q.set("market_cap_min", String(filters.market_cap_min));
+    if (filters.market_cap_max != null) q.set("market_cap_max", String(filters.market_cap_max));
+    if (filters.pe_ratio_min != null) q.set("pe_ratio_min", String(filters.pe_ratio_min));
+    if (filters.pe_ratio_max != null) q.set("pe_ratio_max", String(filters.pe_ratio_max));
+    if (filters.forward_pe_min != null) q.set("forward_pe_min", String(filters.forward_pe_min));
+    if (filters.forward_pe_max != null) q.set("forward_pe_max", String(filters.forward_pe_max));
+    if (filters.pb_ratio_min != null) q.set("pb_ratio_min", String(filters.pb_ratio_min));
+    if (filters.pb_ratio_max != null) q.set("pb_ratio_max", String(filters.pb_ratio_max));
+    if (filters.ev_to_ebitda_min != null) q.set("ev_to_ebitda_min", String(filters.ev_to_ebitda_min));
+    if (filters.ev_to_ebitda_max != null) q.set("ev_to_ebitda_max", String(filters.ev_to_ebitda_max));
+    if (filters.roe_min != null) q.set("roe_min", String(filters.roe_min));
+    if (filters.roe_max != null) q.set("roe_max", String(filters.roe_max));
+    if (filters.profit_margin_min != null) q.set("profit_margin_min", String(filters.profit_margin_min));
+    if (filters.profit_margin_max != null) q.set("profit_margin_max", String(filters.profit_margin_max));
+    if (filters.debt_to_equity_min != null) q.set("debt_to_equity_min", String(filters.debt_to_equity_min));
+    if (filters.debt_to_equity_max != null) q.set("debt_to_equity_max", String(filters.debt_to_equity_max));
+    if (filters.fcf_yield_min != null) q.set("fcf_yield_min", String(filters.fcf_yield_min));
+    if (filters.fcf_yield_max != null) q.set("fcf_yield_max", String(filters.fcf_yield_max));
+    if (filters.beta_min != null) q.set("beta_min", String(filters.beta_min));
+    if (filters.beta_max != null) q.set("beta_max", String(filters.beta_max));
+    if (filters.revenue_growth_min != null) q.set("revenue_growth_min", String(filters.revenue_growth_min));
+    if (filters.revenue_growth_max != null) q.set("revenue_growth_max", String(filters.revenue_growth_max));
+    if (filters.dividend_yield_min != null) q.set("dividend_yield_min", String(filters.dividend_yield_min));
+    if (filters.dividend_yield_max != null) q.set("dividend_yield_max", String(filters.dividend_yield_max));
+    if (filters.price_vs_200ma_min != null) q.set("price_vs_200ma_min", String(filters.price_vs_200ma_min));
+    if (filters.price_vs_200ma_max != null) q.set("price_vs_200ma_max", String(filters.price_vs_200ma_max));
+    if (filters.price_vs_52w_high_min != null) q.set("price_vs_52w_high_min", String(filters.price_vs_52w_high_min));
+    if (filters.price_vs_52w_high_max != null) q.set("price_vs_52w_high_max", String(filters.price_vs_52w_high_max));
+    if (filters.sectors) q.set("sectors", filters.sectors);
+    if (filters.has_insider_buys_90d != null) q.set("has_insider_buys_90d", String(filters.has_insider_buys_90d));
+    if (filters.insider_net_shares_90d_min != null) q.set("insider_net_shares_90d_min", String(filters.insider_net_shares_90d_min));
+    if (filters.congress_net_value_90d_min != null) q.set("congress_net_value_90d_min", String(filters.congress_net_value_90d_min));
+    if (filters.sort_by) q.set("sort_by", filters.sort_by);
+    if (filters.sort_order) q.set("sort_order", filters.sort_order);
+    const qs = q.toString();
+    const url = `${BASE}/screener/export/excel${qs ? `?${qs}` : ""}`;
+
+    const res = await fetch(url, {
+      headers: getAuthHeaders(),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: "Export failed" }));
+      throw new Error(err.detail || "Export failed");
+    }
+
+    return res.blob();
+  },
 
   // ═══════════════════════════════════════════════════════════════════════════════
   // EXCEL EXPORT API
@@ -881,6 +957,33 @@ valuation: (ticker: string, params?: Partial<{growth:number;margin:number;tax:nu
 
     stats: () =>
       getJSON<AIHistoryStats>(`${BASE}/ai-history/stats`),
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // CONGRESS BACKTEST API
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  politicianLeaderboard: (
+    delayDays = 3,
+    holdDays = 30,
+    opts?: { minTrades?: number; chamber?: string; party?: string; sinceYear?: number }
+  ) => {
+    const q = new URLSearchParams();
+    q.set("delay_days", String(delayDays));
+    q.set("hold_days", String(holdDays));
+    if (opts?.minTrades != null) q.set("min_trades", String(opts.minTrades));
+    if (opts?.chamber) q.set("chamber", opts.chamber);
+    if (opts?.party) q.set("party", opts.party);
+    if (opts?.sinceYear != null) q.set("since_year", String(opts.sinceYear));
+    return getJSON<LeaderboardResponse>(`${BASE}/politicians/leaderboard?${q.toString()}`);
+  },
+
+  politicianBacktest: (politicianId: number, delayDays = 3, holdDays = 30, sinceYear?: number) => {
+    const q = new URLSearchParams();
+    q.set("delay_days", String(delayDays));
+    q.set("hold_days", String(holdDays));
+    if (sinceYear != null) q.set("since_year", String(sinceYear));
+    return getJSON<BacktestResponse>(`${BASE}/politicians/${politicianId}/backtest?${q.toString()}`);
   },
 };
 

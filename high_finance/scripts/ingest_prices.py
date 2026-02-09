@@ -34,6 +34,26 @@ def get_db():
     return Session()
 
 
+BENCHMARK_TICKERS = {
+    "SPY": "SPDR S&P 500 ETF Trust",
+}
+
+
+def ensure_benchmarks(db, period="5y"):
+    """Ensure benchmark ETFs exist as Company records and have price data."""
+    for ticker, name in BENCHMARK_TICKERS.items():
+        company = db.query(Company).filter(Company.ticker == ticker).first()
+        if not company:
+            company = Company(ticker=ticker, name=name, sector="ETF")
+            db.add(company)
+            db.commit()
+            db.refresh(company)
+            print(f"  Created Company record for {ticker} (id={company.id})")
+        else:
+            print(f"  {ticker} already exists (id={company.id})")
+        fetch_and_save_prices(db, company.id, ticker, period=period)
+
+
 def get_companies_with_trades(db):
     """Get companies that have politician trades and need price data."""
     result = db.execute(text("""
@@ -46,7 +66,7 @@ def get_companies_with_trades(db):
     return result
 
 
-def fetch_and_save_prices(db, company_id: int, ticker: str, period: str = "2y"):
+def fetch_and_save_prices(db, company_id: int, ticker: str, period: str = "5y"):
     """Fetch prices from yfinance and save to database."""
     try:
         print(f"  Fetching {ticker}...", end=" ", flush=True)
@@ -104,6 +124,10 @@ def main():
     print("=" * 50)
 
     db = get_db()
+
+    # Ensure benchmarks (SPY) exist and have prices
+    print("\n-- Benchmarks --")
+    ensure_benchmarks(db)
 
     # Get companies with politician trades
     companies = get_companies_with_trades(db)

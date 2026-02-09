@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
-import type { ValuationBundle, Warning, SliderReference } from "../../lib/types";
+import type { ValuationBundle, Warning, SliderReference, AISuggestion } from "../../lib/types";
 import { MultiplesTable } from "./MultiplesTable";
 import { FairValueRangeBar } from "./FairValueRangeBar";
 import { TornadoChart } from "./TornadoChart";
@@ -8,8 +8,11 @@ import { Metric } from "./Metric";
 import { ScenarioCard } from "./ScenarioCard";
 import { WarningBadge } from "./Warnings";
 import { DivergenceExplainer } from "./DivergenceExplainer";
+import { AISuggestionPanel } from "./AISuggestionPanel";
 import { fmtMoney, fmtPct, fmtPctSigned, fmtPx } from "../Functions";
 import { api } from "../../lib/api";
+import { InfoTip } from "../common/InfoTip";
+import { VALUATION_TIPS } from "../../lib/tooltips";
 
 // ── localStorage persistence for DCF inputs ──────────────────────────────────
 const DCF_STORAGE_KEY = "hf_dcf_inputs";
@@ -89,6 +92,14 @@ export function DCFCard({ ticker, onStateChange, initialData }: DCFCardProps) {
   // Export state
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+
+  // AI suggestion state
+  const [aiSuggestion, setAiSuggestion] = useState<AISuggestion | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [preAiValues, setPreAiValues] = useState<{
+    growth: number; margin: number; tax: number; wacc: number; terminal_g: number;
+  } | null>(null);
 
   // ── Capture market-implied assumptions when divergence first detected ──────
   // This prevents the "oscillation bug" where clicking "Use Market Implied"
@@ -284,9 +295,12 @@ export function DCFCard({ ticker, onStateChange, initialData }: DCFCardProps) {
     }
   }, [data?.divergence_analysis, capturedImplied]);
 
-  // Reset captured implied when ticker changes
+  // Reset captured implied and AI state when ticker changes
   useEffect(() => {
     setCapturedImplied(null);
+    setAiSuggestion(null);
+    setPreAiValues(null);
+    setAiError(null);
   }, [ticker]);
 
   // Build slider references from smart defaults
@@ -419,6 +433,43 @@ export function DCFCard({ ticker, onStateChange, initialData }: DCFCardProps) {
     }
   }, [ticker, growth, margin, wacc, tax, terminalG]);
 
+  // AI Suggest handler
+  const handleAISuggest = useCallback(async () => {
+    setAiLoading(true);
+    setAiError(null);
+    try {
+      const suggestion = await api.valuationAISuggest(ticker);
+      setAiSuggestion(suggestion);
+    } catch (e: any) {
+      setAiError(e?.message || "AI suggestion failed");
+      setTimeout(() => setAiError(null), 5000);
+    } finally {
+      setAiLoading(false);
+    }
+  }, [ticker]);
+
+  // Apply AI suggestions to sliders
+  const handleApplyAISuggestion = useCallback(() => {
+    if (!aiSuggestion || growth === null) return;
+    setPreAiValues({ growth: growth!, margin: margin!, tax: tax!, wacc: wacc!, terminal_g: terminalG! });
+    if (aiSuggestion.growth.value != null) setGrowth(aiSuggestion.growth.value);
+    if (aiSuggestion.margin.value != null) setMargin(aiSuggestion.margin.value);
+    if (aiSuggestion.tax.value != null) setTax(aiSuggestion.tax.value);
+    if (aiSuggestion.wacc.value != null) setWacc(aiSuggestion.wacc.value);
+    if (aiSuggestion.terminal_g.value != null) setTerminalG(aiSuggestion.terminal_g.value);
+  }, [aiSuggestion, growth, margin, tax, wacc, terminalG]);
+
+  // Restore pre-AI values
+  const handleRestorePreAi = useCallback(() => {
+    if (!preAiValues) return;
+    setGrowth(preAiValues.growth);
+    setMargin(preAiValues.margin);
+    setTax(preAiValues.tax);
+    setWacc(preAiValues.wacc);
+    setTerminalG(preAiValues.terminal_g);
+    setPreAiValues(null);
+  }, [preAiValues]);
+
   // Check if current values differ from smart defaults
   const hasCustomValues = useMemo(() => {
     if (!data?.smart_defaults || growth === null) return false;
@@ -458,12 +509,11 @@ export function DCFCard({ ticker, onStateChange, initialData }: DCFCardProps) {
       padding: 20,
       fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
     }}>
-      {/* Header */}
+      {/* Header row — title + status (left) | fair value (right) */}
       <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "flex-start" }}>
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <span style={{ fontSize: 18, fontWeight: 700, letterSpacing: "-0.3px" }}>Valuation Engine</span>
-            {/* Save Status Indicator */}
             {loading ? (
               <span style={{
                 fontSize: 11,
@@ -471,11 +521,8 @@ export function DCFCard({ ticker, onStateChange, initialData }: DCFCardProps) {
                 background: "rgba(245, 158, 11, 0.1)",
                 padding: "2px 8px",
                 borderRadius: 4,
-                display: "flex",
-                alignItems: "center",
-                gap: 4
               }}>
-                ⏳ Calculating...
+                Calculating...
               </span>
             ) : lastSaved ? (
               <span style={{
@@ -484,51 +531,10 @@ export function DCFCard({ ticker, onStateChange, initialData }: DCFCardProps) {
                 background: "rgba(34, 197, 94, 0.1)",
                 padding: "2px 8px",
                 borderRadius: 4,
-                display: "flex",
-                alignItems: "center",
-                gap: 4
               }}>
-                ✓ Saved {lastSaved.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                Saved {lastSaved.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
               </span>
             ) : null}
-            {/* Reset button - only show when values have been customized */}
-            {hasCustomValues && !loading && (
-              <button
-                onClick={handleResetToDefaults}
-                style={{
-                  fontSize: 10,
-                  color: "#888",
-                  background: "transparent",
-                  border: "1px solid #333",
-                  borderRadius: 4,
-                  padding: "2px 6px",
-                  cursor: "pointer",
-                }}
-                title="Reset to smart defaults"
-              >
-                Reset
-              </button>
-            )}
-            {/* Export to Excel button */}
-            {initialized && !loading && (
-              <button
-                onClick={handleExportToExcel}
-                disabled={exporting}
-                style={{
-                  fontSize: 10,
-                  color: exporting ? "#666" : "#3b82f6",
-                  background: "transparent",
-                  border: "1px solid #3b82f6",
-                  borderRadius: 4,
-                  padding: "2px 8px",
-                  cursor: exporting ? "not-allowed" : "pointer",
-                  opacity: exporting ? 0.6 : 1,
-                }}
-                title="Export valuation to Excel"
-              >
-                {exporting ? "Exporting..." : "Export Excel"}
-              </button>
-            )}
           </div>
           <div style={{ marginTop: 4, fontSize: 12, opacity: 0.5 }}>
             {data?.benchmarks?.sector && <span>{data.benchmarks.sector} • </span>}
@@ -537,7 +543,7 @@ export function DCFCard({ ticker, onStateChange, initialData }: DCFCardProps) {
         </div>
 
         <div style={{ textAlign: "right" }}>
-          <div style={{ fontSize: 11, opacity: 0.5, textTransform: "uppercase", letterSpacing: "0.5px" }}>DCF Fair Value</div>
+          <div style={{ fontSize: 11, opacity: 0.5, textTransform: "uppercase", letterSpacing: "0.5px", display: "flex", alignItems: "center" }}>DCF Fair Value<InfoTip text={VALUATION_TIPS.dcf_fair_value} /></div>
           <div style={{ fontSize: 32, fontWeight: 800, marginTop: 2, letterSpacing: "-1px" }}>
             {data?.fair_value_per_share_est ? fmtPx(data.fair_value_per_share_est) : "—"}
           </div>
@@ -548,6 +554,63 @@ export function DCFCard({ ticker, onStateChange, initialData }: DCFCardProps) {
           )}
         </div>
       </div>
+
+      {/* Action buttons — separate row below header */}
+      {initialized && !loading && (
+        <div style={{
+          display: "flex",
+          gap: 8,
+          marginTop: 12,
+          flexWrap: "wrap",
+        }}>
+          {hasCustomValues && (
+            <button
+              onClick={handleResetToDefaults}
+              style={{
+                fontSize: 11,
+                color: "#aaa",
+                background: "rgba(255,255,255,0.04)",
+                border: "1px solid #333",
+                borderRadius: 6,
+                padding: "5px 12px",
+                cursor: "pointer",
+              }}
+            >
+              Reset
+            </button>
+          )}
+          <button
+            onClick={handleExportToExcel}
+            disabled={exporting}
+            style={{
+              fontSize: 11,
+              color: exporting ? "#555" : "#3b82f6",
+              background: exporting ? "transparent" : "rgba(59, 130, 246, 0.08)",
+              border: `1px solid ${exporting ? "#333" : "rgba(59, 130, 246, 0.3)"}`,
+              borderRadius: 6,
+              padding: "5px 12px",
+              cursor: exporting ? "not-allowed" : "pointer",
+            }}
+          >
+            {exporting ? "Exporting..." : "Export to Excel"}
+          </button>
+          <button
+            onClick={handleAISuggest}
+            disabled={aiLoading}
+            style={{
+              fontSize: 11,
+              color: aiLoading ? "#555" : "#f59e0b",
+              background: aiLoading ? "transparent" : "rgba(245, 158, 11, 0.08)",
+              border: `1px solid ${aiLoading ? "#333" : "rgba(245, 158, 11, 0.3)"}`,
+              borderRadius: 6,
+              padding: "5px 12px",
+              cursor: aiLoading ? "not-allowed" : "pointer",
+            }}
+          >
+            {aiLoading ? "Analyzing..." : "AI Suggest"}
+          </button>
+        </div>
+      )}
 
       {/* Analyst consensus badge */}
       {analyst?.target_mean && (
@@ -563,7 +626,7 @@ export function DCFCard({ ticker, onStateChange, initialData }: DCFCardProps) {
           fontSize: 12,
         }}>
           <div>
-            <span style={{ opacity: 0.7 }}>Street Consensus: </span>
+            <span style={{ opacity: 0.7, display: "inline-flex", alignItems: "center" }}>Street Consensus<InfoTip text={VALUATION_TIPS.street_consensus} />: </span>
             <span style={{ fontWeight: 600, color: "#a855f7" }}>{fmtPx(analyst.target_mean)}</span>
             {analyst.target_low && analyst.target_high && (
               <span style={{ opacity: 0.5, marginLeft: 8 }}>
@@ -591,6 +654,25 @@ export function DCFCard({ ticker, onStateChange, initialData }: DCFCardProps) {
           onKeepMyAssumptions={handleKeepMyAssumptions}
           hasPreMarketValues={preMarketValues !== null}
         />
+      )}
+
+      {/* AI Suggestion Panel */}
+      {aiSuggestion && !aiLoading && (
+        <AISuggestionPanel
+          suggestion={aiSuggestion}
+          currentValues={{ growth: growth!, margin: margin!, tax: tax!, wacc: wacc!, terminal_g: terminalG! }}
+          onApply={handleApplyAISuggestion}
+          onDismiss={() => { setAiSuggestion(null); setPreAiValues(null); }}
+          hasApplied={preAiValues !== null}
+          onRestore={handleRestorePreAi}
+        />
+      )}
+
+      {/* AI Error */}
+      {aiError && (
+        <div style={{ marginTop: 14, padding: 12, borderRadius: 10, border: "1px solid rgba(245, 158, 11, 0.3)", background: "rgba(245, 158, 11, 0.1)", fontSize: 12 }}>
+          <b>AI Suggest:</b> {aiError}
+        </div>
       )}
 
       {/* Error */}
@@ -769,11 +851,8 @@ export function DCFCard({ ticker, onStateChange, initialData }: DCFCardProps) {
             {/* Scenarios */}
             {!loading && data?.scenarios && !("error" in data.scenarios) && (
               <div style={{ marginTop: 14 }}>
-                <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.5px", opacity: 0.5, marginBottom: 8 }}>
-                  Scenario Analysis
-                  <span style={{ marginLeft: 6, opacity: 0.7, textTransform: "none", letterSpacing: "normal" }}>
-                    (hover for details)
-                  </span>
+                <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.5px", opacity: 0.5, marginBottom: 8, display: "flex", alignItems: "center" }}>
+                  Scenario Analysis<InfoTip text={VALUATION_TIPS.scenario_analysis} />
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
                   {(["bear", "base", "bull"] as const).map(scenario => {
@@ -818,7 +897,7 @@ export function DCFCard({ ticker, onStateChange, initialData }: DCFCardProps) {
 
         {activeTab === "sensitivity" && (
           <div>
-            <div style={{ fontSize: 11, opacity: 0.5, marginBottom: 12 }}>Impact of ±3% change in each input on fair value</div>
+            <div style={{ fontSize: 11, opacity: 0.5, marginBottom: 12, display: "flex", alignItems: "center" }}>Impact of ±3% change in each input on fair value<InfoTip text={VALUATION_TIPS.sensitivity} /></div>
             {sensitivityData.length > 0 ? (
               <TornadoChart sensitivities={sensitivityData} baseFV={baseFV} />
             ) : (

@@ -7,7 +7,7 @@ Respects SEC rate limit (10 req/s) with 150ms sleep between requests.
 
 Usage:
     source .venv/bin/activate
-    DATABASE_URL="postgresql://user:jude2000@localhost:5432/high_finance" python scripts/backfill_sic_codes.py
+    DATABASE_URL="postgresql://..." python scripts/backfill_sic_codes.py
 """
 
 import os
@@ -25,7 +25,11 @@ from high_finance.services.sec_sic import fetch_sic_code
 
 
 def get_db():
-    database_url = os.environ.get("DATABASE_URL", "postgresql://user:jude2000@localhost:5432/high_finance")
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        print("ERROR: DATABASE_URL environment variable is required.")
+        print("Usage: DATABASE_URL='postgresql://...' python scripts/backfill_sic_codes.py")
+        sys.exit(1)
     engine = create_engine(database_url)
     Session = sessionmaker(bind=engine)
     return Session()

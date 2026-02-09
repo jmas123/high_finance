@@ -14,7 +14,7 @@ class Settings(BaseSettings):
 
     # Security settings
     SECRET_KEY: str = "CHANGE-ME-IN-PRODUCTION"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 4  # 4 hours
     ALGORITHM: str = "HS256"
 
     @model_validator(mode="after")
@@ -32,6 +32,20 @@ class Settings(BaseSettings):
             )
         return self
 
+    @model_validator(mode="after")
+    def _validate_cors_origins(self) -> "Settings":
+        if not self.DEBUG:
+            localhost_origins = [
+                o for o in self.allowed_origins_list
+                if "localhost" in o or "127.0.0.1" in o
+            ]
+            if localhost_origins:
+                raise ValueError(
+                    f"ALLOWED_ORIGINS contains localhost entries ({localhost_origins}) "
+                    "but DEBUG=False. Set ALLOWED_ORIGINS to production domains in .env."
+                )
+        return self
+
     # CORS - comma-separated list of allowed origins
     ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173"
 
@@ -43,6 +57,14 @@ class Settings(BaseSettings):
 
     # Scheduler settings
     SCHEDULER_ENABLED: bool = True
+
+    # SMTP (password reset emails)
+    SMTP_HOST: str | None = None
+    SMTP_PORT: int = 587
+    SMTP_USER: str | None = None
+    SMTP_PASSWORD: str | None = None
+    EMAIL_FROM: str | None = None
+    FRONTEND_URL: str = "http://localhost:5173"
 
     # Alerting (optional)
     SLACK_WEBHOOK_URL: str | None = None

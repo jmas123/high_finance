@@ -1,6 +1,9 @@
 import { useState } from "react";
-import type { ScreenerResponse, ScreenerResult } from "../../lib/types";
+import { api } from "../../lib/api";
+import type { ScreenerFilters, ScreenerResponse, ScreenerResult } from "../../lib/types";
 import { thBase, tdBase, left, right } from "../../lib/types";
+import { InfoTip } from "../common/InfoTip";
+import { SCREENER_TIPS } from "../../lib/tooltips";
 
 type Props = {
   results: ScreenerResponse | null;
@@ -13,6 +16,7 @@ type Props = {
   offset: number;
   onPageChange: (offset: number) => void;
   universeTotal: number;
+  filters: ScreenerFilters;
 };
 
 // Column definitions — all possible columns
@@ -23,27 +27,28 @@ type ColumnDef = {
   format?: (v: any) => string;
   heatmap?: "valuation" | "growth" | "quality" | "risk";
   defaultVisible?: boolean;
+  tooltip?: string;
 };
 
 const ALL_COLUMNS: ColumnDef[] = [
   { key: "ticker", label: "Ticker", align: "left", defaultVisible: true },
   { key: "company_name", label: "Company", align: "left", defaultVisible: true },
   { key: "sector", label: "Sector", align: "left", defaultVisible: true },
-  { key: "market_cap", label: "Mkt Cap", align: "right", format: formatLarge, defaultVisible: true },
+  { key: "market_cap", label: "Mkt Cap", align: "right", format: formatLarge, defaultVisible: true, tooltip: SCREENER_TIPS.mkt_cap },
   { key: "current_price", label: "Price", align: "right", format: v => v != null ? `$${v.toFixed(2)}` : "—", defaultVisible: true },
-  { key: "price_change_1d", label: "1D Chg", align: "right", format: formatPct, defaultVisible: true },
-  { key: "pe_ratio", label: "P/E", align: "right", format: formatNum, heatmap: "valuation", defaultVisible: true },
-  { key: "forward_pe", label: "Fwd P/E", align: "right", format: formatNum, heatmap: "valuation", defaultVisible: true },
-  { key: "pb_ratio", label: "P/B", align: "right", format: formatNum, defaultVisible: false },
-  { key: "ev_to_ebitda", label: "EV/EBITDA", align: "right", format: formatNum, heatmap: "valuation", defaultVisible: true },
-  { key: "roe", label: "ROE", align: "right", format: formatPct, heatmap: "quality", defaultVisible: true },
-  { key: "profit_margin", label: "Margin", align: "right", format: formatPct, heatmap: "quality", defaultVisible: true },
-  { key: "debt_to_equity", label: "D/E", align: "right", format: formatRatio, defaultVisible: true },
-  { key: "fcf_yield", label: "FCF Yield", align: "right", format: formatPct, heatmap: "quality", defaultVisible: true },
-  { key: "beta", label: "Beta", align: "right", format: formatRatio, heatmap: "risk", defaultVisible: true },
-  { key: "revenue_growth", label: "Rev Growth", align: "right", format: formatPct, heatmap: "growth", defaultVisible: true },
-  { key: "dividend_yield", label: "Div Yield", align: "right", format: formatPct, defaultVisible: false },
-  { key: "insider_net_shares_90d", label: "Insider Net", align: "right", format: formatShares, defaultVisible: true },
+  { key: "price_change_1d", label: "1D Chg", align: "right", format: formatPct, defaultVisible: true, tooltip: SCREENER_TIPS.one_day_chg },
+  { key: "pe_ratio", label: "P/E", align: "right", format: formatNum, heatmap: "valuation", defaultVisible: true, tooltip: SCREENER_TIPS.pe },
+  { key: "forward_pe", label: "Fwd P/E", align: "right", format: formatNum, heatmap: "valuation", defaultVisible: true, tooltip: SCREENER_TIPS.fwd_pe },
+  { key: "pb_ratio", label: "P/B", align: "right", format: formatNum, defaultVisible: false, tooltip: SCREENER_TIPS.pb },
+  { key: "ev_to_ebitda", label: "EV/EBITDA", align: "right", format: formatNum, heatmap: "valuation", defaultVisible: true, tooltip: SCREENER_TIPS.ev_ebitda },
+  { key: "roe", label: "ROE", align: "right", format: formatPct, heatmap: "quality", defaultVisible: true, tooltip: SCREENER_TIPS.roe },
+  { key: "profit_margin", label: "Margin", align: "right", format: formatPct, heatmap: "quality", defaultVisible: true, tooltip: SCREENER_TIPS.margin },
+  { key: "debt_to_equity", label: "D/E", align: "right", format: formatRatio, defaultVisible: true, tooltip: SCREENER_TIPS.de },
+  { key: "fcf_yield", label: "FCF Yield", align: "right", format: formatPct, heatmap: "quality", defaultVisible: true, tooltip: SCREENER_TIPS.fcf_yield },
+  { key: "beta", label: "Beta", align: "right", format: formatRatio, heatmap: "risk", defaultVisible: true, tooltip: SCREENER_TIPS.beta },
+  { key: "revenue_growth", label: "Rev Growth", align: "right", format: formatPct, heatmap: "growth", defaultVisible: true, tooltip: SCREENER_TIPS.rev_growth },
+  { key: "dividend_yield", label: "Div Yield", align: "right", format: formatPct, defaultVisible: false, tooltip: SCREENER_TIPS.div_yield },
+  { key: "insider_net_shares_90d", label: "Insider Net", align: "right", format: formatShares, defaultVisible: true, tooltip: SCREENER_TIPS.insider_net },
 ];
 
 const COL_STORAGE_KEY = "hf_screener_columns";
@@ -129,28 +134,13 @@ function getHeatmapBg(
   return undefined;
 }
 
-// ─── CSV Export ───────────────────────────────────────────────────────────────
+// ─── Excel Export ─────────────────────────────────────────────────────────────
 
-function exportToCsv(results: ScreenerResult[], columns: ColumnDef[]) {
-  const headers = columns.map(c => c.label);
-  const rows = results.map(row =>
-    columns.map(col => {
-      const val = row[col.key];
-      if (val == null) return "";
-      return String(val);
-    })
-  );
-
-  const csvContent = [
-    headers.join(","),
-    ...rows.map(r => r.map(v => `"${v}"`).join(",")),
-  ].join("\n");
-
-  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `screener_${new Date().toISOString().slice(0, 10)}.csv`;
+  a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -179,9 +169,23 @@ export function ScreenerResultsTable({
   offset,
   onPageChange,
   universeTotal,
+  filters,
 }: Props) {
   const [visibleCols, setVisibleCols] = useState<Set<string>>(loadVisibleColumns);
   const [showColumnPicker, setShowColumnPicker] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
+  const handleExportExcel = async () => {
+    setExporting(true);
+    try {
+      const blob = await api.screenerExportExcel(filters);
+      downloadBlob(blob, `screener_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    } catch (e: any) {
+      console.error("Export failed:", e);
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const total = results?.total_count ?? results?.total ?? 0;
   const currentPage = Math.floor(offset / limit) + 1;
@@ -333,20 +337,21 @@ export function ScreenerResultsTable({
             )}
           </div>
 
-          {/* CSV Export */}
+          {/* Excel Export */}
           <button
-            onClick={() => exportToCsv(results.results, activeColumns)}
+            onClick={handleExportExcel}
+            disabled={exporting}
             style={{
               padding: "4px 8px",
-              background: "#333",
+              background: exporting ? "#555" : "#333",
               border: "none",
               borderRadius: 4,
-              color: "#fff",
+              color: exporting ? "#888" : "#fff",
               fontSize: 11,
-              cursor: "pointer",
+              cursor: exporting ? "not-allowed" : "pointer",
             }}
           >
-            Export CSV
+            {exporting ? "Exporting..." : "Export Excel"}
           </button>
 
           {/* Pagination */}
@@ -402,7 +407,10 @@ export function ScreenerResultsTable({
                     userSelect: "none",
                   }}
                 >
-                  {col.label}
+                  <span style={{ display: "inline-flex", alignItems: "center" }}>
+                    {col.label}
+                    {col.tooltip && <InfoTip text={col.tooltip} />}
+                  </span>
                   {sortBy === col.key && (
                     <span style={{ marginLeft: 4 }}>
                       {sortOrder === "asc" ? "↑" : "↓"}

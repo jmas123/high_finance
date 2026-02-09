@@ -33,19 +33,47 @@ def _fetch_financial_statements_sync(ticker: str) -> Dict[str, Any]:
                     continue
         return result
 
+    def _filter_sparse_columns(statement):
+        """Drop stub quarters that yfinance returns with only a handful of fields.
+
+        Returns (filtered_statement, list_of_dropped_date_strings).
+        """
+        if not statement:
+            return statement, []
+        max_fields = max((len(f) for f in statement.values()), default=0)
+        if max_fields == 0:
+            return statement, []
+        MIN_FIELDS = 10
+        SPARSE_RATIO = 0.3
+        kept = {}
+        dropped = []
+        for date, fields in statement.items():
+            if len(fields) >= MIN_FIELDS and len(fields) / max_fields >= SPARSE_RATIO:
+                kept[date] = fields
+            else:
+                dropped.append(date)
+        return kept, dropped
+
     annual = {
         "income_statement": df_to_dict(stock.financials),
         "balance_sheet": df_to_dict(stock.balance_sheet),
         "cash_flow": df_to_dict(stock.cashflow),
     }
 
+    q_income, dropped_income = _filter_sparse_columns(df_to_dict(stock.quarterly_financials))
+    q_balance, dropped_balance = _filter_sparse_columns(df_to_dict(stock.quarterly_balance_sheet))
+    q_cashflow, dropped_cashflow = _filter_sparse_columns(df_to_dict(stock.quarterly_cashflow))
+
     quarterly = {
-        "income_statement": df_to_dict(stock.quarterly_financials),
-        "balance_sheet": df_to_dict(stock.quarterly_balance_sheet),
-        "cash_flow": df_to_dict(stock.quarterly_cashflow),
+        "income_statement": q_income,
+        "balance_sheet": q_balance,
+        "cash_flow": q_cashflow,
     }
 
-    return {"annual": annual, "quarterly": quarterly}
+    # Deduplicate dates that were dropped from any statement
+    excluded = sorted(set(dropped_income + dropped_balance + dropped_cashflow))
+
+    return {"annual": annual, "quarterly": quarterly, "quarterly_excluded": excluded}
 
 
 def _is_complete(stmts: Dict[str, Any]) -> bool:

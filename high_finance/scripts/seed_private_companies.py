@@ -8,7 +8,7 @@ Data last updated: February 6, 2026
 
 Usage:
     source .venv/bin/activate
-    DATABASE_URL="postgresql://user:jude2000@localhost:5432/high_finance" python scripts/seed_private_companies.py
+    DATABASE_URL="postgresql://..." python scripts/seed_private_companies.py
 """
 
 import os
@@ -21,10 +21,11 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from high_finance.db.models.private_company import PrivateCompany, PrivateCompanyInvestor
 
-DATABASE_URL = os.environ.get(
-    "DATABASE_URL",
-    "postgresql://user:jude2000@localhost:5432/high_finance",
-)
+DATABASE_URL = os.environ.get("DATABASE_URL")
+if not DATABASE_URL:
+    print("ERROR: DATABASE_URL environment variable is required.")
+    print("Usage: DATABASE_URL='postgresql://...' python scripts/seed_private_companies.py")
+    sys.exit(1)
 
 engine = create_engine(DATABASE_URL)
 Session = sessionmaker(bind=engine)

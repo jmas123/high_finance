@@ -1,24 +1,93 @@
+import asyncio
+from datetime import datetime, timezone
+from typing import Dict, List, Optional
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List, Dict
 
+from high_finance.api.v1.schemas.politician import (
+    BacktestResponseOut,
+    LeaderboardResponseOut,
+    PoliticianOut,
+    PoliticianTradeOut,
+    PoliticianTradeWithPoliticianOut,
+)
+from high_finance.core.cache import get_or_compute
 from high_finance.db.session import get_db
-from high_finance.api.v1.schemas.politician import PoliticianOut, PoliticianTradeOut
+from high_finance.services.politician_backtest import (
+    backtest_all_politicians_sync,
+    run_backtest_sync,
+)
+from high_finance.services.politician_performance import politician_rolling_performance
 from high_finance.services.politicians import (
+    ensure_company_trades_fresh,
+    get_company_politician_trades,
     get_politician_trades,
     search_politicians,
-    ensure_company_trades_fresh,
 )
-
-from high_finance.api.v1.schemas.politician import PoliticianTradeWithPoliticianOut
-from high_finance.services.politicians import get_company_politician_trades
-from high_finance.services.politician_performance import politician_rolling_performance
-
 
 router = APIRouter()
 
 # Cache for politician grades to avoid repeated DB queries in the same request
 _grade_cache: Dict[int, str | None] = {}
+
+
+# ── Backtest endpoints (must come BEFORE /{politician_id} to avoid route clash) ─
+
+
+@router.get("/leaderboard", response_model=LeaderboardResponseOut)
+async def leaderboard(
+    delay_days: int = 3,
+    hold_days: int = 30,
+    min_trades: int = 5,
+    chamber: Optional[str] = None,
+    party: Optional[str] = None,
+    since_year: Optional[int] = None,
+    db: Session = Depends(get_db),
+):
+    """Congress trading leaderboard — backtests all politicians with enough trades."""
+    cache_key = f"hf:backtest:leaderboard:{delay_days}:{hold_days}:{min_trades}:{chamber or ''}:{party or ''}:{since_year or ''}"
+
+    async def compute():
+        entries = await asyncio.to_thread(
+            backtest_all_politicians_sync,
+            db, delay_days, hold_days, min_trades, chamber, party, since_year,
+        )
+        return {
+            "delay_days": delay_days,
+            "hold_days": hold_days,
+            "entries": entries,
+            "computed_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    return await get_or_compute(cache_key, 3600, compute)
+
+
+@router.get("/{politician_id}/backtest", response_model=BacktestResponseOut)
+async def backtest(
+    politician_id: int,
+    delay_days: int = 3,
+    hold_days: int = 30,
+    since_year: Optional[int] = None,
+    db: Session = Depends(get_db),
+):
+    """Full backtest for a single politician — equity curve + per-trade details."""
+    cache_key = f"hf:backtest:{politician_id}:{delay_days}:{hold_days}:{since_year or ''}"
+
+    async def compute():
+        result = await asyncio.to_thread(
+            run_backtest_sync, db, politician_id, delay_days, hold_days,
+            since_year=since_year,
+        )
+        if "error" in result:
+            raise HTTPException(status_code=404, detail=result["error"])
+        return result
+
+    return await get_or_compute(cache_key, 3600, compute)
+
+
+# ── Existing endpoints ───────────────────────────────────────────────────────
+
 
 @router.get("/search", response_model=List[PoliticianOut])
 def search(q: str = "", db: Session = Depends(get_db)):

@@ -1,15 +1,18 @@
 import { memo } from "react";
+import { InfoTip } from "../common/InfoTip";
 
 export const Stat = memo(function Stat({
   label,
   value,
   hint,
   accent,
+  tooltip,
 }: {
   label: string;
   value: string;
   hint?: string;
   accent?: "green" | "red" | "blue" | "amber";
+  tooltip?: string;
 }) {
   const accentColors = {
     green: "rgba(34, 197, 94, 0.15)",
@@ -41,9 +44,12 @@ export const Stat = memo(function Stat({
           textTransform: "uppercase",
           letterSpacing: "0.6px",
           fontWeight: 500,
+          display: "flex",
+          alignItems: "center",
         }}
       >
         {label}
+        {tooltip && <InfoTip text={tooltip} />}
       </div>
       <div
         style={{

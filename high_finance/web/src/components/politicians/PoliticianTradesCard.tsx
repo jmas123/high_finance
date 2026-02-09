@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../../lib/api";
 import type { PoliticianTradeWithContext, Politician, PoliticianTrade } from "../../lib/types";
+import { InfoTip } from "../common/InfoTip";
+import { CONGRESS_TIPS } from "../../lib/tooltips";
 
 type FlatRow = PoliticianTrade & {
   politician: Politician; // guaranteed after flatten
@@ -135,7 +137,7 @@ export function PoliticianTradesCard({ ticker, initialData }: PoliticianTradesCa
     >
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
         <div>
-          <div style={{ fontSize: 16, fontWeight: 650 }}>Capitol Activity</div>
+          <div style={{ fontSize: 16, fontWeight: 650, display: "flex", alignItems: "center" }}>Capitol Activity<InfoTip text={CONGRESS_TIPS.capitol_activity} /></div>
           <div style={{ fontSize: 12, opacity: 0.65, marginTop: 4 }}>
             Recent disclosed trades linked to {ticker}.{" "}
             <span style={{ opacity: 0.85 }}>
@@ -190,12 +192,16 @@ export function PoliticianTradesCard({ ticker, initialData }: PoliticianTradesCa
             <thead>
               <tr style={{ textAlign: "left", borderBottom: "1px solid #333" }}>
                 <th style={{ padding: "10px 8px" }}>Politician</th>
-                <th style={{ padding: "10px 8px" }} title="Percentage of recent trades that generated positive returns within 30 days of disclosure">
-                  Win Rate <span style={{ opacity: 0.5, fontSize: 10 }}>ⓘ</span>
+                <th style={{ padding: "10px 8px" }}>
+                  <span style={{ display: "inline-flex", alignItems: "center" }}>Win Rate<InfoTip text={CONGRESS_TIPS.win_rate} /></span>
                 </th>
                 <th style={{ padding: "10px 8px" }}>Action</th>
-                <th style={{ padding: "10px 8px" }}>Disclosure</th>
-                <th style={{ padding: "10px 8px" }}>Trade Date</th>
+                <th style={{ padding: "10px 8px" }}>
+                  <span style={{ display: "inline-flex", alignItems: "center" }}>Disclosure<InfoTip text={CONGRESS_TIPS.disclosure_date} /></span>
+                </th>
+                <th style={{ padding: "10px 8px" }}>
+                  <span style={{ display: "inline-flex", alignItems: "center" }}>Trade Date<InfoTip text={CONGRESS_TIPS.trade_date} /></span>
+                </th>
                 <th style={{ padding: "10px 8px" }}>Amount</th>
                 <th style={{ padding: "10px 8px" }}>Source</th>
               </tr>

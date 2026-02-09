@@ -1,151 +1,18 @@
 import { api } from "../lib/api";
-import { useState, useEffect, useRef } from "react";
-import { createPortal } from "react-dom";
+import { useState, useEffect } from "react";
 import type { PredictionResponse, PredictionSignal } from "../lib/types";
+import { InfoTip } from "./common/InfoTip";
+import { PREDICTION_TIPS } from "../lib/tooltips";
 
 interface PredictionCardProps {
   ticker: string;
   initialData?: PredictionResponse | null;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// EXPLANATIONS
-// ═══════════════════════════════════════════════════════════════════════════════
-
-const EXPLANATIONS: Record<string, string> = {
-  direction_accuracy: "Percentage of times the model correctly predicted whether the stock would go up or down over the forecast horizon.",
-  baseline_accuracy: "Accuracy if the model always predicted the majority outcome (usually UP). The model must beat this to be useful.",
-  accuracy_vs_baseline: "How much better (or worse) the model is vs. always predicting UP. Positive = model adds value over naive baseline.",
-  gated_accuracy: "Accuracy only on days where the model had a clear signal (probability above 58% or below 42%). This is the model's accuracy when it's most confident.",
-  information_coefficient: "Rank correlation between predicted probabilities and actual returns. IC > 0.05 is meaningful. IC > 0.10 is excellent. This is the gold-standard metric in quantitative finance.",
-  r_squared: "R² measures how well the model explains variance in returns. 0 = no power, 1 = perfect. In finance, even 0.01-0.05 can be meaningful.",
-  sharpe_ratio: "Risk-adjusted return = (Return - Risk Free Rate) / Volatility. >1 is good, >2 is very good. Measures return per unit of risk.",
-  calmar_ratio: "Annualized return divided by max drawdown. Measures how much return you get per unit of worst-case pain. More intuitive than Sharpe for most people.",
-  annual_return: "Strategy's projected yearly return based on backtest. Assumes similar market conditions continue.",
-  annual_volatility: "Standard deviation of returns annualized. Higher = more risk.",
-  max_drawdown: "Largest peak-to-trough decline during backtest. -10% means at worst you'd be down 10% from your high point.",
-  win_rate: "Percentage of trading days that were profitable. >50% needed for profit, but depends on avg win vs avg loss size.",
-  selectivity: "Percentage of days the model actually takes a position (vs. sitting flat). Lower selectivity = model is more selective, only trading when confident.",
-  buy_hold_sharpe: "Sharpe ratio if you simply bought and held. Compare to strategy Sharpe to see if the model adds value.",
-  buy_hold_return: "Total return from buying at start of test period and holding. The benchmark for any active strategy.",
-  alpha: "Excess return vs buy-and-hold. Positive alpha = strategy beat passive investing.",
-  signal: "Model's current conviction. BULLISH (>58% probability UP), BEARISH (<42% UP), NEUTRAL (42-58% — model says 'I don't know').",
-  probability: "The model's estimated probability that the stock goes UP over the forecast horizon. Based on calibrated GBM classifier probabilities.",
-  walk_forward: "Walk-forward validation trains on expanding windows and tests on subsequent periods with a purge gap to prevent look-ahead bias. Shows how the model performs across different market regimes.",
-  bootstrap_ci: "Bootstrap resampling of the test set to estimate the statistical uncertainty of direction accuracy. The 95% CI tells you the range where the true accuracy likely falls.",
-  factor_attribution: "Decomposes strategy returns into market exposure (beta) and genuine skill (alpha). Most ML strategies' 'alpha' is actually just leveraged beta.",
-  factor_alpha: "Annualized return after removing market exposure. Positive alpha = the model adds value beyond just following the market.",
-  factor_beta: "Market exposure of the strategy. Beta = 1.0 means it moves 1:1 with SPY.",
-  feature_importance: "How much each input contributes to predictions. Higher % = model relies more on this indicator.",
-  backtest: "Simulates how the confidence-gated strategy would have performed historically. Includes transaction costs and weekly rebalancing.",
-  model_health: "Key metadata about the model: what it was trained on, its prediction horizon, and the current market regime.",
-  rsi: "Relative Strength Index (0-100). >70 = overbought (may fall), <30 = oversold (may rise).",
-  macd: "Moving Average Convergence Divergence. Positive = bullish momentum, Negative = bearish.",
-  trend: "Based on 50-day vs 200-day moving average. Bullish = 50 > 200 (golden cross).",
-  volatility: "20-day rolling standard deviation of returns. Higher = bigger price swings.",
-  ma_ratio: "Current price relative to moving average. Positive = trading above average (bullish).",
-  volume_ratio: "Current volume vs 20-day average. >1 = higher than normal activity.",
-  bb_position: "Bollinger Band position. 0 = at the middle band. +1/-1 = at upper/lower band. Beyond +/-1 = extreme.",
-  vol_regime: "20-day vol / 60-day vol. >1.3 = volatility expanding, <0.7 = compressing.",
-};
-
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// INFO BUTTON (tooltip)
-// ═══════════════════════════════════════════════════════════════════════════════
-
 function InfoButton({ term }: { term: string }) {
-  const [show, setShow] = useState(false);
-  const [position, setPosition] = useState({ top: 0, left: 0 });
-  const buttonRef = useRef<HTMLButtonElement>(null);
-  const explanation = EXPLANATIONS[term];
-
-  useEffect(() => {
-    if (show && buttonRef.current) {
-      const rect = buttonRef.current.getBoundingClientRect();
-      setPosition({
-        top: rect.top - 10,
-        left: rect.left + rect.width / 2,
-      });
-    }
-  }, [show]);
-
+  const explanation = PREDICTION_TIPS[term];
   if (!explanation) return null;
-
-  return (
-    <>
-      <button
-        ref={buttonRef}
-        onClick={() => setShow(!show)}
-        onBlur={() => setTimeout(() => setShow(false), 200)}
-        style={{
-          width: 16,
-          height: 16,
-          borderRadius: "50%",
-          border: "1px solid #555",
-          background: show ? "#3b82f6" : "#333",
-          color: show ? "#fff" : "#999",
-          fontSize: 10,
-          fontWeight: 600,
-          cursor: "pointer",
-          display: "inline-flex",
-          alignItems: "center",
-          justifyContent: "center",
-          marginLeft: 6,
-          padding: 0,
-          transition: "all 0.15s ease",
-        }}
-      >
-        ?
-      </button>
-      {show && createPortal(
-        <>
-          <div
-            style={{
-              position: "fixed",
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              zIndex: 9998,
-            }}
-            onClick={() => setShow(false)}
-          />
-          <div style={{
-            position: "fixed",
-            top: position.top,
-            left: position.left,
-            transform: "translate(-50%, -100%)",
-            width: 300,
-            padding: 14,
-            background: "#0a0a0a",
-            border: "2px solid #3b82f6",
-            borderRadius: 8,
-            fontSize: 13,
-            lineHeight: 1.6,
-            color: "#ffffff",
-            zIndex: 9999,
-            boxShadow: "0 8px 32px rgba(0,0,0,1)",
-            textAlign: "left",
-          }}>
-            {explanation}
-            <div style={{
-              position: "absolute",
-              bottom: -8,
-              left: "50%",
-              transform: "translateX(-50%) rotate(45deg)",
-              width: 12,
-              height: 12,
-              background: "#0a0a0a",
-              borderRight: "2px solid #3b82f6",
-              borderBottom: "2px solid #3b82f6",
-            }} />
-          </div>
-        </>,
-        document.body
-      )}
-    </>
-  );
+  return <InfoTip text={explanation} />;
 }
 
 

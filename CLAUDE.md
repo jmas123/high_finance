@@ -370,13 +370,13 @@ When adding new fields to API responses:
 - **Virtual env:** `high_finance/.venv` (activate: `source .venv/bin/activate`)
 - **Docker:** Run from `infra/` directory (`cd infra && docker compose ...`)
 - **Frontend:** `cd web && npm run dev` (runs on port 5173)
-- **Database:** PostgreSQL via Docker, local connection: `postgresql://user:jude2000@localhost:5432/high_finance`
+- **Database:** PostgreSQL via Docker, local connection: `postgresql://user:$DB_PASSWORD@localhost:5432/high_finance`
 
 ## Common Commands
 
 ```bash
 # Run migrations (from high_finance/ dir)
-source .venv/bin/activate && DATABASE_URL="postgresql://user:jude2000@localhost:5432/high_finance" alembic upgrade head
+source .venv/bin/activate && DATABASE_URL="postgresql://user:$DB_PASSWORD@localhost:5432/high_finance" alembic upgrade head
 
 # Rebuild & restart API
 cd infra && docker compose build --no-cache api && docker compose up -d api

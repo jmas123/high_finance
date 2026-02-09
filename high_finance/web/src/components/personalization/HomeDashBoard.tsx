@@ -4,15 +4,19 @@ import { WatchlistCard } from "./WatchlistCard";
 import { projectsApi } from "../project/api";
 import type { ProjectSummary } from "../../lib/types";
 import { getRecentTickers, getWatchlist, getPortfolio, exportAllData, importAllData, clearAllData } from "./storage";
+import { InfoTip } from "../common/InfoTip";
+import { DASHBOARD_TIPS } from "../../lib/tooltips";
 
 interface HomeDashboardProps {
   onSelect: (ticker: string) => void;
   onOpenProject?: (projectId: number) => void;
+  isAuthenticated?: boolean;
 }
 
 export function HomeDashboard({
   onSelect,
   onOpenProject,
+  isAuthenticated = false,
 }: HomeDashboardProps) {
   const [recentTickers, setRecentTickers] = useState<string[]>([]);
   const [showDataMenu, setShowDataMenu] = useState(false);
@@ -22,13 +26,17 @@ export function HomeDashboard({
     setRecentTickers(getRecentTickers());
   }, []);
 
-  // Fetch active projects
+  // Fetch active projects (only when authenticated)
   useEffect(() => {
+    if (!isAuthenticated) {
+      setActiveProjects([]);
+      return;
+    }
     projectsApi
       .listProjects("active")
       .then((projects) => setActiveProjects(projects.slice(0, 5)))
       .catch(() => setActiveProjects([]));
-  }, []);
+  }, [isAuthenticated]);
 
   function handleExport() {
     const json = exportAllData();
@@ -365,9 +373,12 @@ function ProjectRow({
             borderRadius: 3,
             background: `${positionColors[project.position_type] || "#666"}20`,
             color: positionColors[project.position_type] || "#666",
+            display: "inline-flex",
+            alignItems: "center",
           }}
         >
           {project.position_type}
+          <InfoTip text={DASHBOARD_TIPS[project.position_type.toLowerCase()] || "Position type for this research project."} />
         </span>
       )}
     </div>

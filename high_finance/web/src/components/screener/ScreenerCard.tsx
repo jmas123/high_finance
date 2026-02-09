@@ -5,6 +5,8 @@ import type { ScreenerFilters, ScreenerResponse, SavedScreen } from "../../lib/t
 import { ScreenerFiltersPanel } from "./ScreenerFiltersPanel";
 import { ScreenerResultsTable } from "./ScreenerResultsTable";
 import { SavedScreensPanel } from "./SavedScreensPanel";
+import { InfoTip } from "../common/InfoTip";
+import { NAV_TIPS } from "../../lib/tooltips";
 
 const STORAGE_KEY = "hf_screener_filters";
 
@@ -181,8 +183,8 @@ export function ScreenerCard({ onSelectTicker }: Props) {
       }}>
         <div>
           <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>Stock Screener</h2>
-          <p style={{ margin: "4px 0 0", fontSize: 12, color: "#888" }}>
-            Find investment ideas by filtering on fundamentals, insider activity, and more
+          <p style={{ margin: "4px 0 0", fontSize: 12, color: "#888", display: "flex", alignItems: "center" }}>
+            Find investment ideas by filtering on fundamentals, insider activity, and more<InfoTip text={NAV_TIPS.screener} />
           </p>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
@@ -249,6 +251,7 @@ export function ScreenerCard({ onSelectTicker }: Props) {
         offset={filters.offset ?? 0}
         onPageChange={handlePageChange}
         universeTotal={universeTotal}
+        filters={filters}
       />
     </div>
   );

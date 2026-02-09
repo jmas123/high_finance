@@ -5,6 +5,7 @@ Endpoints for job management and monitoring.
 Requires admin authentication.
 """
 
+import secrets
 import time
 from datetime import datetime
 from typing import Annotated
@@ -131,7 +132,7 @@ def verify_admin(authorization: Annotated[str | None, Header()] = None) -> bool:
         )
 
     token = authorization.replace("Bearer ", "")
-    if token != admin_key:
+    if not secrets.compare_digest(token, admin_key):
         raise HTTPException(
             status_code=403,
             detail="Invalid admin API key",

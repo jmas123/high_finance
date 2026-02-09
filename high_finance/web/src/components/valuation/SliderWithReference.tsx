@@ -2,6 +2,7 @@ import type { SliderReference } from "../../lib/types";
 import type { Warning } from "../../lib/types";
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
+import { InfoTip } from "../common/InfoTip";
 
 function ReferenceMarker({
   reference,
@@ -134,98 +135,6 @@ function ReferenceMarker({
   );
 }
 
-function LabelTooltip({
-  tooltip,
-  triggerRef,
-  onClose,
-}: {
-  tooltip: string;
-  triggerRef: React.RefObject<HTMLDivElement | null>;
-  onClose: () => void;
-}) {
-  const [position, setPosition] = useState({ top: 0, left: 0, flipped: false });
-
-  useEffect(() => {
-    if (triggerRef.current) {
-      const rect = triggerRef.current.getBoundingClientRect();
-      const tooltipHeight = 100; // Approximate tooltip height
-      const spaceAbove = rect.top;
-      const shouldFlip = spaceAbove < tooltipHeight + 20;
-      
-      setPosition({
-        top: shouldFlip ? rect.bottom + 10 : rect.top - 10,
-        left: Math.max(160, Math.min(window.innerWidth - 160, rect.left + rect.width / 2)),
-        flipped: shouldFlip,
-      });
-    }
-  }, [triggerRef]);
-
-  return createPortal(
-    <>
-      {/* Backdrop */}
-      <div 
-        style={{
-          position: "fixed",
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          zIndex: 9998,
-        }}
-        onClick={onClose}
-      />
-      {/* Tooltip */}
-      <div style={{
-        position: "fixed",
-        top: position.top,
-        left: position.left,
-        transform: position.flipped ? "translate(-50%, 0)" : "translate(-50%, -100%)",
-        width: 300,
-        padding: 14,
-        background: "#0a0a0a",
-        border: "2px solid #3b82f6",
-        borderRadius: 8,
-        fontSize: 13,
-        lineHeight: 1.6,
-        color: "#ffffff",
-        zIndex: 9999,
-        boxShadow: "0 8px 32px rgba(0,0,0,1)",
-        textAlign: "left",
-      }}>
-        {tooltip}
-        {/* Arrow */}
-        <div style={{
-          position: "absolute",
-          ...(position.flipped 
-            ? {
-                top: -8,
-                left: "50%",
-                transform: "translateX(-50%) rotate(45deg)",
-                borderLeft: "2px solid #3b82f6",
-                borderTop: "2px solid #3b82f6",
-                borderRight: "none",
-                borderBottom: "none",
-              }
-            : {
-                bottom: -8,
-                left: "50%",
-                transform: "translateX(-50%) rotate(45deg)",
-                borderRight: "2px solid #3b82f6",
-                borderBottom: "2px solid #3b82f6",
-                borderLeft: "none",
-                borderTop: "none",
-              }
-          ),
-          width: 12,
-          height: 12,
-          background: "#0a0a0a",
-        }} />
-      </div>
-    </>,
-    document.body
-  );
-}
-
 export function SliderWithReferences({
   label,
   value,
@@ -247,10 +156,8 @@ export function SliderWithReferences({
   paramWarnings: Warning[];
   tooltip?: string;
 }) {
-  const [showLabelTooltip, setShowLabelTooltip] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState("");
-  const labelRef = useRef<HTMLDivElement>(null);
   const hasWarning = paramWarnings.some(w => w.severity === "warning" || w.severity === "error");
   const hasError = paramWarnings.some(w => w.severity === "error");
 
@@ -287,22 +194,9 @@ export function SliderWithReferences({
       background: hasError ? "rgba(239, 68, 68, 0.05)" : hasWarning ? "rgba(245, 158, 11, 0.05)" : "rgba(255,255,255,0.02)" 
     }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
-        <div 
-          ref={labelRef}
-          style={{ fontSize: 12, opacity: 0.7, position: "relative", cursor: tooltip ? "help" : "default" }}
-          onClick={() => tooltip && setShowLabelTooltip(!showLabelTooltip)}
-        >
+        <div style={{ fontSize: 12, opacity: 0.7, display: "flex", alignItems: "center" }}>
           {label}
-          {tooltip && <span style={{ marginLeft: 4, opacity: 0.5 }}>ⓘ</span>}
-          
-          {/* Label tooltip */}
-          {showLabelTooltip && tooltip && (
-            <LabelTooltip 
-              tooltip={tooltip} 
-              triggerRef={labelRef} 
-              onClose={() => setShowLabelTooltip(false)} 
-            />
-          )}
+          {tooltip && <InfoTip text={tooltip} />}
         </div>
         {/* Tappable value - click to edit directly */}
         {isEditing ? (

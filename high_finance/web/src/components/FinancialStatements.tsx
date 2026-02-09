@@ -55,16 +55,19 @@ function formatValue(value: number | undefined): string {
 }
 
 function formatDate(dateStr: string, period: "quarterly" | "annual"): string {
-  const d = new Date(dateStr);
-  const year = d.getFullYear();
-  const month = d.getMonth(); // 0-11
+  // Parse YYYY-MM-DD directly to avoid timezone-dependent Date parsing.
+  // new Date("2024-06-30") is UTC midnight — in UTC+ timezones (e.g. Australia)
+  // getMonth() returns 6 (July) instead of 5 (June), mislabeling Q2 as Q3.
+  const [yearStr, monthStr] = dateStr.split("-");
+  const year = parseInt(yearStr, 10);
+  const month = parseInt(monthStr, 10); // 1-12
 
   if (period === "annual") {
-    return d.toLocaleDateString("en-US", { year: "numeric", month: "short" });
+    const names = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    return `${names[month - 1]} ${year}`;
   }
 
-  const q = Math.floor(month / 3) + 1;
-  return `Q${q} ${year}`;
+  return `Q${Math.ceil(month / 3)} ${year}`;
 }
 
 
@@ -482,6 +485,14 @@ const statementData =
             ))}
           </tbody>
         </table>
+
+        {/* Footnote for excluded stub quarters */}
+        {period === "quarterly" && data.quarterly_excluded && data.quarterly_excluded.length > 0 && (
+          <div style={{ marginTop: 10, fontSize: 12, color: "#888", fontStyle: "italic" }}>
+            {data.quarterly_excluded.map(d => formatDate(d, "quarterly")).join(", ")}
+            {" "}excluded — only analyst estimates available, not full reported financials
+          </div>
+        )}
       </div>
     </div>
   );

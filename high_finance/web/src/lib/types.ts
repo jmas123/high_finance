@@ -164,6 +164,65 @@ export type EarningsHistoryEntry = {
   one_day_move: number | null;
   five_day_move: number | null;
 };
+// ── Earnings Press Release Analysis (8-K Item 2.02) ────────────────────────
+
+export type EarningsMetric = {
+  value: number | string | null;
+  unit: "$" | "%" | "#" | "x" | "" | null;
+  yoy_change_pct: number | null;
+  vs_estimate: "beat" | "miss" | "inline" | null;
+  surprise_pct: number | null;
+  note: string | null;
+};
+
+export type EarningsGuidance = {
+  has_guidance: boolean;
+  next_quarter_revenue: { low: number | null; high: number | null } | null;
+  next_quarter_eps: { low: number | null; high: number | null } | null;
+  full_year_revenue: { low: number | null; high: number | null } | null;
+  full_year_eps: { low: number | null; high: number | null } | null;
+  capex: string | null;
+  other_forward_items: string[] | null;
+  guidance_tone: "optimistic" | "cautious" | "neutral" | "pessimistic" | null;
+  guidance_summary: string | null;
+};
+
+export type EarningsSentiment = {
+  overall: "positive" | "negative" | "neutral" | "mixed";
+  confidence: number | null;
+  confidence_basis: string | null;
+  tone_vs_prior: "more_optimistic" | "more_cautious" | "unchanged" | null;
+  key_positive_signals: string[];
+  key_concerns: string[];
+};
+
+export type EarningsKeyQuote = {
+  speaker: string;
+  quote: string;
+  context: string | null;
+};
+
+export type EarningsAnalysisResult = {
+  quarter: string;
+  filing_date: string;
+  filing_url: string | null;
+  reported_results: Record<string, EarningsMetric>;
+  other_metrics: Array<{ name: string; value: string; unit?: string | null; yoy_change_pct?: number | null; note: string | null }>;
+  guidance: EarningsGuidance | null;
+  sentiment: EarningsSentiment;
+  key_quotes: EarningsKeyQuote[];
+  summary: string;
+  model?: string | null;
+  input_tokens?: number | null;
+  output_tokens?: number | null;
+};
+
+export type EarningsAnalysisResponse = {
+  analysis: EarningsAnalysisResult | null;
+  id: number | null;
+  source?: string;
+};
+
 export type Politician = {
   id: number;
   name: string;
@@ -249,6 +308,7 @@ export type FinancialStatementsPeriod = {
 export type FinancialStatementsResponse = {
   annual: FinancialStatementsPeriod;
   quarterly: FinancialStatementsPeriod;
+  quarterly_excluded?: string[];  // dates dropped because yfinance returned only estimates
 };
 
 export type NewsHeadline = {
@@ -702,6 +762,23 @@ export type Warning = {
   severity: "info" | "warning" | "error";
   message: string;
   suggestion: string | null;
+};
+
+// AI DCF Suggestion types
+export type AISuggestionParam = {
+  value: number | null;
+  confidence: "high" | "medium" | "low";
+  reasoning: string;
+};
+
+export type AISuggestion = {
+  growth: AISuggestionParam;
+  margin: AISuggestionParam;
+  wacc: AISuggestionParam;
+  tax: AISuggestionParam;
+  terminal_g: AISuggestionParam;
+  summary: string;
+  valuation_gap_note: string | null;
 };
 
 export type TradeContextReason = { type: string; title: string; detail: string };
@@ -1485,4 +1562,129 @@ export type PredictionResponse = {
     bb_position: number;
     vol_regime: number;
   };
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CONGRESS BACKTEST TYPES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export type BacktestTradeResult = {
+  ticker: string;
+  transaction_type: string;
+  disclosure_date: string;
+  entry_date: string;
+  exit_date: string;
+  entry_price: number;
+  exit_price: number;
+  return_pct: number;
+  hold_days_actual: number;
+  cohort_return_pct?: number | null;
+};
+
+export type EquityCurvePoint = {
+  date: string;
+  portfolio_value: number;
+  spy_value: number;
+};
+
+export type BacktestSummary = {
+  politician_id: number;
+  politician_name: string;
+  party: string | null;
+  chamber: string | null;
+  state: string | null;
+  delay_days: number;
+  hold_days: number;
+  num_trades: number;
+  num_positions?: number;
+  num_cohorts?: number;
+  num_trades_priced: number;
+  total_return_pct: number;
+  annualized_return_pct: number | null;
+  win_rate: number;
+  max_drawdown_pct: number;
+  sharpe_ratio: number | null;
+  spy_total_return_pct: number;
+  spy_annualized_return_pct: number | null;
+  alpha_pct: number;
+  best_trade: BacktestTradeResult | null;
+  worst_trade: BacktestTradeResult | null;
+  first_trade_date: string | null;
+  last_trade_date: string | null;
+  grade: string | null;
+  skip_reasons?: {
+    no_entry_price: number;
+    no_exit_price: number;
+    invalid_return: number;
+  } | null;
+};
+
+export type BacktestResponse = {
+  summary: BacktestSummary;
+  equity_curve: EquityCurvePoint[];
+  trades: BacktestTradeResult[];
+};
+
+export type LeaderboardEntry = {
+  politician_id: number;
+  politician_name: string;
+  party: string | null;
+  chamber: string | null;
+  state: string | null;
+  num_trades_priced: number;
+  num_cohorts?: number;
+  total_return_pct: number;
+  avg_return_per_trade_pct?: number;
+  annualized_return_pct: number | null;
+  win_rate: number;
+  max_drawdown_pct: number;
+  alpha_pct: number;
+  grade: string | null;
+  first_trade_date?: string | null;
+  last_trade_date?: string | null;
+};
+
+export type LeaderboardResponse = {
+  delay_days: number;
+  hold_days: number;
+  entries: LeaderboardEntry[];
+  computed_at: string;
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// AI RISK ASSESSMENT TYPES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export type RiskFactor = {
+  category: string;
+  title: string;
+  severity: "low" | "medium" | "high";
+  detail: string;
+  monte_carlo_impact: string;
+};
+
+export type TailoredScenario = {
+  name: string;
+  narrative: string;
+  parameters: {
+    vol_multiplier: number;
+    horizon_days: number;
+    include_earnings_shock: boolean;
+  };
+  estimated_likelihood: "low" | "medium" | "plausible";
+};
+
+export type AIRiskAssessment = {
+  overall_risk_tier: "low" | "moderate" | "elevated" | "high";
+  summary: string;
+  risk_factors: RiskFactor[];
+  tailored_scenarios: TailoredScenario[];
+  suggested_base_parameters: {
+    vol_multiplier: number;
+    horizon_days: number;
+    rationale: string;
+  };
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
 };

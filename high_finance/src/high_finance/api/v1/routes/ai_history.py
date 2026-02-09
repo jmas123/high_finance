@@ -65,6 +65,22 @@ class AIHistoryStats(BaseModel):
     budget_remaining_usd: float
 
 
+def _make_preview(content: str | None, analysis_type: str | None) -> str:
+    """Generate a human-readable preview for list display."""
+    if not content:
+        return ""
+    # JSON-based analysis types — extract the summary field
+    if analysis_type in ("dcf_suggestion", "risk_assessment", "earnings_analysis"):
+        try:
+            import json
+            data = json.loads(content)
+            if isinstance(data, dict) and data.get("summary"):
+                return data["summary"][:200]
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return content[:200]
+
+
 # ── GET /ai-history — list all AI analyses ───────────────────────────────────
 
 @router.get("", response_model=List[AIHistoryItem])
@@ -94,7 +110,7 @@ async def list_ai_history(
             id=m.id,
             ticker=m.ticker,
             analysis_type=m.analysis_type or "memo",
-            content_preview=m.content[:200] if m.content else "",
+            content_preview=_make_preview(m.content, m.analysis_type),
             created_at=m.created_at.isoformat() if m.created_at else "",
         )
         for m in memos

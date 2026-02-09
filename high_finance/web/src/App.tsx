@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback, useReducer, lazy, Suspense, useRef } from "react";
-import { Routes, Route, useNavigate, useParams, useLocation, Link } from "react-router-dom";
+import { Routes, Route, Navigate, useNavigate, useParams, useLocation, Link } from "react-router-dom";
 import { api } from "./lib/api";
 import { projectsApi } from "./components/project/api";
+import { InfoTip } from "./components/common/InfoTip";
+import { NAV_TIPS } from "./lib/tooltips";
 import { CompanyHeader } from "./components/CompanyHeader";
 import { FundamentalsCard } from "./components/FundamentalsCard";
 import { EarningsCard } from "./components/earnings/EarningsCard";
@@ -79,10 +81,24 @@ const MemoModal = lazy(() =>
 const AIHistoryView = lazy(() =>
   import("./components/ai/AIHistoryView").then(m => ({ default: m.AIHistoryView }))
 );
+const CongressLeaderboard = lazy(() =>
+  import("./components/politicians/CongressLeaderboard").then(m => ({ default: m.CongressLeaderboard }))
+);
+const BacktestDetailCard = lazy(() =>
+  import("./components/politicians/BacktestDetailCard").then(m => ({ default: m.BacktestDetailCard }))
+);
+const EarningsAnalysisCard = lazy(() =>
+  import("./components/earnings/EarningsAnalysisCard").then(m => ({ default: m.EarningsAnalysisCard }))
+);
+const ResetPasswordPage = lazy(() =>
+  import("./components/auth/ResetPasswordPage").then(m => ({ default: m.ResetPasswordPage }))
+);
+const OnboardingView = lazy(() => import("./components/onboarding/OnboardingView"));
 
 // ── Calendar ────────────────────────────────────────────────────────────────
 import { CalendarPopupButton } from "./components/calendar";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { TickerPageSkeleton, CardSkeleton, ChartSkeleton } from "./components/Skeleton";
 
 // ── Private Companies ─────────────────────────────────────────────────────
 import { PrivateCompanyList } from "./components/private/PrivateCompanyList";
@@ -242,8 +258,10 @@ export default function App() {
     if (location.pathname === "/screener") return "screener";
     if (location.pathname.startsWith("/projects")) return "projects";
     if (location.pathname === "/signals") return "signals";
+    if (location.pathname.startsWith("/congress")) return "congress";
     if (location.pathname.startsWith("/private")) return "private";
     if (location.pathname === "/ai-history") return "ai-history";
+    if (location.pathname === "/onboarding") return "onboarding";
     return "dashboard";
   };
 
@@ -287,19 +305,25 @@ export default function App() {
             Dashboard
           </Link>
           <Link to="/screener" style={getNavLinkStyle(activeTab === "screener")}>
-            Screener
+            Screener<InfoTip text={NAV_TIPS.screener} />
           </Link>
           <Link to="/projects" style={getNavLinkStyle(activeTab === "projects")}>
             Projects
           </Link>
           <Link to="/signals" style={getNavLinkStyle(activeTab === "signals")}>
-            Signals
+            Signals<InfoTip text={NAV_TIPS.signals} />
+          </Link>
+          <Link to="/congress" style={getNavLinkStyle(activeTab === "congress")}>
+            Congress<InfoTip text={NAV_TIPS.congress} />
           </Link>
           <Link to="/private" style={getNavLinkStyle(activeTab === "private")}>
             Private Companies
           </Link>
           <Link to="/ai-history" style={getNavLinkStyle(activeTab === "ai-history")}>
             AI History
+          </Link>
+          <Link to="/onboarding" style={getNavLinkStyle(activeTab === "onboarding")}>
+            Onboarding
           </Link>
         </div>
 
@@ -313,9 +337,13 @@ export default function App() {
               <Route path="/projects" element={<ProjectsListView />} />
               <Route path="/projects/:projectId" element={<ProjectView />} />
               <Route path="/signals" element={<SignalsView />} />
+              <Route path="/congress" element={<CongressView />} />
+              <Route path="/congress/:politicianId" element={<CongressDetailView />} />
               <Route path="/ai-history" element={<AIHistoryView />} />
               <Route path="/private" element={<PrivateCompanyList />} />
               <Route path="/private/:slug" element={<PrivateCompanyProfileView />} />
+              <Route path="/onboarding" element={<OnboardingView />} />
+              <Route path="/reset-password" element={<ResetPasswordPage />} />
               <Route path="*" element={<NotFoundView />} />
             </Routes>
           </Suspense>
@@ -360,11 +388,13 @@ function NotFoundView() {
 // ══════════════════════════════════════════════════════════════════════════════
 function DashboardView() {
   const navigate = useNavigate();
+  const { isAuthenticated } = useAuth();
 
   return (
     <HomeDashboard
       onSelect={(ticker) => navigate(`/quote/${ticker.toUpperCase()}`)}
       onOpenProject={(projectId) => navigate(`/projects/${projectId}`)}
+      isAuthenticated={isAuthenticated}
     />
   );
 }
@@ -387,10 +417,32 @@ function ScreenerView() {
 // ══════════════════════════════════════════════════════════════════════════════
 function SignalsView() {
   return (
-    <Suspense fallback={<div style={styles.lazyFallback}>Loading signals...</div>}>
+    <Suspense fallback={<CardSkeleton />}>
       <div style={{ marginBottom: 20 }}>
         <NotificationsCard />
       </div>
+    </Suspense>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// CONGRESS VIEW (/congress)
+// ══════════════════════════════════════════════════════════════════════════════
+function CongressView() {
+  return (
+    <Suspense fallback={<CardSkeleton />}>
+      <CongressLeaderboard />
+    </Suspense>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// CONGRESS DETAIL VIEW (/congress/:politicianId)
+// ══════════════════════════════════════════════════════════════════════════════
+function CongressDetailView() {
+  return (
+    <Suspense fallback={<CardSkeleton />}>
+      <BacktestDetailCard />
     </Suspense>
   );
 }
@@ -402,6 +454,7 @@ function ProjectsListView() {
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [showCreateModal, setShowCreateModal] = useState(false);
 
   return (
     <>
@@ -420,20 +473,16 @@ function ProjectsListView() {
       )}
       <ProjectListCard
         onOpenProject={(projectId) => navigate(`/projects/${projectId}`)}
-        onCreateProject={(ticker?: string) => {
-          const t = ticker || prompt("Ticker for new project:");
-          if (!t) return;
-          const title = prompt("Project title:", `${t.toUpperCase()} – Research Project`);
-          if (!title) return;
-          projectsApi
-            .createProject({ ticker: t.toUpperCase(), title })
-            .then((p) => {
-              setRefreshKey((n) => n + 1);
-              navigate(`/projects/${p.id}`);
-            })
-            .catch((e) => setError(e instanceof Error ? e.message : "Failed to create project"));
-        }}
+        onCreateProject={() => setShowCreateModal(true)}
         refreshKey={refreshKey}
+      />
+      <CreateProjectModal
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onCreated={(p) => {
+          setRefreshKey((n) => n + 1);
+          navigate(`/projects/${p.id}`);
+        }}
       />
     </>
   );
@@ -535,7 +584,9 @@ type TickerAction =
   | { type: 'SET_ERROR'; error: string }
   | { type: 'UPDATE_PRICES'; prices: PriceEntry[] }
   | { type: 'UPDATE_COMPS'; comps: CompsResponse }
-  | { type: 'DISMISS_WARNINGS' };
+  | { type: 'DISMISS_WARNINGS' }
+  | { type: 'RETRY_START' }
+  | { type: 'RETRY_SUCCESS'; updates: Partial<TickerState>; clearedWarnings: string[] };
 
 const initialTickerState: TickerState = {
   company: null,
@@ -608,6 +659,14 @@ function tickerReducer(state: TickerState, action: TickerAction): TickerState {
       return { ...state, comps: action.comps };
     case 'DISMISS_WARNINGS':
       return { ...state, dataWarnings: [] };
+    case 'RETRY_START':
+      return state; // No-op for state — retrying flag is local useState
+    case 'RETRY_SUCCESS': {
+      const remaining = state.dataWarnings.filter(
+        w => !action.clearedWarnings.includes(w)
+      );
+      return { ...state, ...action.updates, dataWarnings: remaining };
+    }
     default:
       return state;
   }
@@ -616,9 +675,19 @@ function tickerReducer(state: TickerState, action: TickerAction): TickerState {
 // ══════════════════════════════════════════════════════════════════════════════
 // TICKER VIEW (/quote/:ticker)
 // ══════════════════════════════════════════════════════════════════════════════
+// Ticker format: 1-10 chars, alphanumeric + dot + hyphen (e.g. AAPL, BRK.B, BF-B)
+const TICKER_RE = /^[A-Z0-9.\-]{1,10}$/;
+
 function TickerView() {
   const { ticker: urlTicker } = useParams<{ ticker: string }>();
   const navigate = useNavigate();
+
+  // Validate ticker from URL — redirect to home if invalid
+  const normalizedTicker = urlTicker?.toUpperCase() ?? "";
+  if (!TICKER_RE.test(normalizedTicker)) {
+    return <Navigate to="/" replace />;
+  }
+
   const { isAuthenticated } = useAuth();
   const {
     addToWatchlist,
@@ -632,11 +701,14 @@ function TickerView() {
     company, fundamentals, prices, leadership, financials, comps,
     riskData, valuationData, institutionalFlow, insiderSummary,
     politicianTrades, optionsOverview, ivContext, earningsData, newsData,
-    predictionData, macroIndicators, sectorsData, rateImpact, loading, error, dataWarnings: _dataWarnings,
+    predictionData, macroIndicators, sectorsData, rateImpact, loading, error, dataWarnings,
   } = state;
 
   const [showAddPosition, setShowAddPosition] = useState(false);
   const [showMemoModal, setShowMemoModal] = useState(false);
+  const [showCreateProjectModal, setShowCreateProjectModal] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+  const [warningExpanded, setWarningExpanded] = useState(false);
 
   // Check if we came from a project (for return button)
   const returnProjectId = sessionStorage.getItem("hf_return_project");
@@ -773,6 +845,71 @@ function TickerView() {
     }
   }, [ticker, isLoadingMorePrices, prices]);
 
+  // ── Retry failed sections ───────────────────────────────────────────────
+  const SECTION_LABELS: Record<string, string> = {
+    risk: "Risk Analysis", valuation: "Valuation (DCF)", prediction: "ML Prediction",
+    earnings: "Earnings", news: "News", financials: "Financial Statements",
+    institutional_flow: "Institutional Flow", insider_trades: "Insider Trades",
+    insider_summary: "Insider Summary", options_overview: "Options Overview",
+    iv_context: "IV Context", politician_trades: "Politician Trades",
+    leadership: "Leadership", prices: "Price History", comps: "Comparables",
+  };
+
+  const retryFailedSections = useCallback(async () => {
+    if (!ticker || retrying || dataWarnings.length === 0) return;
+    setRetrying(true);
+
+    // Parse warning strings → error keys (e.g. "risk: Timed out" → "risk")
+    const failedKeys = dataWarnings.map(w => w.split(":")[0].trim());
+
+    // Map error key → { apiCall, stateField }
+    const retryMap: Record<string, { call: () => Promise<unknown>; field: keyof TickerState }> = {
+      risk:               { call: () => api.risk(ticker),               field: "riskData" },
+      valuation:          { call: () => api.valuation(ticker),          field: "valuationData" },
+      prediction:         { call: () => api.prediction(ticker),         field: "predictionData" },
+      earnings:           { call: () => api.earnings(ticker),           field: "earningsData" },
+      news:               { call: () => api.news(ticker),               field: "newsData" },
+      financials:         { call: () => api.financials(ticker),         field: "financials" },
+      institutional_flow: { call: () => api.institutionalFlow(ticker),  field: "institutionalFlow" },
+      insider_trades:     { call: () => api.insiderTrades(ticker),      field: "insiderTrades" as keyof TickerState },
+      insider_summary:    { call: () => api.insiderSummary(ticker),     field: "insiderSummary" },
+      options_overview:   { call: () => api.optionsOverview(ticker),    field: "optionsOverview" },
+      iv_context:         { call: () => api.ivContext(ticker),          field: "ivContext" },
+      politician_trades:  { call: () => api.politicianTrades(ticker),   field: "politicianTrades" },
+      leadership:         { call: () => api.leadership(ticker),         field: "leadership" },
+      prices:             { call: () => api.prices(ticker),             field: "prices" },
+      comps:              { call: () => api.comps(ticker, {}),          field: "comps" },
+    };
+
+    const keysToRetry = failedKeys.filter(k => k in retryMap);
+    const promises = keysToRetry.map(async (key) => {
+      try {
+        const data = await retryMap[key].call();
+        return { key, field: retryMap[key].field, data, ok: true as const };
+      } catch {
+        return { key, ok: false as const };
+      }
+    });
+
+    const results = await Promise.allSettled(promises);
+
+    const updates: Partial<TickerState> = {};
+    const clearedWarnings: string[] = [];
+
+    for (const result of results) {
+      if (result.status === "fulfilled" && result.value.ok) {
+        const { key, field, data } = result.value;
+        (updates as Record<string, unknown>)[field] = data;
+        // Find the original warning string for this key
+        const warning = dataWarnings.find(w => w.startsWith(key + ":"));
+        if (warning) clearedWarnings.push(warning);
+      }
+    }
+
+    dispatch({ type: "RETRY_SUCCESS", updates, clearedWarnings });
+    setRetrying(false);
+  }, [ticker, retrying, dataWarnings]);
+
   // ── Personalization handlers ─────────────────────────────────────────────
   const inWatchlist = ticker ? isInWatchlist(ticker) : false;
 
@@ -796,22 +933,6 @@ function TickerView() {
     navigate("/");
   }
 
-  // ── Research Projects handlers ───────────────────────────────────────────
-  async function createProjectFromTicker() {
-    if (!ticker || !company) return;
-    const title = prompt("Project title:", `${ticker} – Research Project`);
-    if (!title) return;
-    try {
-      const p = await projectsApi.createProject({
-        ticker: ticker,
-        title,
-      });
-      navigate(`/projects/${p.id}`);
-    } catch (e) {
-      dispatch({ type: 'SET_ERROR', error: e instanceof Error ? e.message : "Failed to create project" });
-    }
-  }
-
   function returnToProject() {
     if (!returnProjectId) return;
     sessionStorage.removeItem("hf_return_project");
@@ -820,12 +941,7 @@ function TickerView() {
 
   // ── Loading State ─────────────────────────────────────────────────────────
   if (loading) {
-    return (
-      <div style={styles.tickerLoading}>
-        <div style={{ fontSize: 48, marginBottom: 20 }}>⏳</div>
-        <div style={{ fontSize: 18 }}>Loading {ticker}...</div>
-      </div>
-    );
+    return <TickerPageSkeleton />;
   }
 
   if (!company || !fundamentals) {
@@ -893,7 +1009,7 @@ function TickerView() {
         {isStock && (
           <SaveToProjectButton
             ticker={ticker}
-            onCreateNew={createProjectFromTicker}
+            onCreateNew={() => setShowCreateProjectModal(true)}
             onOpenProject={(projectId) => navigate(`/projects/${projectId}`)}
           />
         )}
@@ -962,6 +1078,65 @@ function TickerView() {
         </button>
       </div>
 
+      {/* ── Failed Sections Warning Banner ──────────────────────── */}
+      {dataWarnings.length > 0 && (
+        <div style={{
+          background: "#451a0320", border: "1px solid #78350f",
+          borderRadius: 8, padding: "10px 14px", marginBottom: 16,
+          display: "flex", flexDirection: "column", gap: 8,
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ color: "#f59e0b", fontSize: 14, flex: 1 }}>
+              {dataWarnings.length} section{dataWarnings.length > 1 ? "s" : ""} failed to load
+              <button
+                onClick={() => setWarningExpanded(!warningExpanded)}
+                style={{
+                  background: "none", border: "none", color: "#f59e0b",
+                  cursor: "pointer", fontSize: 12, marginLeft: 6, textDecoration: "underline",
+                }}
+              >
+                {warningExpanded ? "hide" : "show"}
+              </button>
+            </span>
+            <button
+              onClick={retryFailedSections}
+              disabled={retrying}
+              style={{
+                background: "#78350f", border: "1px solid #92400e",
+                borderRadius: 6, color: "#fbbf24", fontSize: 12, fontWeight: 600,
+                padding: "4px 12px", cursor: retrying ? "wait" : "pointer",
+                opacity: retrying ? 0.7 : 1,
+              }}
+            >
+              {retrying ? "Retrying..." : "Retry Failed"}
+            </button>
+            <button
+              onClick={() => dispatch({ type: "DISMISS_WARNINGS" })}
+              style={{
+                background: "none", border: "none", color: "#78350f",
+                cursor: "pointer", fontSize: 16, padding: "0 4px",
+              }}
+              title="Dismiss"
+            >
+              x
+            </button>
+          </div>
+          {warningExpanded && (
+            <ul style={{ margin: 0, paddingLeft: 20, color: "#d97706", fontSize: 12 }}>
+              {dataWarnings.map(w => {
+                const key = w.split(":")[0].trim();
+                const reason = w.slice(w.indexOf(":") + 1).trim();
+                return (
+                  <li key={key} style={{ marginBottom: 2 }}>
+                    <strong>{SECTION_LABELS[key] || key}</strong>: {reason}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      )}
+
       {/* ── Inline Add Position Form ────────────────────────────── */}
       {showAddPosition && (
         <AddPositionInline
@@ -973,7 +1148,7 @@ function TickerView() {
 
       {/* Price Chart - Always show */}
       {prices.length > 0 && (
-        <Suspense fallback={<div style={styles.lazyFallback}>Loading chart...</div>}>
+        <Suspense fallback={<ChartSkeleton />}>
           <div style={styles.cardContainer}>
             <PriceChartWithDrawings
               data={prices}
@@ -993,14 +1168,14 @@ function TickerView() {
       {isStock && (
         <>
           {/* ML Prediction */}
-          <Suspense fallback={<div style={styles.lazyFallback}>Loading prediction...</div>}>
+          <Suspense fallback={<CardSkeleton />}>
             <div style={{ marginBottom: 20 }}>
               <PredictionCard key={`pred-${ticker}`} ticker={ticker} initialData={predictionData} />
             </div>
           </Suspense>
 
           {/* DCF + Risk (side by side) */}
-          <Suspense fallback={<div style={styles.lazyFallback}>Loading valuation & risk...</div>}>
+          <Suspense fallback={<div style={styles.gridTwoCol}><CardSkeleton /><CardSkeleton /></div>}>
             <div style={styles.gridTwoCol}>
               <DCFCard
                 key={`dcf-${ticker}`}
@@ -1013,7 +1188,7 @@ function TickerView() {
           </Suspense>
 
           {/* Fundamentals + Institutional Flow */}
-          <Suspense fallback={<div style={styles.lazyFallback}>Loading...</div>}>
+          <Suspense fallback={<div style={styles.gridTwoCol}><CardSkeleton height={160} /><CardSkeleton height={160} /></div>}>
             <div style={styles.gridTwoCol}>
               <FundamentalsCard data={fundamentals} />
               <InstitutionalFlowCard key={`inst-${ticker}`} ticker={ticker} initialData={institutionalFlow} />
@@ -1022,7 +1197,7 @@ function TickerView() {
 
           {/* Comps Table */}
           {comps && ticker && (
-            <Suspense fallback={<div style={styles.lazyFallback}>Loading comps...</div>}>
+            <Suspense fallback={<CardSkeleton height={200} />}>
               <div style={{ marginBottom: 16 }}>
                 <CompsTable
                   data={comps}
@@ -1059,7 +1234,7 @@ function TickerView() {
           </div>
 
           {/* Insider + Politicians */}
-          <Suspense fallback={<div style={styles.lazyFallback}>Loading...</div>}>
+          <Suspense fallback={<div style={styles.gridTwoCol}><CardSkeleton height={160} /><CardSkeleton height={160} /></div>}>
             <div style={styles.gridTwoCol}>
               <InsiderTradingCard key={`insider-${ticker}`} ticker={ticker} initialData={insiderSummary} />
               <PoliticianTradesCard key={`pol-${ticker}`} ticker={ticker} initialData={politicianTrades} />
@@ -1073,6 +1248,13 @@ function TickerView() {
           <div style={{ marginBottom: 20 }}>
             <EarningsCard key={`earnings-${ticker}`} ticker={ticker} initialData={earningsData} />
           </div>
+
+          {/* Earnings Press Release AI Analysis */}
+          <Suspense fallback={<CardSkeleton />}>
+            <div style={{ marginBottom: 20 }}>
+              <EarningsAnalysisCard ticker={ticker} isAuthenticated={isAuthenticated} />
+            </div>
+          </Suspense>
         </>
       )}
 
@@ -1087,7 +1269,7 @@ function TickerView() {
           </div>
 
           {/* Risk Card - Works for ETFs too */}
-          <Suspense fallback={<div style={styles.lazyFallback}>Loading risk analysis...</div>}>
+          <Suspense fallback={<CardSkeleton />}>
             <div style={{ marginBottom: 20 }}>
               <RiskCard key={`risk-${ticker}`} ticker={ticker} initialData={riskData} />
             </div>
@@ -1103,14 +1285,14 @@ function TickerView() {
       <NewsCard ticker={ticker} initialData={newsData} />
 
       {/* Options - Works for both (most ETFs have options) */}
-      <Suspense fallback={<div style={styles.lazyFallback}>Loading options flow...</div>}>
+      <Suspense fallback={<CardSkeleton />}>
         <div style={{ marginBottom: 20 }}>
           <OptionsFlowCard key={`options-${ticker}`} ticker={ticker} initialData={optionsOverview} />
         </div>
       </Suspense>
 
       {/* Option Decay Simulator - Works for both (lazy loaded) */}
-      <Suspense fallback={<div style={styles.lazyFallback}>Loading decay simulator...</div>}>
+      <Suspense fallback={<CardSkeleton />}>
         <div style={{ marginBottom: 20 }}>
           <OptionDecaySimulator
             key={`decay-${ticker}`}
@@ -1123,7 +1305,7 @@ function TickerView() {
 
       {/* Financial Statements - Stock only */}
       {isStock && financials && (
-        <Suspense fallback={<div style={styles.lazyFallback}>Loading financials...</div>}>
+        <Suspense fallback={<CardSkeleton height={240} />}>
           <div style={{ marginTop: 16 }}>
             <FinancialStatements
               key={`fin-${ticker}`}
@@ -1144,6 +1326,14 @@ function TickerView() {
           />
         </Suspense>
       )}
+
+      {/* ── Create Project Modal ── */}
+      <CreateProjectModal
+        isOpen={showCreateProjectModal}
+        onClose={() => setShowCreateProjectModal(false)}
+        onCreated={(p) => navigate(`/projects/${p.id}`)}
+        initialTicker={ticker}
+      />
     </>
   );
 }
@@ -1242,6 +1432,447 @@ function AddPositionInline({
       >
         ✕
       </button>
+    </div>
+  );
+}
+
+// ==========================================
+// CREATE PROJECT MODAL
+// ==========================================
+// Matches backend: api/v1/deps.py validate_ticker()
+const PROJECT_TICKER_RE = /^[A-Z0-9.\-]{1,10}$/;
+const PROJECT_TITLE_MAX = 200;
+
+function CreateProjectModal({
+  isOpen,
+  onClose,
+  onCreated,
+  initialTicker,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  onCreated: (project: { id: number }) => void;
+  initialTicker?: string;
+}) {
+  // ── Form state ───────────────────────────────────────────────────────────
+  const [ticker, setTicker] = useState("");
+  const [tickerName, setTickerName] = useState<string | null>(null);
+  const [title, setTitle] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // ── Search state (only when no initialTicker) ────────────────────────────
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<
+    { symbol: string; name: string; exchange: string; type: string }[]
+  >([]);
+  const [showResults, setShowResults] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState(-1);
+  const [searching, setSearching] = useState(false);
+
+  const tickerRef = useRef<HTMLInputElement>(null);
+  const titleRef = useRef<HTMLInputElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── Reset on open/close ──────────────────────────────────────────────────
+  useEffect(() => {
+    if (isOpen) {
+      setTicker(initialTicker || "");
+      setTickerName(null);
+      setSearchQuery(initialTicker || "");
+      setTitle("");
+      setCreating(false);
+      setError(null);
+      setSearchResults([]);
+      setShowResults(false);
+      setSelectedIndex(-1);
+      setTimeout(() => {
+        if (initialTicker) titleRef.current?.focus();
+        else tickerRef.current?.focus();
+      }, 50);
+    } else {
+      // Clean up debounce on close
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    }
+  }, [isOpen, initialTicker]);
+
+  // ── Debounced ticker search ──────────────────────────────────────────────
+  useEffect(() => {
+    if (initialTicker) return; // Skip search when ticker is locked
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+
+    const q = searchQuery.trim();
+    if (q.length < 1) {
+      setSearchResults([]);
+      setShowResults(false);
+      return;
+    }
+
+    // If user already selected a result and hasn't changed the input, skip
+    if (ticker && q.toUpperCase() === ticker) return;
+
+    setSearching(true);
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const results = await api.search(q);
+        setSearchResults(results);
+        setShowResults(results.length > 0);
+        setSelectedIndex(-1);
+      } catch {
+        setSearchResults([]);
+        setShowResults(false);
+      } finally {
+        setSearching(false);
+      }
+    }, 300);
+
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [searchQuery, initialTicker, ticker]);
+
+  if (!isOpen) return null;
+
+  // ── Handlers ─────────────────────────────────────────────────────────────
+  function handleSelectResult(symbol: string, name: string) {
+    setTicker(symbol);
+    setTickerName(name);
+    setSearchQuery(symbol);
+    setSearchResults([]);
+    setShowResults(false);
+    titleRef.current?.focus();
+  }
+
+  function handleTickerInputChange(value: string) {
+    // Strip anything that isn't alphanumeric, dot, or hyphen — prevents injection
+    const sanitized = value.toUpperCase().replace(/[^A-Z0-9.\-]/g, "").slice(0, 10);
+    setSearchQuery(sanitized);
+    // Clear locked selection so search resumes
+    if (sanitized !== ticker) {
+      setTicker("");
+      setTickerName(null);
+    }
+  }
+
+  function handleTickerKeyDown(e: React.KeyboardEvent) {
+    if (showResults && searchResults.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSelectedIndex((i) => Math.min(i + 1, searchResults.length - 1));
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSelectedIndex((i) => Math.max(i - 1, -1));
+        return;
+      }
+      if (e.key === "Enter" && selectedIndex >= 0) {
+        e.preventDefault();
+        const r = searchResults[selectedIndex];
+        handleSelectResult(r.symbol, r.name);
+        return;
+      }
+    }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      // Accept raw typed ticker if no dropdown selection
+      const raw = searchQuery.trim().toUpperCase();
+      if (raw && !ticker) {
+        setTicker(raw);
+        setShowResults(false);
+        titleRef.current?.focus();
+      } else {
+        handleCreate();
+      }
+      return;
+    }
+    if (e.key === "Escape") {
+      if (showResults) {
+        setShowResults(false);
+      } else {
+        onClose();
+      }
+    }
+    if (e.key === "Tab" && showResults) {
+      setShowResults(false);
+    }
+  }
+
+  function handleTitleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "Enter" && !creating) handleCreate();
+    if (e.key === "Escape") onClose();
+  }
+
+  async function handleCreate() {
+    const t = (ticker || searchQuery.trim()).toUpperCase();
+    const ti = title.trim().slice(0, PROJECT_TITLE_MAX);
+
+    if (!t) { setError("Ticker is required"); return; }
+    if (!PROJECT_TICKER_RE.test(t)) {
+      setError("Invalid ticker format — use 1-10 characters (letters, numbers, dots, hyphens)");
+      return;
+    }
+    if (!ti) { setError("Title is required"); return; }
+
+    setCreating(true);
+    setError(null);
+    try {
+      const p = await projectsApi.createProject({ ticker: t, title: ti });
+      onCreated(p);
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to create project");
+      setCreating(false);
+    }
+  }
+
+  const inputStyle = {
+    width: "100%",
+    padding: "10px 12px",
+    background: "#222",
+    border: "1px solid #444",
+    borderRadius: 8,
+    color: "#fff",
+    fontSize: 14,
+    outline: "none",
+    boxSizing: "border-box" as const,
+  };
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.7)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 1000,
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          background: "#1a1a1a",
+          border: "1px solid #333",
+          borderRadius: 12,
+          padding: 24,
+          width: 420,
+          maxWidth: "90vw",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 20 }}>
+          New Research Project
+        </div>
+
+        {error && (
+          <div
+            style={{
+              padding: "8px 12px",
+              background: "#3b1818",
+              border: "1px solid #7f1d1d",
+              borderRadius: 6,
+              color: "#ef4444",
+              fontSize: 13,
+              marginBottom: 16,
+            }}
+          >
+            {error}
+          </div>
+        )}
+
+        {/* Ticker Search */}
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ display: "block", fontSize: 12, color: "#888", marginBottom: 6 }}>
+            Ticker
+          </label>
+          {initialTicker ? (
+            /* Locked ticker from ticker page */
+            <div
+              style={{
+                ...inputStyle,
+                background: "#151515",
+                opacity: 0.7,
+                fontFamily: "monospace",
+                letterSpacing: 1,
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+              }}
+            >
+              <span style={{ fontWeight: 600 }}>{initialTicker}</span>
+            </div>
+          ) : (
+            /* Searchable ticker input */
+            <div ref={dropdownRef} style={{ position: "relative" }}>
+              <div style={{ position: "relative" }}>
+                <input
+                  ref={tickerRef}
+                  value={searchQuery}
+                  onChange={(e) => handleTickerInputChange(e.target.value)}
+                  onKeyDown={handleTickerKeyDown}
+                  onFocus={() => searchResults.length > 0 && !ticker && setShowResults(true)}
+                  placeholder="Search by ticker or company name..."
+                  autoComplete="off"
+                  maxLength={50}
+                  style={{
+                    ...inputStyle,
+                    fontFamily: ticker ? "monospace" : "inherit",
+                    letterSpacing: ticker ? 1 : 0,
+                    paddingRight: searching ? 36 : 12,
+                  }}
+                />
+                {searching && (
+                  <span style={{
+                    position: "absolute",
+                    right: 12,
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    fontSize: 14,
+                    opacity: 0.5,
+                  }}>
+                    ...
+                  </span>
+                )}
+              </div>
+
+              {/* Selected ticker confirmation */}
+              {ticker && tickerName && (
+                <div style={{ fontSize: 12, color: "#22c55e", marginTop: 4, display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ fontWeight: 600 }}>{ticker}</span>
+                  <span style={{ color: "#888" }}>{tickerName}</span>
+                </div>
+              )}
+
+              {/* Search results dropdown */}
+              {showResults && searchResults.length > 0 && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: "100%",
+                    left: 0,
+                    right: 0,
+                    background: "#222",
+                    border: "1px solid #444",
+                    borderTop: "none",
+                    borderRadius: "0 0 8px 8px",
+                    maxHeight: 200,
+                    overflowY: "auto",
+                    zIndex: 10,
+                  }}
+                >
+                  {searchResults.slice(0, 8).map((r, i) => (
+                    <div
+                      key={r.symbol}
+                      onClick={() => handleSelectResult(r.symbol, r.name)}
+                      onMouseEnter={() => setSelectedIndex(i)}
+                      style={{
+                        padding: "10px 12px",
+                        cursor: "pointer",
+                        background: i === selectedIndex ? "#333" : "transparent",
+                        borderBottom: i < Math.min(searchResults.length, 8) - 1 ? "1px solid #2a2a2a" : "none",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                      }}
+                    >
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <span style={{ fontWeight: 600, fontSize: 13, fontFamily: "monospace" }}>{r.symbol}</span>
+                          <span style={{
+                            fontSize: 9,
+                            padding: "1px 5px",
+                            background: r.type === "ETF" ? "#8b5cf630" : "#3b82f630",
+                            color: r.type === "ETF" ? "#8b5cf6" : "#3b82f6",
+                            borderRadius: 3,
+                          }}>
+                            {r.type}
+                          </span>
+                        </div>
+                        <div style={{
+                          fontSize: 12,
+                          color: "#888",
+                          marginTop: 2,
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                        }}>
+                          {r.name}
+                        </div>
+                      </div>
+                      <div style={{ fontSize: 10, color: "#555", flexShrink: 0, marginLeft: 8 }}>
+                        {r.exchange}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Title */}
+        <div style={{ marginBottom: 24 }}>
+          <label style={{ display: "block", fontSize: 12, color: "#888", marginBottom: 6 }}>
+            Project Title
+          </label>
+          <input
+            ref={titleRef}
+            value={title}
+            onChange={(e) => setTitle(e.target.value.slice(0, PROJECT_TITLE_MAX))}
+            onKeyDown={handleTitleKeyDown}
+            placeholder="e.g. Value Play Q1, Semiconductor Thesis, Deep Dive..."
+            autoComplete="off"
+            maxLength={PROJECT_TITLE_MAX}
+            style={inputStyle}
+          />
+          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6 }}>
+            <span style={{ fontSize: 11, color: "#555" }}>
+              Name it anything — doesn't have to match the ticker.
+            </span>
+            {title.length > 150 && (
+              <span style={{ fontSize: 11, color: title.length >= PROJECT_TITLE_MAX ? "#ef4444" : "#555" }}>
+                {title.length}/{PROJECT_TITLE_MAX}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Buttons */}
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+          <button
+            onClick={onClose}
+            style={{
+              padding: "9px 18px",
+              background: "#222",
+              border: "1px solid #444",
+              borderRadius: 8,
+              color: "#aaa",
+              fontSize: 13,
+              cursor: "pointer",
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleCreate}
+            disabled={creating}
+            style={{
+              padding: "9px 18px",
+              background: "#3b82f6",
+              border: "none",
+              borderRadius: 8,
+              color: "#fff",
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: creating ? "wait" : "pointer",
+              opacity: creating ? 0.7 : 1,
+            }}
+          >
+            {creating ? "Creating..." : "Create Project"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

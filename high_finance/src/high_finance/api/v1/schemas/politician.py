@@ -80,3 +80,85 @@ class PoliticianPerformanceOut(BaseModel):
     num_used: int
     avg_return_pct: Optional[float] = None
     hit_rate: Optional[float] = None
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BACKTEST SCHEMAS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class BacktestTradeResultOut(BaseModel):
+    ticker: str
+    transaction_type: str
+    disclosure_date: str
+    entry_date: str
+    exit_date: str
+    entry_price: float
+    exit_price: float
+    return_pct: float
+    hold_days_actual: int
+    cohort_return_pct: Optional[float] = None
+
+
+class EquityCurvePointOut(BaseModel):
+    date: str
+    portfolio_value: float
+    spy_value: float
+
+
+class BacktestSummaryOut(BaseModel):
+    politician_id: int
+    politician_name: str
+    party: Optional[str] = None
+    chamber: Optional[str] = None
+    state: Optional[str] = None
+    delay_days: int
+    hold_days: int
+    num_trades: int
+    num_positions: int = 0
+    num_cohorts: int = 0
+    num_trades_priced: int
+    total_return_pct: float
+    annualized_return_pct: Optional[float] = None
+    win_rate: float
+    max_drawdown_pct: float
+    sharpe_ratio: Optional[float] = None
+    spy_total_return_pct: float
+    spy_annualized_return_pct: Optional[float] = None
+    alpha_pct: float
+    best_trade: Optional[BacktestTradeResultOut] = None
+    worst_trade: Optional[BacktestTradeResultOut] = None
+    first_trade_date: Optional[str] = None
+    last_trade_date: Optional[str] = None
+    grade: Optional[str] = None
+    skip_reasons: Optional[dict] = None
+
+
+class BacktestResponseOut(BaseModel):
+    summary: BacktestSummaryOut
+    equity_curve: List[EquityCurvePointOut]
+    trades: List[BacktestTradeResultOut]
+
+
+class LeaderboardEntryOut(BaseModel):
+    politician_id: int
+    politician_name: str
+    party: Optional[str] = None
+    chamber: Optional[str] = None
+    state: Optional[str] = None
+    num_trades_priced: int
+    num_cohorts: int = 0
+    total_return_pct: float
+    annualized_return_pct: Optional[float] = None
+    win_rate: float
+    max_drawdown_pct: float
+    alpha_pct: float
+    grade: Optional[str] = None
+    first_trade_date: Optional[str] = None
+    last_trade_date: Optional[str] = None
+
+
+class LeaderboardResponseOut(BaseModel):
+    delay_days: int
+    hold_days: int
+    entries: List[LeaderboardEntryOut]
+    computed_at: str

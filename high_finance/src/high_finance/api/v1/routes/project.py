@@ -44,8 +44,9 @@ async def list_projects(
     db: Session = Depends(get_db),
     user: Optional[User] = Depends(get_current_user_optional),
 ):
-    owner_id = user.id if user else None
-    return await svc.list_projects(db, status=status, ticker=ticker, owner_id=owner_id)
+    if not user:
+        return []
+    return await svc.list_projects(db, status=status, ticker=ticker, owner_id=user.id)
 
 
 @router.post("", response_model=ProjectDetailOut, status_code=201)

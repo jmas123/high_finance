@@ -54,7 +54,7 @@ def _amount_range(row: Dict[str, Any]) -> Tuple[Optional[float], Optional[float]
         return (mn, mx)
 
     # range string
-    amt = row.get("Range") or row.get("Amount") or row.get("amount")
+    amt = row.get("Range") or row.get("Amount") or row.get("Trade_Size_USD") or row.get("amount")
     if not amt:
         return (None, None)
 
@@ -77,7 +77,7 @@ def _ensure_politician(db: Session, row: Dict[str, Any]) -> Politician:
     chamber = row.get("Chamber") or row.get("chamber")
     state = row.get("State") or row.get("state")
     district = row.get("District") or row.get("district")
-    bioguide_id = row.get("BioguideID") or row.get("bioguide_id")
+    bioguide_id = row.get("BioguideID") or row.get("BioGuideID") or row.get("bioguide_id")
 
     q = db.query(Politician)
     if bioguide_id:
@@ -171,7 +171,7 @@ def refresh_congress_trades(db: Session, symbol: str | None = None, limit: int =
 
         txn_type = row.get("Transaction") or row.get("TransactionType") or row.get("Type")
         txn_date = _parse_date(row.get("TransactionDate") or row.get("Traded") or row.get("transaction_date"))
-        disc_date = _parse_date(row.get("ReportDate") or row.get("DisclosureDate") or row.get("Reported") or row.get("disclosure_date"))
+        disc_date = _parse_date(row.get("ReportDate") or row.get("DisclosureDate") or row.get("Reported") or row.get("Filed") or row.get("disclosure_date"))
 
         amount_min, amount_max = _amount_range(row)
         source_url = row.get("Source") or row.get("URL") or row.get("source_url")

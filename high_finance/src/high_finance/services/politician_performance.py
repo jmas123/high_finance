@@ -11,18 +11,28 @@ from high_finance.db.models.price import Price
 
 
 
-def _closest_close_on_or_after(db: Session, company_id: int, target: date) -> Optional[float]:
+def _closest_close_on_or_after(
+    db: Session, company_id: int, target: date, max_gap_days: int = 7
+) -> Optional[float]:
     """
-    Find the closest closing price on or after the target date.
+    Find the closest closing price on or after the target date,
+    but no more than `max_gap_days` calendar days away.
+
     Price.date is a String column in YYYY-MM-DD format, so lexicographic
     comparison works correctly for date ordering.
+
+    Why 7 days default: covers weekends + holidays (e.g. trade on Friday,
+    market closed Mon for holiday → nearest price is Tuesday = 4 calendar days).
+    Tight enough to reject stale data from delisted/sparse stocks.
     """
     target_str = target.isoformat()  # YYYY-MM-DD
+    max_date_str = (target + timedelta(days=max_gap_days)).isoformat()
     row = (
         db.query(Price.close_price)
         .filter(
             Price.company_id == company_id,
             Price.date >= target_str,
+            Price.date <= max_date_str,
             Price.close_price.isnot(None),
         )
         .order_by(asc(Price.date))

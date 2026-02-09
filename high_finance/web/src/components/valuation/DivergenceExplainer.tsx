@@ -1,6 +1,7 @@
 import { useState, memo } from "react";
 import type { DivergenceAnalysis, ValuationScenarioInputs } from "../../lib/types";
 import { fmtPct, fmtPctSigned, fmtPx } from "../Functions";
+import { InfoTip } from "../common/InfoTip";
 
 interface DivergenceExplainerProps {
   divergence: DivergenceAnalysis;
@@ -178,10 +179,10 @@ export const DivergenceExplainer = memo(function DivergenceExplainer({
                 You Assume
               </th>
               <th style={{ textAlign: "right", padding: "6px 8px", opacity: 0.6, fontWeight: 500 }}>
-                Market Implies
+                <span style={{ display: "inline-flex", alignItems: "center" }}>Market Implies<InfoTip text="The assumption values reverse-engineered from the current stock price. If the market is 'right,' these are the growth/margin/WACC it's pricing in." /></span>
               </th>
               <th style={{ textAlign: "right", padding: "6px 8px", opacity: 0.6, fontWeight: 500 }}>
-                Gap
+                <span style={{ display: "inline-flex", alignItems: "center" }}>Gap<InfoTip text="Difference in percentage points (pp) between your assumption and what the market implies. Positive = market is more optimistic than you." /></span>
               </th>
             </tr>
           </thead>
@@ -211,8 +212,10 @@ export const DivergenceExplainer = memo(function DivergenceExplainer({
                         padding: "2px 5px",
                         borderRadius: 3,
                         fontWeight: 600,
+                        display: "inline-flex",
+                        alignItems: "center",
                       }}>
-                        PRIMARY
+                        PRIMARY<InfoTip text="This assumption has the largest gap between your input and what the market implies. It's the main driver of the divergence between your DCF and market price." />
                       </span>
                     )}
                   </td>

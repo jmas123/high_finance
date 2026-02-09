@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef, useMemo } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo, lazy, Suspense } from "react";
 import type { RiskBundle } from "../../lib/types";
 import { FanChart } from "./FanChart";
 import { DistributionChart } from "./DistributionChart";
@@ -8,6 +8,10 @@ import { SliderControl } from "./SliderAndToggle";
 import { ToggleControl } from "./SliderAndToggle";
 import { ScenarioCard } from "./RiskScenario";
 import { fmtPct, fmtPctSigned, fmtPrice } from "../Functions";
+import { InfoTip } from "../common/InfoTip";
+import { RISK_TIPS } from "../../lib/tooltips";
+
+const AIRiskPanel = lazy(() => import("./AIRiskPanel").then(m => ({ default: m.AIRiskPanel })));
 
 
 interface RiskCardProps {
@@ -35,6 +39,8 @@ export function RiskCard({ ticker, initialData }: RiskCardProps) {
 
   // Expanded sections
   const [showControls, setShowControls] = useState(false);
+  const [showAI, setShowAI] = useState(false);
+  const [activeScenarioName, setActiveScenarioName] = useState<string | null>(null);
 
   const fetchRisk = useCallback(async () => {
     setLoading(true);
@@ -104,6 +110,37 @@ export function RiskCard({ ticker, initialData }: RiskCardProps) {
   // Safe price target calculation (guards against null/undefined close price)
   const calcPriceTarget = (returnPct: number) => closePrice > 0 ? closePrice * (1 + returnPct) : 0;
 
+  // AI scenario callbacks
+  const handleApplyScenario = useCallback((
+    params: { vol_multiplier: number; horizon_days: number; include_earnings_shock: boolean },
+    name: string,
+  ) => {
+    setVolMultiplier(params.vol_multiplier);
+    setHorizon(params.horizon_days);
+    setIncludeEarningsShock(params.include_earnings_shock);
+    setActiveScenarioName(name);
+    setShowAI(false);
+  }, []);
+
+  const handleApplyBase = useCallback((
+    params: { vol_multiplier: number; horizon_days: number },
+    _rationale: string,
+  ) => {
+    setVolMultiplier(params.vol_multiplier);
+    setHorizon(params.horizon_days);
+    setActiveScenarioName("__base__");
+    setShowAI(false);
+  }, []);
+
+  // Clear active scenario name when user manually changes params
+  useEffect(() => {
+    if (activeScenarioName) {
+      setActiveScenarioName(null);
+    }
+    // Only trigger on manual slider changes, not on scenario application
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [period, sims, targetPriceOffset, drawdownThreshold]);
+
   return (
     <div
       style={{
@@ -128,8 +165,8 @@ export function RiskCard({ ticker, initialData }: RiskCardProps) {
           <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: "-0.3px" }}>
             Risk & Probability Analysis
           </div>
-          <div style={{ marginTop: 4, fontSize: 12, opacity: 0.5 }}>
-            Monte Carlo simulation with actionable probability estimates
+          <div style={{ marginTop: 4, fontSize: 12, opacity: 0.5, display: "flex", alignItems: "center" }}>
+            Monte Carlo simulation with actionable probability estimates<InfoTip text={RISK_TIPS.monte_carlo} />
           </div>
         </div>
 
@@ -154,7 +191,25 @@ export function RiskCard({ ticker, initialData }: RiskCardProps) {
           </select>
 
           <button
-            onClick={() => setShowControls(!showControls)}
+            onClick={() => { setShowAI(!showAI); if (!showAI) setShowControls(false); }}
+            style={{
+              background: showAI ? "#8b5cf6" : "#0a0a0a",
+              color: "#fff",
+              border: "1px solid #333",
+              borderRadius: 8,
+              padding: "8px 14px",
+              fontSize: 12,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+            }}
+          >
+            <span>AI</span>
+          </button>
+
+          <button
+            onClick={() => { setShowControls(!showControls); if (!showControls) setShowAI(false); }}
             style={{
               background: showControls ? "#3b82f6" : "#0a0a0a",
               color: "#fff",
@@ -168,11 +223,51 @@ export function RiskCard({ ticker, initialData }: RiskCardProps) {
               gap: 6,
             }}
           >
-            <span>⚙</span>
             <span>Controls</span>
           </button>
         </div>
       </div>
+
+      {/* Active Scenario Badge */}
+      {activeScenarioName && activeScenarioName !== "__base__" && (
+        <div
+          style={{
+            marginBottom: 12,
+            padding: "6px 12px",
+            borderRadius: 8,
+            background: "rgba(139, 92, 246, 0.12)",
+            border: "1px solid rgba(139, 92, 246, 0.3)",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            fontSize: 12,
+          }}
+        >
+          <span>
+            <span style={{ opacity: 0.6 }}>Running:</span>{" "}
+            <span style={{ fontWeight: 600, color: "#a78bfa" }}>{activeScenarioName}</span>
+            <span style={{ opacity: 0.5 }}> scenario</span>
+          </span>
+          <button
+            onClick={() => {
+              setVolMultiplier(1.0);
+              setHorizon(60);
+              setIncludeEarningsShock(false);
+              setActiveScenarioName(null);
+            }}
+            style={{
+              background: "none",
+              border: "none",
+              color: "#888",
+              fontSize: 11,
+              cursor: "pointer",
+              textDecoration: "underline",
+            }}
+          >
+            Reset to defaults
+          </button>
+        </div>
+      )}
 
       {/* Error */}
       {err && (
@@ -317,6 +412,39 @@ export function RiskCard({ ticker, initialData }: RiskCardProps) {
               (n={data.monte_carlo.earnings_params.n_observations})
             </div>
           )}
+        </div>
+      )}
+
+      {/* AI Risk Assessment Panel */}
+      {showAI && (
+        <div
+          style={{
+            marginBottom: 16,
+            padding: 16,
+            borderRadius: 12,
+            border: "1px solid #2a2a2a",
+            background: "rgba(0,0,0,0.3)",
+          }}
+        >
+          <div
+            style={{
+              fontSize: 11,
+              textTransform: "uppercase",
+              letterSpacing: "0.5px",
+              opacity: 0.5,
+              marginBottom: 12,
+            }}
+          >
+            AI Risk Assessment
+          </div>
+          <Suspense fallback={<div style={{ padding: 20, textAlign: "center", opacity: 0.5, fontSize: 12 }}>Loading...</div>}>
+            <AIRiskPanel
+              ticker={ticker}
+              onApplyScenario={handleApplyScenario}
+              onApplyBase={handleApplyBase}
+              activeScenarioName={activeScenarioName}
+            />
+          </Suspense>
         </div>
       )}
 
@@ -490,15 +618,16 @@ export function RiskCard({ ticker, initialData }: RiskCardProps) {
               marginBottom: 16,
             }}
           >
-            <Stat label="VaR (95%, 1D)" value={fmtPct(m.var_95_1d, 2)} hint="Daily left tail" />
-            <Stat label="VaR (99%, 1D)" value={fmtPct(m.var_99_1d, 2)} hint="Extreme tail" />
-            <Stat label="Max Drawdown" value={fmtPct(m.max_drawdown, 1)} accent="red" />
-            <Stat label="Daily Vol" value={fmtPct(m.daily_volatility, 2)} />
+            <Stat label="VaR (95%, 1D)" value={fmtPct(m.var_95_1d, 2)} hint="Daily left tail" tooltip={RISK_TIPS.var_95} />
+            <Stat label="VaR (99%, 1D)" value={fmtPct(m.var_99_1d, 2)} hint="Extreme tail" tooltip={RISK_TIPS.var_99} />
+            <Stat label="Max Drawdown" value={fmtPct(m.max_drawdown, 1)} accent="red" tooltip={RISK_TIPS.max_drawdown} />
+            <Stat label="Daily Vol" value={fmtPct(m.daily_volatility, 2)} tooltip={RISK_TIPS.daily_vol} />
             <Stat
               label="Ann. Vol"
               value={fmtPct(m.annualized_volatility_adjusted, 1)}
               hint={volMultiplier !== 1 ? `${volMultiplier}× adjusted` : "σ × √252"}
               accent={volMultiplier > 1.2 ? "amber" : undefined}
+              tooltip={RISK_TIPS.annualized_vol}
             />
             <Stat label="Current Price" value={fmtPrice(closePrice)} hint={ticker} />
           </div>
@@ -521,7 +650,7 @@ export function RiskCard({ ticker, initialData }: RiskCardProps) {
                 alignItems: "center",
               }}
             >
-              <div style={{ fontSize: 13, fontWeight: 600 }}>Price Distribution Fan</div>
+              <div style={{ fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center" }}>Price Distribution Fan<InfoTip text={RISK_TIPS.fan_chart} /></div>
               <div style={{ fontSize: 11, opacity: 0.5 }}>
                 {sims.toLocaleString()} simulations • {horizon}d horizon
               </div>
@@ -552,7 +681,7 @@ export function RiskCard({ ticker, initialData }: RiskCardProps) {
                 alignItems: "center",
               }}
             >
-              <div style={{ fontSize: 13, fontWeight: 600 }}>Terminal Return Distribution</div>
+              <div style={{ fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center" }}>Terminal Return Distribution<InfoTip text={RISK_TIPS.distribution} /></div>
               <div style={{ fontSize: 11, opacity: 0.5 }}>
                 Expected: {fmtPctSigned(s.mean)} ± {fmtPct(s.std)}
               </div>

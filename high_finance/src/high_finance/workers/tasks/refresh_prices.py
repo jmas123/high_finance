@@ -20,6 +20,26 @@ from high_finance.workers.tasks.base import create_job_result
 
 logger = logging.getLogger(__name__)
 
+# Benchmark tickers to always keep updated (needed for alpha calculations)
+BENCHMARK_TICKERS = {
+    "SPY": "SPDR S&P 500 ETF Trust",
+}
+
+
+def _ensure_benchmarks(db: Session) -> list[tuple[int, str, str]]:
+    """Ensure benchmark ETFs exist as Company records. Returns list of (id, ticker, name)."""
+    results = []
+    for ticker, name in BENCHMARK_TICKERS.items():
+        company = db.query(Company).filter(Company.ticker == ticker).first()
+        if not company:
+            company = Company(ticker=ticker, name=name, sector="ETF")
+            db.add(company)
+            db.commit()
+            db.refresh(company)
+            logger.info(f"Created Company record for benchmark {ticker} (id={company.id})")
+        results.append((company.id, company.ticker, company.name))
+    return results
+
 
 def get_companies_with_trades(db: Session) -> list[tuple[int, str, str]]:
     """Get companies that have politician trades and need price data."""
@@ -118,8 +138,14 @@ def refresh_prices_logic(
         ).all()
         companies = [(c.id, c.ticker, c.name) for c in companies]
     else:
-        # Get all companies with politician trades
+        # Get all companies with politician trades + benchmarks
+        benchmarks = _ensure_benchmarks(db)
         companies = get_companies_with_trades(db)
+        # Merge benchmarks (avoid duplicates if SPY happens to have trades)
+        existing_ids = {c[0] for c in companies}
+        for b in benchmarks:
+            if b[0] not in existing_ids:
+                companies.append(b)
 
     total = len(companies)
     updated = 0
