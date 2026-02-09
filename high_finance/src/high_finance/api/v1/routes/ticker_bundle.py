@@ -358,7 +358,7 @@ async def get_ticker_bundle(
         with_timeout(fetch_news(), FAST, "news"),                    # 13
         with_timeout(fetch_prediction(), SLOW, "prediction"),        # 14 (ML training)
         with_timeout(fetch_macro_indicators(), FAST, "macro"),       # 15
-        with_timeout(fetch_sectors(), FAST, "sectors"),              # 16
+        with_timeout(fetch_sectors(), SLOW, "sectors"),              # 16 (11 sector ETF calls)
         with_timeout(fetch_rate_impact(), FAST, "rate_impact"),      # 17
         return_exceptions=True,
     )
