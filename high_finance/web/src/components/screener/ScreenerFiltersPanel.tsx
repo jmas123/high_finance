@@ -194,6 +194,7 @@ export function ScreenerFiltersPanel({
             style={inputStyle}
           />
         </div>
+        
       </div>
     );
   };
