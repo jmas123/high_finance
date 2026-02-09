@@ -71,10 +71,10 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 async def lifespan(app: FastAPI):
     """Startup/shutdown lifecycle for the application."""
     # Startup: configure thread pool for blocking yfinance/feedparser calls
-    executor = ThreadPoolExecutor(max_workers=40)
+    executor = ThreadPoolExecutor(max_workers=10)
     loop = asyncio.get_running_loop()
     loop.set_default_executor(executor)
-    logger.info("Thread pool executor configured with max_workers=40")
+    logger.info("Thread pool executor configured with max_workers=10")
     yield
     # Shutdown: clean up Redis connection
     try:
