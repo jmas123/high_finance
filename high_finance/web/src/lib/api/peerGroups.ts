@@ -4,7 +4,7 @@
  * CRUD operations for user's custom peer groups.
  */
 
-const BASE = "/api/v1";
+const BASE = (import.meta.env.VITE_API_URL || "") + "/api/v1";
 const TOKEN_KEY = "hf_access_token";
 
 function getAuthHeaders(): Record<string, string> {

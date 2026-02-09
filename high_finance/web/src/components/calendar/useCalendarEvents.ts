@@ -7,7 +7,7 @@
 import { useState, useEffect, useCallback } from "react";
 import type { CalendarEventsResponse, EventType } from "./types";
 
-const BASE = "/api/v1";
+const BASE = (import.meta.env.VITE_API_URL || "") + "/api/v1";
 
 interface UseCalendarEventsOptions {
   tickers: string[];

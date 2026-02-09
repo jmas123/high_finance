@@ -10,7 +10,7 @@ import type {
 
 import { getAuthHeaders, fetchWithTimeout } from "../../lib/api";
 
-const BASE = "/api/v1";
+const BASE = (import.meta.env.VITE_API_URL || "") + "/api/v1";
 
 async function getJSON<T>(path: string): Promise<T> {
   const res = await fetchWithTimeout(path, {

@@ -9,7 +9,7 @@ import {
 } from "react";
 
 const TOKEN_KEY = "hf_access_token";
-const BASE = "/api/v1";
+const BASE = (import.meta.env.VITE_API_URL || "") + "/api/v1";
 
 export interface AuthUser {
   id: string;
