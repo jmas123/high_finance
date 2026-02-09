@@ -190,7 +190,7 @@ export function PoliticianTradesCard({ ticker, initialData }: PoliticianTradesCa
       ) : rows.length === 0 ? (
         <div style={{ padding: 24, opacity: 0.7 }}>No recent disclosures found for this ticker.</div>
       ) : (
-        {isMobile ? (
+        isMobile ? (
           <div style={{ marginTop: 12 }}>
             {rows.map((trade) => {
               const action = (trade.transaction_type ?? "—").toUpperCase();
@@ -368,7 +368,7 @@ export function PoliticianTradesCard({ ticker, initialData }: PoliticianTradesCa
             Note: Disclosure dates can lag transaction dates. Win rate reflects the percentage of recent trades with positive returns within 30 days.
           </div>
         </div>
-        )}
+        )
       )}
     </div>
   );
