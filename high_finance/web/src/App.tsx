@@ -484,7 +484,7 @@ function CongressDetailView() {
 // ══════════════════════════════════════════════════════════════════════════════
 function ProjectsListView() {
   const navigate = useNavigate();
-  const [error, setError] = useState<string | null>(null);
+  const [error ] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [showCreateModal, setShowCreateModal] = useState(false);
 

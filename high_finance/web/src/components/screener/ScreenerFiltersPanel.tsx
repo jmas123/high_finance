@@ -175,7 +175,7 @@ export function ScreenerFiltersPanel({
             type="number"
             step={opts?.step}
             placeholder="Min"
-            value={pct && filters[minKey] != null ? (filters[minKey] as number) * 100 : (filters[minKey] ?? "")}
+            value={pct && filters[minKey] != null ? Number(filters[minKey]) * 100 : (filters[minKey] as number ?? "")}
             onChange={e => {
               const raw = e.target.value ? Number(e.target.value) : undefined;
               updateFilter(minKey, raw != null && pct ? raw / 100 : raw);
@@ -186,7 +186,7 @@ export function ScreenerFiltersPanel({
             type="number"
             step={opts?.step}
             placeholder="Max"
-            value={pct && filters[maxKey] != null ? (filters[maxKey] as number) * 100 : (filters[maxKey] ?? "")}
+            value={pct && filters[maxKey] != null ? Number(filters[maxKey]) * 100 : (filters[maxKey] as number ?? "")}
             onChange={e => {
               const raw = e.target.value ? Number(e.target.value) : undefined;
               updateFilter(maxKey, raw != null && pct ? raw / 100 : raw);

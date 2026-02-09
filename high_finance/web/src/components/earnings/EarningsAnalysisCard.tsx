@@ -517,7 +517,6 @@ function formatValue(value: number | string | null, unit?: string | null): strin
   if (value == null) return "N/A";
   if (typeof value === "string") return value;
 
-  const abs = Math.abs(value);
   const prefix = unit === "$" || unit == null ? "$" : "";
   const suffix = unit === "%" ? "%" : unit === "x" ? "x" : "";
 
