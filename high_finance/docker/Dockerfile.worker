@@ -20,6 +20,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the application code
 COPY ./src ./src
+COPY ./scripts/start_worker.sh ./start_worker.sh
 
 # Set PYTHONPATH
 ENV PYTHONPATH=/app/src
@@ -28,7 +29,5 @@ ENV PYTHONPATH=/app/src
 RUN adduser --disabled-password --gecos '' appuser
 USER appuser
 
-# Default command (can be overridden in docker-compose)
-# For worker: rq worker default --url $REDIS_URL
-# For scheduler: python -m high_finance.workers.scheduler
-CMD ["rq", "worker", "default"]
+# Run both RQ worker and scheduler in a single container
+CMD ["bash", "./start_worker.sh"]
