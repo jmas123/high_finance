@@ -25,9 +25,6 @@ COPY alembic /app/alembic
 # Copy the application code
 COPY ./src ./src
 
-# Copy gunicorn config
-COPY ./docker/gunicorn_conf.py /app/gunicorn_conf.py
-
 # Create non-root user
 RUN adduser --disabled-password --gecos '' appuser
 USER appuser
@@ -35,5 +32,14 @@ USER appuser
 # Expose the application port
 EXPOSE 8000
 
-# Production: use gunicorn with uvicorn workers (4 workers, not --reload)
-CMD ["gunicorn", "main:app", "-c", "/app/gunicorn_conf.py"]
+# Production: use gunicorn with uvicorn workers
+CMD ["gunicorn", "main:app", \
+     "--bind", "0.0.0.0:8000", \
+     "--workers", "4", \
+     "--worker-class", "uvicorn.workers.UvicornWorker", \
+     "--timeout", "60", \
+     "--graceful-timeout", "30", \
+     "--keep-alive", "5", \
+     "--log-level", "info", \
+     "--access-logfile", "-", \
+     "--error-logfile", "-"]
