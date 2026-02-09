@@ -11,9 +11,10 @@ interface SearchResult {
 interface SearchBarProps {
   onSelect: (ticker: string) => void;
   loading: boolean;
+  isMobile?: boolean;
 }
 
-export function SearchBar({ onSelect, loading }: SearchBarProps) {
+export function SearchBar({ onSelect, loading, isMobile }: SearchBarProps) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [showResults, setShowResults] = useState(false);
@@ -116,11 +117,11 @@ export function SearchBar({ onSelect, loading }: SearchBarProps) {
 
   return (
     <div ref={containerRef} style={{ position: "relative", width: "100%" }}>
-      <div style={{ 
-        display: "flex", 
-        gap: 12, 
-        alignItems: "center", 
-        padding: 16,
+      <div style={{
+        display: "flex",
+        gap: isMobile ? 8 : 12,
+        alignItems: "center",
+        padding: isMobile ? "10px 12px" : 16,
         background: "#1a1a1a",
         borderRadius: showResults && results.length > 0 ? "10px 10px 0 0" : 10,
         border: "1px solid #333",
@@ -151,19 +152,19 @@ export function SearchBar({ onSelect, loading }: SearchBarProps) {
         <button
           onClick={() => query.trim() && handleSelect(query.trim().toUpperCase())}
           disabled={loading || !query.trim()}
-          style={{ 
-            padding: "10px 24px", 
-            fontSize: 14, 
-            cursor: loading || !query.trim() ? "not-allowed" : "pointer", 
-            background: loading || !query.trim() ? "#555" : "#3b82f6", 
-            color: "#fff", 
-            border: "none", 
+          style={{
+            padding: isMobile ? "10px 14px" : "10px 24px",
+            fontSize: 14,
+            cursor: loading || !query.trim() ? "not-allowed" : "pointer",
+            background: loading || !query.trim() ? "#555" : "#3b82f6",
+            color: "#fff",
+            border: "none",
             borderRadius: 6,
             fontWeight: 600,
             opacity: loading || !query.trim() ? 0.7 : 1,
           }}
         >
-          {loading ? "Loading..." : "Search"}
+          {loading ? "..." : isMobile ? "\uD83D\uDD0D" : "Search"}
         </button>
       </div>
 

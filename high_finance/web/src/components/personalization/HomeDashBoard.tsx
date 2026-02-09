@@ -6,6 +6,7 @@ import type { ProjectSummary } from "../../lib/types";
 import { getRecentTickers, getWatchlist, getPortfolio, exportAllData, importAllData, clearAllData } from "./storage";
 import { InfoTip } from "../common/InfoTip";
 import { DASHBOARD_TIPS } from "../../lib/tooltips";
+import { useIsMobile } from "../../lib/useIsMobile";
 
 interface HomeDashboardProps {
   onSelect: (ticker: string) => void;
@@ -18,6 +19,7 @@ export function HomeDashboard({
   onOpenProject,
   isAuthenticated = false,
 }: HomeDashboardProps) {
+  const isMobile = useIsMobile();
   const [recentTickers, setRecentTickers] = useState<string[]>([]);
   const [showDataMenu, setShowDataMenu] = useState(false);
   const [activeProjects, setActiveProjects] = useState<ProjectSummary[]>([]);
@@ -152,7 +154,7 @@ export function HomeDashboard({
             background: "linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)",
             border: "1px solid #333",
             borderRadius: 12,
-            padding: "40px 32px",
+            padding: isMobile ? "24px 16px" : "40px 32px",
             marginBottom: 24,
             textAlign: "center",
           }}
@@ -180,11 +182,11 @@ export function HomeDashboard({
                   cursor: "pointer",
                   transition: "all 0.15s",
                 }}
-                onMouseEnter={(e) => {
+                onMouseEnter={isMobile ? undefined : (e) => {
                   e.currentTarget.style.background = "#3b82f630";
                   e.currentTarget.style.borderColor = "#3b82f680";
                 }}
-                onMouseLeave={(e) => {
+                onMouseLeave={isMobile ? undefined : (e) => {
                   e.currentTarget.style.background = "#3b82f620";
                   e.currentTarget.style.borderColor = "#3b82f640";
                 }}
@@ -197,7 +199,7 @@ export function HomeDashboard({
       )}
 
       {/* Two Column: Watchlist + Portfolio */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 16, marginBottom: 20 }}>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 2fr", gap: 16, marginBottom: 20 }}>
         <WatchlistCard onSelect={onSelect} onOpenProject={onOpenProject} />
         <PortfolioCard onSelect={onSelect} />
       </div>
@@ -263,11 +265,11 @@ export function HomeDashboard({
                   cursor: "pointer",
                   transition: "all 0.15s",
                 }}
-                onMouseEnter={(e) => {
+                onMouseEnter={isMobile ? undefined : (e) => {
                   e.currentTarget.style.background = "#2a2a2a";
                   e.currentTarget.style.borderColor = "#555";
                 }}
-                onMouseLeave={(e) => {
+                onMouseLeave={isMobile ? undefined : (e) => {
                   e.currentTarget.style.background = "#222";
                   e.currentTarget.style.borderColor = "#333";
                 }}
@@ -310,6 +312,7 @@ function ProjectRow({
   onOpen: () => void;
   onOpenTicker: () => void;
 }) {
+  const isMobile = useIsMobile();
   return (
     <div
       onClick={onOpen}
@@ -323,8 +326,8 @@ function ProjectRow({
         cursor: "pointer",
         transition: "background 0.15s",
       }}
-      onMouseEnter={(e) => (e.currentTarget.style.background = "#252525")}
-      onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+      onMouseEnter={isMobile ? undefined : (e) => (e.currentTarget.style.background = "#252525")}
+      onMouseLeave={isMobile ? undefined : (e) => (e.currentTarget.style.background = "transparent")}
     >
       {/* Ticker */}
       <button

@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { DrawerOverlay } from "./DrawOverlay";
 import type { SectorHeatmapCardProps, SectorResponse, TimeFrame, SectorData } from "./lib/types";
+import { useIsMobile } from "../../lib/useIsMobile";
 
 /* ─── Colours ────────────────────────────────────────────────── */
 
@@ -66,6 +67,7 @@ const SectorHeatmapCard: React.FC<SectorHeatmapCardProps> = ({
   onSectorClick,
   initialData,
 }) => {
+  const isMobile = useIsMobile();
   const [data, setData] = useState<SectorResponse | null>(initialData ?? null);
   const [loading, setLoading] = useState(!initialData);
   const [error, setError] = useState<string | null>(null);
@@ -232,7 +234,7 @@ const SectorHeatmapCard: React.FC<SectorHeatmapCardProps> = ({
       {/* ─── Heatmap ─── */}
       {viewMode === "heatmap" && (
         <div style={{ padding: 16 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8 }}>
             {sortedSectors.map((sector) => {
               const value = getPerf(sector);
               const bg = heatmapBg(value, maxAbsValue);
@@ -260,8 +262,8 @@ const SectorHeatmapCard: React.FC<SectorHeatmapCardProps> = ({
                     outlineOffset: 1,
                     transition: "outline 0.15s, transform 0.1s",
                   }}
-                  onMouseEnter={(e) => (e.currentTarget.style.transform = "scale(1.03)")}
-                  onMouseLeave={(e) => (e.currentTarget.style.transform = "scale(1)")}
+                  onMouseEnter={isMobile ? undefined : (e) => (e.currentTarget.style.transform = "scale(1.03)")}
+                  onMouseLeave={isMobile ? undefined : (e) => (e.currentTarget.style.transform = "scale(1)")}
                 >
                   <div style={{ fontSize: 11, fontWeight: 500, color: fg, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {sector.sector}
@@ -307,8 +309,8 @@ const SectorHeatmapCard: React.FC<SectorHeatmapCardProps> = ({
                   marginBottom: 4,
                   transition: "background 0.15s",
                 }}
-                onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = "rgba(255,255,255,0.03)"; }}
-                onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = "transparent"; }}
+                onMouseEnter={isMobile ? undefined : (e) => { if (!isActive) e.currentTarget.style.background = "rgba(255,255,255,0.03)"; }}
+                onMouseLeave={isMobile ? undefined : (e) => { if (!isActive) e.currentTarget.style.background = "transparent"; }}
               >
                 {/* Label */}
                 <div style={{ width: 120, textAlign: "left", flexShrink: 0 }}>
@@ -371,7 +373,7 @@ const SectorHeatmapCard: React.FC<SectorHeatmapCardProps> = ({
             </div>
 
             {/* Performance grid */}
-            <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
+            <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8 }}>
               {(["1d", "1w", "1m", "ytd"] as const).map((tf) => {
                 const perf = tf === "1d" ? activeSector.performance_1d
                   : tf === "1w" ? activeSector.performance_1w

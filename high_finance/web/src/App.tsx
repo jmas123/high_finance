@@ -99,10 +99,15 @@ const OnboardingView = lazy(() => import("./components/onboarding/OnboardingView
 import { CalendarPopupButton } from "./components/calendar";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { TickerPageSkeleton, CardSkeleton, ChartSkeleton } from "./components/Skeleton";
+import { LandingPage } from "./components/LandingPage";
 
 // ── Private Companies ─────────────────────────────────────────────────────
 import { PrivateCompanyList } from "./components/private/PrivateCompanyList";
 import { PrivateCompanyProfileView } from "./components/private/PrivateCompanyProfile";
+
+// ── Mobile ────────────────────────────────────────────────────────────────
+import { useIsMobile } from "./lib/useIsMobile";
+import { MobileTabBar } from "./components/navigation/MobileTabBar";
 
 // ── Loading fallback for lazy components ─────────────────────────────────────
 const LoadingSpinner = () => (
@@ -251,6 +256,7 @@ export default function App() {
   }, [sessionExpired]);
   const navigate = useNavigate();
   const location = useLocation();
+  const isMobile = useIsMobile();
 
   // Determine active tab from current route
   const getActiveTab = () => {
@@ -262,20 +268,41 @@ export default function App() {
     if (location.pathname.startsWith("/private")) return "private";
     if (location.pathname === "/ai-history") return "ai-history";
     if (location.pathname === "/onboarding") return "onboarding";
+    if (location.pathname === "/dashboard") return "dashboard";
     return "dashboard";
   };
 
   const activeTab = getActiveTab();
 
+  // ── Landing page: render outside the app shell for unauthenticated visitors at / ──
+  if (location.pathname === "/") {
+    // While checking auth, render nothing (dark bg prevents flash of landing before redirect)
+    if (authLoading) return <div style={{ minHeight: "100vh", background: "#111" }} />;
+    if (isAuthenticated) return <Navigate to="/dashboard" replace />;
+    return (
+      <>
+        <LandingPage onOpenAuth={() => setShowAuthModal(true)} />
+        <AuthModal isOpen={showAuthModal} onClose={() => { setShowAuthModal(false); clearSessionExpired(); }} />
+      </>
+    );
+  }
+
   return (
     <div style={styles.appContainer}>
-      <div style={styles.contentWrapper}>
+      <div style={{
+        ...styles.contentWrapper,
+        ...(isMobile ? { padding: "12px 14px", paddingBottom: 80 } : {}),
+      }}>
         {/* Header with Search + Calendar + Auth */}
-        <div style={styles.headerRow}>
-          <div style={styles.searchContainer}>
+        <div style={{
+          ...styles.headerRow,
+          ...(isMobile ? { flexWrap: "wrap" } : {}),
+        }}>
+          <div style={{ flex: 1, minWidth: isMobile ? "100%" : undefined }}>
             <SearchBar
               onSelect={(ticker) => navigate(`/quote/${ticker.toUpperCase()}`)}
               loading={false}
+              isMobile={isMobile}
             />
           </div>
           {/* Calendar Button */}
@@ -287,7 +314,7 @@ export default function App() {
             <div style={styles.authLoading}>...</div>
           ) : isAuthenticated && user ? (
             <div style={styles.authRow}>
-              <span style={styles.authEmail}>{user.email}</span>
+              {!isMobile && <span style={styles.authEmail}>{user.email}</span>}
               <button onClick={logout} style={styles.signOutBtn}>
                 Sign Out
               </button>
@@ -299,39 +326,41 @@ export default function App() {
           )}
         </div>
 
-        {/* ── Navigation Tabs ───────────────────────────────────────────── */}
-        <div style={styles.navRow}>
-          <Link to="/" style={getNavLinkStyle(activeTab === "dashboard")}>
-            Dashboard
-          </Link>
-          <Link to="/screener" style={getNavLinkStyle(activeTab === "screener")}>
-            Screener<InfoTip text={NAV_TIPS.screener} />
-          </Link>
-          <Link to="/projects" style={getNavLinkStyle(activeTab === "projects")}>
-            Projects
-          </Link>
-          <Link to="/signals" style={getNavLinkStyle(activeTab === "signals")}>
-            Signals<InfoTip text={NAV_TIPS.signals} />
-          </Link>
-          <Link to="/congress" style={getNavLinkStyle(activeTab === "congress")}>
-            Congress<InfoTip text={NAV_TIPS.congress} />
-          </Link>
-          <Link to="/private" style={getNavLinkStyle(activeTab === "private")}>
-            Private Companies
-          </Link>
-          <Link to="/ai-history" style={getNavLinkStyle(activeTab === "ai-history")}>
-            AI History
-          </Link>
-          <Link to="/onboarding" style={getNavLinkStyle(activeTab === "onboarding")}>
-            Onboarding
-          </Link>
-        </div>
+        {/* ── Navigation Tabs (desktop only) ───────────────────────────── */}
+        {!isMobile && (
+          <div style={styles.navRow}>
+            <Link to="/dashboard" style={getNavLinkStyle(activeTab === "dashboard")}>
+              Dashboard
+            </Link>
+            <Link to="/screener" style={getNavLinkStyle(activeTab === "screener")}>
+              Screener<InfoTip text={NAV_TIPS.screener} />
+            </Link>
+            <Link to="/projects" style={getNavLinkStyle(activeTab === "projects")}>
+              Projects
+            </Link>
+            <Link to="/signals" style={getNavLinkStyle(activeTab === "signals")}>
+              Signals<InfoTip text={NAV_TIPS.signals} />
+            </Link>
+            <Link to="/congress" style={getNavLinkStyle(activeTab === "congress")}>
+              Congress<InfoTip text={NAV_TIPS.congress} />
+            </Link>
+            <Link to="/private" style={getNavLinkStyle(activeTab === "private")}>
+              Private Companies
+            </Link>
+            <Link to="/ai-history" style={getNavLinkStyle(activeTab === "ai-history")}>
+              AI History
+            </Link>
+            <Link to="/onboarding" style={getNavLinkStyle(activeTab === "onboarding")}>
+              Onboarding
+            </Link>
+          </div>
+        )}
 
         {/* ── Routes (wrapped in ErrorBoundary + Suspense) ─────────────── */}
         <ErrorBoundary>
           <Suspense fallback={<LoadingSpinner />}>
             <Routes>
-              <Route path="/" element={<DashboardView />} />
+              <Route path="/dashboard" element={<DashboardView />} />
               <Route path="/quote/:ticker" element={<TickerView />} />
               <Route path="/screener" element={<ScreenerView />} />
               <Route path="/projects" element={<ProjectsListView />} />
@@ -350,6 +379,9 @@ export default function App() {
         </ErrorBoundary>
       </div>
 
+      {/* Mobile bottom tab bar */}
+      {isMobile && <MobileTabBar />}
+
       {/* Auth Modal */}
       <AuthModal isOpen={showAuthModal} onClose={() => { setShowAuthModal(false); clearSessionExpired(); }} />
     </div>
@@ -366,7 +398,7 @@ function NotFoundView() {
       <div style={{ fontSize: 48, fontWeight: 700, color: "#fff", marginBottom: 8 }}>404</div>
       <div style={{ fontSize: 16, marginBottom: 24 }}>Page not found</div>
       <button
-        onClick={() => navigate("/")}
+        onClick={() => navigate("/dashboard")}
         style={{
           padding: "10px 24px",
           background: "#222",
@@ -681,11 +713,12 @@ const TICKER_RE = /^[A-Z0-9.\-]{1,10}$/;
 function TickerView() {
   const { ticker: urlTicker } = useParams<{ ticker: string }>();
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
 
   // Validate ticker from URL — redirect to home if invalid
   const normalizedTicker = urlTicker?.toUpperCase() ?? "";
   if (!TICKER_RE.test(normalizedTicker)) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/dashboard" replace />;
   }
 
   const { isAuthenticated } = useAuth();
@@ -930,7 +963,7 @@ function TickerView() {
 
   function goToDashboard() {
     sessionStorage.removeItem("hf_return_project");
-    navigate("/");
+    navigate("/dashboard");
   }
 
   function returnToProject() {
@@ -938,6 +971,11 @@ function TickerView() {
     sessionStorage.removeItem("hf_return_project");
     navigate(`/projects/${returnProjectId}`);
   }
+
+  // Responsive grid: side-by-side on desktop, stacked on mobile
+  const responsiveGrid = isMobile
+    ? { ...styles.gridTwoCol, gridTemplateColumns: "1fr" }
+    : styles.gridTwoCol;
 
   // ── Loading State ─────────────────────────────────────────────────────────
   if (loading) {
@@ -972,7 +1010,7 @@ function TickerView() {
       <CompanyHeader company={company} fundamentals={fundamentals} prices={prices} />
 
       {/* ── Action Buttons (Watch / Portfolio / Project / Back) ──── */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 16, marginTop: 12 }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 16, marginTop: 12, flexWrap: "wrap" }}>
         <button
           onClick={toggleWatchlist}
           style={{
@@ -1175,8 +1213,8 @@ function TickerView() {
           </Suspense>
 
           {/* DCF + Risk (side by side) */}
-          <Suspense fallback={<div style={styles.gridTwoCol}><CardSkeleton /><CardSkeleton /></div>}>
-            <div style={styles.gridTwoCol}>
+          <Suspense fallback={<div style={responsiveGrid}><CardSkeleton /><CardSkeleton /></div>}>
+            <div style={responsiveGrid}>
               <DCFCard
                 key={`dcf-${ticker}`}
                 ticker={ticker}
@@ -1188,8 +1226,8 @@ function TickerView() {
           </Suspense>
 
           {/* Fundamentals + Institutional Flow */}
-          <Suspense fallback={<div style={styles.gridTwoCol}><CardSkeleton height={160} /><CardSkeleton height={160} /></div>}>
-            <div style={styles.gridTwoCol}>
+          <Suspense fallback={<div style={responsiveGrid}><CardSkeleton height={160} /><CardSkeleton height={160} /></div>}>
+            <div style={responsiveGrid}>
               <FundamentalsCard data={fundamentals} />
               <InstitutionalFlowCard key={`inst-${ticker}`} ticker={ticker} initialData={institutionalFlow} />
             </div>
@@ -1234,8 +1272,8 @@ function TickerView() {
           </div>
 
           {/* Insider + Politicians */}
-          <Suspense fallback={<div style={styles.gridTwoCol}><CardSkeleton height={160} /><CardSkeleton height={160} /></div>}>
-            <div style={styles.gridTwoCol}>
+          <Suspense fallback={<div style={responsiveGrid}><CardSkeleton height={160} /><CardSkeleton height={160} /></div>}>
+            <div style={responsiveGrid}>
               <InsiderTradingCard key={`insider-${ticker}`} ticker={ticker} initialData={insiderSummary} />
               <PoliticianTradesCard key={`pol-${ticker}`} ticker={ticker} initialData={politicianTrades} />
             </div>
@@ -1352,13 +1390,25 @@ function AddPositionInline({
 }) {
   const [shares, setShares] = useState("");
   const [cost, setCost] = useState("");
+  const isMobile = useIsMobile();
+
+  const inputStyle = {
+    background: "#222",
+    border: "1px solid #444",
+    borderRadius: 4,
+    color: "#fff",
+    padding: "5px 8px",
+    fontSize: 12,
+    outline: "none",
+  } as const;
 
   return (
     <div
       style={{
         display: "flex",
         gap: 8,
-        alignItems: "center",
+        alignItems: isMobile ? "stretch" : "center",
+        flexDirection: isMobile ? "column" : "row",
         marginBottom: 16,
         padding: 12,
         background: "#151515",
@@ -1375,16 +1425,7 @@ function AddPositionInline({
         step="any"
         value={shares}
         onChange={(e) => setShares(e.target.value)}
-        style={{
-          background: "#222",
-          border: "1px solid #444",
-          borderRadius: 4,
-          color: "#fff",
-          padding: "5px 8px",
-          fontSize: 12,
-          width: 80,
-          outline: "none",
-        }}
+        style={{ ...inputStyle, width: isMobile ? "100%" : 80 }}
       />
       <input
         placeholder="Avg Cost ($)"
@@ -1392,46 +1433,40 @@ function AddPositionInline({
         step="any"
         value={cost}
         onChange={(e) => setCost(e.target.value)}
-        style={{
-          background: "#222",
-          border: "1px solid #444",
-          borderRadius: 4,
-          color: "#fff",
-          padding: "5px 8px",
-          fontSize: 12,
-          width: 100,
-          outline: "none",
-        }}
+        style={{ ...inputStyle, width: isMobile ? "100%" : 100 }}
       />
-      <button
-        onClick={() => {
-          if (shares && cost) onAdd(parseFloat(shares), parseFloat(cost));
-        }}
-        style={{
-          background: "#22c55e20",
-          border: "1px solid #22c55e40",
-          borderRadius: 4,
-          color: "#22c55e",
-          fontSize: 12,
-          padding: "5px 12px",
-          cursor: "pointer",
-          whiteSpace: "nowrap",
-        }}
-      >
-        Add
-      </button>
-      <button
-        onClick={onCancel}
-        style={{
-          background: "none",
-          border: "none",
-          color: "#666",
-          cursor: "pointer",
-          fontSize: 14,
-        }}
-      >
-        ✕
-      </button>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button
+          onClick={() => {
+            if (shares && cost) onAdd(parseFloat(shares), parseFloat(cost));
+          }}
+          style={{
+            background: "#22c55e20",
+            border: "1px solid #22c55e40",
+            borderRadius: 4,
+            color: "#22c55e",
+            fontSize: 12,
+            padding: "5px 12px",
+            cursor: "pointer",
+            whiteSpace: "nowrap",
+            flex: isMobile ? 1 : undefined,
+          }}
+        >
+          Add
+        </button>
+        <button
+          onClick={onCancel}
+          style={{
+            background: "none",
+            border: "none",
+            color: "#666",
+            cursor: "pointer",
+            fontSize: 14,
+          }}
+        >
+          ✕
+        </button>
+      </div>
     </div>
   );
 }
@@ -1986,7 +2021,7 @@ function ETFFundamentalsCard({ data }: { data: Fundamentals }) {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(3, 1fr)",
+            gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
             gap: 12,
           }}
         >

@@ -1,6 +1,7 @@
 // src/components/CompanyHeader.tsx
 
 import { useState, useEffect } from "react";
+import { useIsMobile } from "../lib/useIsMobile";
 
 interface CompanyHeaderProps {
   company: {
@@ -111,6 +112,7 @@ function Stat({ label, value }: { label: string; value: string }) {
 }
 
 export function CompanyHeader({ company, fundamentals, prices }: CompanyHeaderProps) {
+  const isMobile = useIsMobile();
   // Market status - updates every minute
   const [marketStatus, setMarketStatus] = useState(getMarketStatus);
   useEffect(() => {
@@ -156,10 +158,10 @@ export function CompanyHeader({ company, fundamentals, prices }: CompanyHeaderPr
         marginBottom: 20,
       }}
     >
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+      <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", justifyContent: "space-between", alignItems: isMobile ? "stretch" : "flex-start", gap: isMobile ? 12 : 0 }}>
         <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <h1 style={{ margin: 0, fontSize: 28 }}>{company.name || "—"}</h1>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <h1 style={{ margin: 0, fontSize: isMobile ? 22 : 28 }}>{company.name || "—"}</h1>
             <span
               style={{
                 background: "#3b82f6",
@@ -177,13 +179,13 @@ export function CompanyHeader({ company, fundamentals, prices }: CompanyHeaderPr
           </p>
         </div>
 
-        <div style={{ textAlign: "right" }}>
+        <div style={{ textAlign: isMobile ? "left" : "right" }}>
           {livePrice != null ? (
             <>
-              <div style={{ fontSize: 32, fontWeight: 600 }}>${livePrice.toFixed(2)}</div>
+              <div style={{ fontSize: isMobile ? 26 : 32, fontWeight: 600 }}>${livePrice.toFixed(2)}</div>
 
               {/* Market Status & Data Disclaimer Badges */}
-              <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", marginTop: 4 }}>
+              <div style={{ display: "flex", gap: 6, justifyContent: isMobile ? "flex-start" : "flex-end", marginTop: 4 }}>
                 <span
                   style={{
                     fontSize: 10,
@@ -224,7 +226,7 @@ export function CompanyHeader({ company, fundamentals, prices }: CompanyHeaderPr
                   marginTop: 6,
                   display: "flex",
                   flexDirection: "column",
-                  alignItems: "flex-end",
+                  alignItems: isMobile ? "flex-start" : "flex-end",
                   gap: 4,
                 }}
               >
@@ -241,7 +243,7 @@ export function CompanyHeader({ company, fundamentals, prices }: CompanyHeaderPr
       <div
         style={{
           display: "flex",
-          gap: 32,
+          gap: isMobile ? 16 : 32,
           marginTop: 20,
           paddingTop: 16,
           borderTop: "1px solid #333",

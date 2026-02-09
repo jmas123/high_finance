@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api";
+import { useIsMobile } from "../lib/useIsMobile";
+import { MobileCardRow, MobileCardField } from "./common/MobileCard";
 
 type InsiderTrade = {
   insider: string;
@@ -66,6 +68,7 @@ interface InsiderTradingCardProps {
 }
 
 export function InsiderTradingCard({ ticker, initialData }: InsiderTradingCardProps) {
+  const isMobile = useIsMobile();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<InsiderSummary | null>(initialData ?? null);
@@ -180,7 +183,7 @@ export function InsiderTradingCard({ ticker, initialData }: InsiderTradingCardPr
           {/* Summary Stats */}
           <div style={{
             display: "grid",
-            gridTemplateColumns: "repeat(4, 1fr)",
+            gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
             gap: 12,
             marginBottom: 16,
             padding: 12,
@@ -222,6 +225,30 @@ export function InsiderTradingCard({ ticker, initialData }: InsiderTradingCardPr
           </div>
 
           {/* Recent Trades Table */}
+          {isMobile ? (
+            <div>
+              {summary.recent_trades.slice(0, 10).map((trade, i) => (
+                <MobileCardRow key={`${trade.insider}-${trade.date ?? "nodate"}-${i}`}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: 14 }}>{trade.insider}</div>
+                      {trade.position && (
+                        <div style={{ fontSize: 11, color: "#888", marginTop: 2 }}>{trade.position}</div>
+                      )}
+                    </div>
+                    <span style={pillStyle(trade.transaction_type)}>
+                      {trade.transaction_type}
+                    </span>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+                    <MobileCardField label="Shares" value={formatShares(trade.shares)} />
+                    <MobileCardField label="Value" value={formatValue(trade.value)} />
+                    <MobileCardField label="Date" value={trade.date || "—"} />
+                  </div>
+                </MobileCardRow>
+              ))}
+            </div>
+          ) : (
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead>
@@ -256,12 +283,13 @@ export function InsiderTradingCard({ ticker, initialData }: InsiderTradingCardPr
                     <td style={{ padding: "10px 8px", opacity: 0.8 }}>
                       {trade.date || "—"}
                     </td>
-                    
+
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          )}
         </>
       )}
     </div>

@@ -4,6 +4,7 @@ import { useUserData } from "../../lib/userData";
 import { useAuth } from "../../lib/auth";
 import { projectsApi } from "../project/api";
 import type { ProjectSummary } from "../../lib/types";
+import { useIsMobile } from "../../lib/useIsMobile";
 
 interface Quote {
   ticker: string;
@@ -18,6 +19,7 @@ interface WatchlistCardProps {
 }
 
 export function WatchlistCard({ onSelect, onOpenProject }: WatchlistCardProps) {
+  const isMobile = useIsMobile();
   const { isAuthenticated } = useAuth();
   const { watchlist, removeFromWatchlist } = useUserData();
   const [quotes, setQuotes] = useState<Record<string, Quote>>({});
@@ -148,8 +150,8 @@ export function WatchlistCard({ onSelect, onOpenProject }: WatchlistCardProps) {
                 cursor: "pointer",
                 transition: "background 0.15s",
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = "#252525")}
-              onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+              onMouseEnter={isMobile ? undefined : (e) => (e.currentTarget.style.background = "#252525")}
+              onMouseLeave={isMobile ? undefined : (e) => (e.currentTarget.style.background = "transparent")}
             >
               {/* Ticker + Name + Project Badge */}
               <div style={{ minWidth: 0 }}>

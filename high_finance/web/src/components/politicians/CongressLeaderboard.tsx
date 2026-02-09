@@ -5,6 +5,8 @@ import type { LeaderboardEntry, LeaderboardResponse } from "../../lib/types";
 import { thBase, tdBase, right } from "../../lib/types";
 import { InfoTip } from "../common/InfoTip";
 import { CONGRESS_TIPS } from "../../lib/tooltips";
+import { useIsMobile } from "../../lib/useIsMobile";
+import { MobileCardRow, MobileCardField } from "../common/MobileCard";
 
 type SortKey = keyof LeaderboardEntry;
 
@@ -48,6 +50,7 @@ function historyMonths(first: string | null | undefined, last: string | null | u
 const SHORT_HISTORY_MONTHS = 24;
 
 export function CongressLeaderboard() {
+  const isMobile = useIsMobile();
   const navigate = useNavigate();
 
   const [delayDays, setDelayDays] = useState(3);
@@ -249,6 +252,80 @@ export function CongressLeaderboard() {
             No politicians matched the criteria.
           </div>
         ) : (
+          isMobile ? (
+            <div style={{ padding: 8 }}>
+              {sorted.map((e, i) => (
+                <MobileCardRow
+                  key={e.politician_id}
+                  onClick={() => navigate(`/congress/${e.politician_id}`)}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ color: "#666", fontSize: 12 }}>#{i + 1}</span>
+                      <span style={{ fontWeight: 600, fontSize: 14 }}>{e.politician_name}</span>
+                      <span
+                        style={{
+                          display: "inline-block",
+                          padding: "2px 8px",
+                          borderRadius: 999,
+                          fontSize: 10,
+                          fontWeight: 600,
+                          background: partyColor(e.party) + "20",
+                          color: partyColor(e.party),
+                        }}
+                      >
+                        {e.party?.charAt(0) || "?"}
+                      </span>
+                    </div>
+                    <span
+                      style={{
+                        fontWeight: 700,
+                        fontSize: 14,
+                        color: gradeColor(e.grade),
+                      }}
+                    >
+                      {e.grade || "—"}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 11, color: "#888", marginBottom: 8 }}>
+                    {e.chamber || "—"}{e.state ? ` • ${e.state}` : ""} • {e.num_trades_priced} positions
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+                    <MobileCardField label="Win Rate" value={`${e.win_rate.toFixed(1)}%`} />
+                    <MobileCardField label="Total Return" value={
+                      <span style={{ color: returnColor(e.total_return_pct), fontWeight: 600 }}>
+                        {e.total_return_pct > 0 ? "+" : ""}{e.total_return_pct.toFixed(1)}%
+                      </span>
+                    } />
+                    <MobileCardField label="Avg/Trade" value={
+                      <span style={{ color: returnColor(e.avg_return_per_trade_pct ?? null) }}>
+                        {e.avg_return_per_trade_pct != null
+                          ? `${e.avg_return_per_trade_pct > 0 ? "+" : ""}${e.avg_return_per_trade_pct.toFixed(1)}%`
+                          : "—"}
+                      </span>
+                    } />
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginTop: 6 }}>
+                    <MobileCardField label="Alpha vs SPY" value={
+                      <span style={{ color: returnColor(e.alpha_pct), fontWeight: 600 }}>
+                        {e.alpha_pct > 0 ? "+" : ""}{e.alpha_pct.toFixed(1)}%
+                      </span>
+                    } />
+                    <MobileCardField label="Ann. Return" value={
+                      <span style={{ color: returnColor(e.annualized_return_pct) }}>
+                        {e.annualized_return_pct != null
+                          ? `${e.annualized_return_pct > 0 ? "+" : ""}${e.annualized_return_pct.toFixed(1)}%`
+                          : "—"}
+                      </span>
+                    } />
+                    <MobileCardField label="Max DD" value={
+                      <span style={{ color: "#ef4444" }}>-{e.max_drawdown_pct.toFixed(1)}%</span>
+                    } />
+                  </div>
+                </MobileCardRow>
+              ))}
+            </div>
+          ) : (
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
@@ -323,10 +400,10 @@ export function CongressLeaderboard() {
                       borderBottom: "1px solid #222",
                       transition: "background 0.1s",
                     }}
-                    onMouseEnter={(ev) => {
+                    onMouseEnter={isMobile ? undefined : (ev) => {
                       (ev.currentTarget as HTMLTableRowElement).style.background = "#252525";
                     }}
-                    onMouseLeave={(ev) => {
+                    onMouseLeave={isMobile ? undefined : (ev) => {
                       (ev.currentTarget as HTMLTableRowElement).style.background = "transparent";
                     }}
                   >
@@ -420,6 +497,7 @@ export function CongressLeaderboard() {
               </tbody>
             </table>
           </div>
+          )
         )}
       </div>
 

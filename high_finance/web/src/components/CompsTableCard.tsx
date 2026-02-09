@@ -4,6 +4,8 @@ import { thBase, tdBase, left, right } from "../lib/types";
 import { PeerGroupSelector } from "./comps/PeerGroupSelector";
 import { PeerGroupEditor } from "./comps/PeerGroupEditor";
 import { exportCompsToExcel, downloadBlob } from "../lib/api/peerGroups";
+import { useIsMobile } from "../lib/useIsMobile";
+import { MobileCardRow, MobileCardField } from "./common/MobileCard";
 
 function formatLarge(value: number | null | undefined): string {
   if (value == null) return "—";
@@ -104,6 +106,7 @@ type SortState = {
 };
 
 export function CompsTable({ data, ticker, isAuthenticated, onRefetch, onTickerClick }: Props) {
+  const isMobile = useIsMobile();
   const { target, peers, template, statistics, implied_prices } = data;
 
   // Peer group state
@@ -334,6 +337,81 @@ export function CompsTable({ data, ticker, isAuthenticated, onRefetch, onTickerC
         )}
       </div>
 
+      {isMobile ? (
+        <div>
+          {allCompanies.map((co: Fundamentals) => {
+            const isTarget = co.ticker === target.ticker;
+
+            // Calculate premium/discount for target row
+            let premiumBadge: { text: string; color: string } | null = null;
+            if (isTarget && hasStats) {
+              for (const m of valuationMetrics) {
+                const targetVal = (co as any)[m] as number | null;
+                const medianVal = getStats(m).median;
+                premiumBadge = formatPremiumDiscount(targetVal, medianVal);
+                if (premiumBadge) break;
+              }
+            }
+
+            return (
+              <MobileCardRow
+                key={co.ticker}
+                onClick={!isTarget && onTickerClick ? () => onTickerClick(co.ticker) : undefined}
+                style={isTarget ? { background: "rgba(255, 255, 255, 0.03)", borderColor: "#444" } : undefined}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontWeight: 600, fontSize: 14, color: isTarget ? "#fff" : "#3b82f6" }}>
+                      {co.ticker}
+                    </span>
+                    {isTarget && (
+                      <span style={{ fontSize: 10, background: "#333", padding: "2px 6px", borderRadius: 4 }}>
+                        TARGET
+                      </span>
+                    )}
+                  </div>
+                  {isTarget && premiumBadge && (
+                    <span
+                      style={{
+                        color: premiumBadge.color,
+                        fontWeight: 600,
+                        fontSize: 12,
+                        padding: "2px 6px",
+                        background: `${premiumBadge.color}15`,
+                        borderRadius: 4,
+                      }}
+                    >
+                      {premiumBadge.text} vs Med
+                    </span>
+                  )}
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                  {metrics.slice(0, 6).map((m) => {
+                    const val = (co as any)[m] as number | null | undefined;
+                    return (
+                      <MobileCardField key={m} label={metricLabel(m)} value={formatMetric(m, val)} />
+                    );
+                  })}
+                </div>
+              </MobileCardRow>
+            );
+          })}
+
+          {/* Statistics summary on mobile */}
+          {hasStats && (
+            <MobileCardRow style={{ background: "#111", borderColor: "#444" }}>
+              <div style={{ fontWeight: 600, fontSize: 13, color: "#22c55e", marginBottom: 8 }}>Peer Median</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                {metrics.slice(0, 6).map((m) => (
+                  <MobileCardField key={m} label={metricLabel(m)} value={
+                    <span style={{ color: "#22c55e" }}>{formatMetric(m, getStats(m).median)}</span>
+                  } />
+                ))}
+              </div>
+            </MobileCardRow>
+          )}
+        </div>
+      ) : (
       <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
           <thead>
@@ -410,10 +488,10 @@ export function CompsTable({ data, ticker, isAuthenticated, onRefetch, onTickerC
                           cursor: onTickerClick ? "pointer" : "default",
                           textDecoration: onTickerClick ? "none" : "none",
                         }}
-                        onMouseEnter={(e) => {
+                        onMouseEnter={isMobile ? undefined : (e) => {
                           if (onTickerClick) e.currentTarget.style.textDecoration = "underline";
                         }}
-                        onMouseLeave={(e) => {
+                        onMouseLeave={isMobile ? undefined : (e) => {
                           e.currentTarget.style.textDecoration = "none";
                         }}
                       >
@@ -553,6 +631,7 @@ export function CompsTable({ data, ticker, isAuthenticated, onRefetch, onTickerC
           </tbody>
         </table>
       </div>
+      )}
 
       {/* Data freshness indicator */}
       {target.fetched_at && (

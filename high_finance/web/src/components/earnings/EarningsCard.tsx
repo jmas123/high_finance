@@ -156,7 +156,7 @@ export function EarningsCard({ ticker, initialData }: EarningsCardProps) {
           {/* Summary Stats */}
           <div style={{
             display: "grid",
-            gridTemplateColumns: "repeat(4, 1fr)",
+            gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
             gap: 12,
             marginBottom: 16,
             padding: 12,

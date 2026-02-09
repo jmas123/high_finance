@@ -3,6 +3,8 @@ import { api } from "../../lib/api";
 import type { PoliticianTradeWithContext, Politician, PoliticianTrade } from "../../lib/types";
 import { InfoTip } from "../common/InfoTip";
 import { CONGRESS_TIPS } from "../../lib/tooltips";
+import { useIsMobile } from "../../lib/useIsMobile";
+import { MobileCardRow, MobileCardField } from "../common/MobileCard";
 
 type FlatRow = PoliticianTrade & {
   politician: Politician; // guaranteed after flatten
@@ -67,6 +69,7 @@ function flattenTradeData(data: PoliticianTradeWithContext[] | null): FlatRow[] 
 }
 
 export function PoliticianTradesCard({ ticker, initialData }: PoliticianTradesCardProps) {
+  const isMobile = useIsMobile();
   const [limit, setLimit] = useState(50);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -187,6 +190,78 @@ export function PoliticianTradesCard({ ticker, initialData }: PoliticianTradesCa
       ) : rows.length === 0 ? (
         <div style={{ padding: 24, opacity: 0.7 }}>No recent disclosures found for this ticker.</div>
       ) : (
+        {isMobile ? (
+          <div style={{ marginTop: 12 }}>
+            {rows.map((trade) => {
+              const action = (trade.transaction_type ?? "—").toUpperCase();
+              const isBuy = action === "PURCHASE" || action.includes("BUY");
+              const isSell = action === "SALE" || action.includes("SELL");
+              const politician = trade.politician;
+
+              return (
+                <MobileCardRow key={trade.id}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                    <div>
+                      {politician ? (
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <span style={{ fontWeight: 600, fontSize: 14 }}>{politician.name}</span>
+                          <span
+                            style={{
+                              fontSize: 10,
+                              padding: "2px 6px",
+                              borderRadius: 4,
+                              background: partyColor(politician.party),
+                              opacity: 0.9,
+                            }}
+                          >
+                            {politician.party?.[0] || "?"}
+                          </span>
+                        </div>
+                      ) : (
+                        <span style={{ opacity: 0.6, fontSize: 13 }}>Unknown #{trade.politician_id}</span>
+                      )}
+                      {politician && (
+                        <div style={{ fontSize: 11, color: "#888", marginTop: 2 }}>
+                          {politician.chamber ?? "—"}{politician.state ? ` • ${politician.state}` : ""}
+                        </div>
+                      )}
+                    </div>
+                    <span style={pillStyle(isBuy ? "#14532d" : isSell ? "#7f1d1d" : "#374151")}>
+                      {action}
+                    </span>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    <MobileCardField label="Amount" value={formatAmount(trade.amount_min, trade.amount_max)} />
+                    <MobileCardField label="Trade Date" value={formatDate(trade.transaction_date)} />
+                    <MobileCardField label="Disclosure" value={formatDate(trade.disclosure_date)} />
+                    <MobileCardField label="Win Rate" value={
+                      politician?.hit_rate != null ? (
+                        <span style={{ color: hitRateColor(politician.hit_rate), fontWeight: 600 }}>
+                          {Math.round(politician.hit_rate * 100)}%
+                        </span>
+                      ) : "—"
+                    } />
+                  </div>
+                  {trade.source_url && (
+                    <div style={{ marginTop: 8 }}>
+                      <a
+                        href={trade.source_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ color: "#60a5fa", textDecoration: "none", fontSize: 12 }}
+                      >
+                        View Source
+                      </a>
+                    </div>
+                  )}
+                </MobileCardRow>
+              );
+            })}
+            <div style={{ marginTop: 10, fontSize: 12, opacity: 0.6 }}>
+              Note: Disclosure dates can lag transaction dates. Win rate reflects the percentage of recent trades with positive returns within 30 days.
+            </div>
+          </div>
+        ) : (
         <div style={{ marginTop: 12, overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
@@ -293,6 +368,7 @@ export function PoliticianTradesCard({ ticker, initialData }: PoliticianTradesCa
             Note: Disclosure dates can lag transaction dates. Win rate reflects the percentage of recent trades with positive returns within 30 days.
           </div>
         </div>
+        )}
       )}
     </div>
   );

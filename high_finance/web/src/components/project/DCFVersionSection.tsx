@@ -539,7 +539,7 @@ export function DCFVersionsSection({
                     fontSize: 12,
                   }}
                 >
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10, marginBottom: 8 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))", gap: 10, marginBottom: 8 }}>
                     <div>
                       <div style={{ color: "#666", fontSize: 10 }}>Growth</div>
                       <div style={{ fontFamily: "monospace" }}>{fmtPct(s.growth)}</div>

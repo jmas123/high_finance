@@ -11,6 +11,7 @@ import {
 import { DrawerOverlay } from "./DrawOverlay";
 
 import type { MacroIndicator } from "../../lib/types";
+import { useIsMobile } from "../../lib/useIsMobile";
 
 /* ─── Colour helpers ─────────────────────────────────────────── */
 
@@ -91,6 +92,7 @@ function TrendIcon({ trend, color }: { trend: MacroIndicator["trend"]; color: st
 /* ─── Component ──────────────────────────────────────────────── */
 
 export default function MacroOverlayCard({ ticker, onIndicatorClick, initialData }: MacroOverlayCardProps) {
+  const isMobile = useIsMobile();
   const [data, setData] = useState<MacroData | null>(initialData ?? null);
   const [loading, setLoading] = useState(!initialData);
   const [error, setError] = useState<string | null>(null);
@@ -200,7 +202,7 @@ export default function MacroOverlayCard({ ticker, onIndicatorClick, initialData
 
       {/* ─── KPI Strip ─── */}
       <div style={{ padding: 16 }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8 }}>
           {indicators.kpis.map((i) => {
             const tColor = getTrendColor(i.name, i.trend);
             const vColor = getValueColor(i.name, i.value);
@@ -218,8 +220,8 @@ export default function MacroOverlayCard({ ticker, onIndicatorClick, initialData
                   color: "inherit",
                   transition: "border-color 0.15s",
                 }}
-                onMouseEnter={(e) => (e.currentTarget.style.borderColor = "#555")}
-                onMouseLeave={(e) => (e.currentTarget.style.borderColor = C.borderSubtle)}
+                onMouseEnter={isMobile ? undefined : (e) => (e.currentTarget.style.borderColor = "#555")}
+                onMouseLeave={isMobile ? undefined : (e) => (e.currentTarget.style.borderColor = C.borderSubtle)}
               >
                 <div style={{ fontSize: 11, color: C.textMuted, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {i.name}
@@ -282,8 +284,8 @@ export default function MacroOverlayCard({ ticker, onIndicatorClick, initialData
                     textAlign: "left",
                     transition: "background 0.15s",
                   }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.03)")}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
+                  onMouseEnter={isMobile ? undefined : (e) => (e.currentTarget.style.background = "rgba(255,255,255,0.03)")}
+                  onMouseLeave={isMobile ? undefined : (e) => (e.currentTarget.style.background = "none")}
                 >
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 13, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{i.name}</div>

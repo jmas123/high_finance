@@ -6,12 +6,14 @@
 
 import { useState } from "react";
 import { CalendarPopup } from "./CalendarPopup";
+import { useIsMobile } from "../../lib/useIsMobile";
 
 interface CalendarPopupButtonProps {
   onTickerClick?: (ticker: string) => void;
 }
 
 export function CalendarPopupButton({ onTickerClick }: CalendarPopupButtonProps) {
+  const isMobile = useIsMobile();
   const [isOpen, setIsOpen] = useState(false);
 
   return (
@@ -31,11 +33,11 @@ export function CalendarPopupButton({ onTickerClick }: CalendarPopupButtonProps)
           cursor: "pointer",
           transition: "all 0.15s",
         }}
-        onMouseEnter={(e) => {
+        onMouseEnter={isMobile ? undefined : (e) => {
           e.currentTarget.style.background = "#333";
           e.currentTarget.style.borderColor = "#555";
         }}
-        onMouseLeave={(e) => {
+        onMouseLeave={isMobile ? undefined : (e) => {
           e.currentTarget.style.background = "#222";
           e.currentTarget.style.borderColor = "#444";
         }}

@@ -1,5 +1,6 @@
 import { useState, memo } from "react";
 import { fmtPctSigned, fmtPx, fmtPct } from "../Functions";
+import { useIsMobile } from "../../lib/useIsMobile";
 
 export const ScenarioCard = memo(function ScenarioCard({
   scenario,
@@ -16,21 +17,22 @@ export const ScenarioCard = memo(function ScenarioCard({
   color: string;
   description: string;
 }) {
+  const isMobile = useIsMobile();
   const [showTooltip, setShowTooltip] = useState(false);
-  
+
   return (
-    <div 
-      style={{ 
-        padding: 14, 
-        borderRadius: 10, 
-        border: `1px solid ${color}33`, 
-        background: `${color}11`, 
+    <div
+      style={{
+        padding: 14,
+        borderRadius: 10,
+        border: `1px solid ${color}33`,
+        background: `${color}11`,
         textAlign: "center",
         position: "relative",
         cursor: "help",
       }}
-      onMouseEnter={() => setShowTooltip(true)}
-      onMouseLeave={() => setShowTooltip(false)}
+      onMouseEnter={isMobile ? undefined : () => setShowTooltip(true)}
+      onMouseLeave={isMobile ? undefined : () => setShowTooltip(false)}
     >
       <div style={{ fontSize: 10, textTransform: "uppercase", opacity: 0.6, letterSpacing: "0.5px" }}>
         {scenario}

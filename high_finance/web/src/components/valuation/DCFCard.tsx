@@ -753,7 +753,7 @@ export function DCFCard({ ticker, onStateChange, initialData }: DCFCardProps) {
         {activeTab === "dcf" && initialized && growth !== null && (
           <>
             {/* Sliders with references */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 10 }}>
               <SliderWithReferences
                 label="Revenue Growth (5y CAGR)"
                 value={growth}
@@ -823,7 +823,7 @@ export function DCFCard({ ticker, onStateChange, initialData }: DCFCardProps) {
 
             {/* DCF Metrics */}
             {!loading && data && !data.error && (
-              <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
+              <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 10 }}>
                 <Metric 
                   label="Revenue (LTM)" 
                   value={fmtMoney(data.facts.revenue0)} 
@@ -854,7 +854,7 @@ export function DCFCard({ ticker, onStateChange, initialData }: DCFCardProps) {
                 <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.5px", opacity: 0.5, marginBottom: 8, display: "flex", alignItems: "center" }}>
                   Scenario Analysis<InfoTip text={VALUATION_TIPS.scenario_analysis} />
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10 }}>
                   {(["bear", "base", "bull"] as const).map(scenario => {
                     const s = data.scenarios[scenario];
                     const color = scenario === "bear" ? "#ef4444" : scenario === "bull" ? "#22c55e" : "#3b82f6";

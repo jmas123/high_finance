@@ -7,6 +7,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { api } from "../../lib/api";
+import { useIsMobile } from "../../lib/useIsMobile";
 
 interface TickerSearchInputProps {
   onSelect: (ticker: string, name: string) => void;
@@ -21,6 +22,7 @@ export function TickerSearchInput({
   clearOnSelect = true,
   style,
 }: TickerSearchInputProps) {
+  const isMobile = useIsMobile();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Array<{ symbol: string; name: string; type: string }>>([]);
   const [showDropdown, setShowDropdown] = useState(false);
@@ -131,8 +133,8 @@ export function TickerSearchInput({
                 borderBottom: "1px solid #252525",
                 transition: "background 0.1s",
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = "#252525")}
-              onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+              onMouseEnter={isMobile ? undefined : (e) => (e.currentTarget.style.background = "#252525")}
+              onMouseLeave={isMobile ? undefined : (e) => (e.currentTarget.style.background = "transparent")}
             >
               <div style={{ display: "flex", gap: 8, alignItems: "center", minWidth: 0 }}>
                 <span style={{ fontWeight: 700, color: "#fff", flexShrink: 0 }}>{r.symbol}</span>

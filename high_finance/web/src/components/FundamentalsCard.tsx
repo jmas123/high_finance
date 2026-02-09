@@ -67,7 +67,7 @@ export function FundamentalsCard({ data }: FundamentalsProps) {
       <h3 style={{ margin: "0 0 16px", fontSize: 16, fontWeight: 600 }}>Fundamentals</h3>
       <div style={{ 
         display: "grid", 
-        gridTemplateColumns: "1fr 1fr 1fr", 
+        gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", 
         gap: 4
       }}>
         {metrics.map((m, i) => (

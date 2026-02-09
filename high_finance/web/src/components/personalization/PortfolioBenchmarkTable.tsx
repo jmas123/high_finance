@@ -9,6 +9,8 @@ import { api } from "../../lib/api";
 import { Sparkline } from "../common/Sparkline";
 import type { PortfolioPosition } from "../../lib/userData";
 import type { PortfolioPerformanceResponse } from "../../lib/types";
+import { useIsMobile } from "../../lib/useIsMobile";
+import { MobileCardRow, MobileCardField } from "../common/MobileCard";
 
 interface Props {
   positions: PortfolioPosition[];
@@ -41,6 +43,7 @@ export function PortfolioBenchmarkTable({
   selectedBenchmarks,
   onBenchmarksChange,
 }: Props) {
+  const isMobile = useIsMobile();
   const [data, setData] = useState<PortfolioPerformanceResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -190,7 +193,88 @@ export function PortfolioBenchmarkTable({
       )}
 
       {/* Comparison Table */}
-      {data && (
+      {data && isMobile && (
+        <div>
+          {/* Portfolio card */}
+          <MobileCardRow style={{ background: "#1a2a1a", borderColor: "#2a3a2a" }}>
+            <div style={{ fontWeight: 600, fontSize: 13, color: "#3b82f6", marginBottom: 8 }}>
+              Allocation Backtest
+            </div>
+            <Sparkline data={data.portfolio.sparkline || []} width={120} height={24} />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginTop: 8 }}>
+              {data.periods.map((p) => (
+                <MobileCardField
+                  key={p}
+                  label={PERIOD_LABELS[p] || p}
+                  value={
+                    <span style={{ color: returnColor(data.portfolio.returns?.[p]), fontWeight: 600 }}>
+                      {formatReturn(data.portfolio.returns?.[p])}
+                    </span>
+                  }
+                />
+              ))}
+            </div>
+          </MobileCardRow>
+
+          {/* Benchmark cards */}
+          {selectedBenchmarks.map((bTicker) => {
+            const benchmark = data.benchmarks[bTicker];
+            if (!benchmark) return null;
+            return (
+              <MobileCardRow key={bTicker}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 14, color: "#fff" }}>{bTicker}</div>
+                    <div style={{ fontSize: 10, color: "#555" }}>{benchmark.name}</div>
+                  </div>
+                  <Sparkline data={benchmark.sparkline || []} width={70} height={20} />
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+                  {data.periods.map((p) => (
+                    <MobileCardField
+                      key={p}
+                      label={PERIOD_LABELS[p] || p}
+                      value={
+                        <span style={{ color: returnColor(benchmark.returns?.[p]) }}>
+                          {formatReturn(benchmark.returns?.[p])}
+                        </span>
+                      }
+                    />
+                  ))}
+                </div>
+              </MobileCardRow>
+            );
+          })}
+
+          {/* Risk Metrics */}
+          {data.risk_metrics && (data.risk_metrics.beta != null || data.risk_metrics.sharpe != null) && (
+            <div style={{ display: "flex", gap: 16, marginTop: 12, fontSize: 11 }}>
+              {data.risk_metrics.beta != null && (
+                <div>
+                  <span style={{ color: "#666" }}>Beta vs SPY: </span>
+                  <span style={{ color: data.risk_metrics.beta > 1 ? "#f59e0b" : "#22c55e", fontFamily: "monospace" }}>
+                    {data.risk_metrics.beta.toFixed(2)}
+                  </span>
+                </div>
+              )}
+              {data.risk_metrics.sharpe != null && (
+                <div>
+                  <span style={{ color: "#666" }}>Sharpe Ratio: </span>
+                  <span style={{ color: data.risk_metrics.sharpe >= 1 ? "#22c55e" : data.risk_metrics.sharpe >= 0 ? "#f59e0b" : "#ef4444", fontFamily: "monospace" }}>
+                    {data.risk_metrics.sharpe.toFixed(2)}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div style={{ fontSize: 9, color: "#555", marginTop: 8, fontStyle: "italic" }}>
+            Backtest assumes current allocation held for each period. Not actual returns.
+          </div>
+        </div>
+      )}
+
+      {data && !isMobile && (
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
             <thead>
@@ -243,14 +327,14 @@ export function PortfolioBenchmarkTable({
               </tr>
 
               {/* Benchmark Rows */}
-              {selectedBenchmarks.map((ticker) => {
-                const benchmark = data.benchmarks[ticker];
+              {selectedBenchmarks.map((bTicker) => {
+                const benchmark = data.benchmarks[bTicker];
                 if (!benchmark) return null;
 
                 return (
-                  <tr key={ticker}>
+                  <tr key={bTicker}>
                     <td style={tdStyle}>
-                      <div style={{ color: "#fff" }}>{ticker}</div>
+                      <div style={{ color: "#fff" }}>{bTicker}</div>
                       <div style={{ fontSize: 9, color: "#555" }}>{benchmark.name}</div>
                     </td>
                     <td style={{ ...tdStyle, textAlign: "center" }}>

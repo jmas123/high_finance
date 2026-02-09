@@ -248,7 +248,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   colorGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(5, 1fr)",
+    gridTemplateColumns: "repeat(auto-fit, minmax(28px, 1fr))",
     gap: 4,
   },
   colorButton: {

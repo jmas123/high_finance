@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { projectsApi } from "./api";
 import type { ProjectSummary } from "../../lib/types";
+import { useIsMobile } from "../../lib/useIsMobile";
 
 interface SaveToProjectButtonProps {
   ticker: string;
@@ -13,6 +14,7 @@ export function SaveToProjectButton({
   onCreateNew,
   onOpenProject,
 }: SaveToProjectButtonProps) {
+  const isMobile = useIsMobile();
   const [open, setOpen] = useState(false);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [loading, setLoading] = useState(false);
@@ -173,10 +175,10 @@ export function SaveToProjectButton({
                   alignItems: "center",
                   gap: 8,
                 }}
-                onMouseEnter={(e) =>
+                onMouseEnter={isMobile ? undefined : (e) =>
                   (e.currentTarget.style.background = "#3b82f610")
                 }
-                onMouseLeave={(e) =>
+                onMouseLeave={isMobile ? undefined : (e) =>
                   (e.currentTarget.style.background = "transparent")
                 }
               >
@@ -200,6 +202,7 @@ function ProjectRow({
   highlight?: boolean;
   onClick: () => void;
 }) {
+  const isMobile = useIsMobile();
   const positionColors: Record<string, string> = {
     LONG: "#22c55e",
     SHORT: "#ef4444",
@@ -223,10 +226,10 @@ function ProjectRow({
         alignItems: "center",
         gap: 10,
       }}
-      onMouseEnter={(e) =>
+      onMouseEnter={isMobile ? undefined : (e) =>
         (e.currentTarget.style.background = highlight ? "#22c55e15" : "#ffffff08")
       }
-      onMouseLeave={(e) =>
+      onMouseLeave={isMobile ? undefined : (e) =>
         (e.currentTarget.style.background = highlight ? "#22c55e08" : "transparent")
       }
     >

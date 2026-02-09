@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { Globe, LayoutGrid, Activity, Percent } from "lucide-react";
+import { useIsMobile } from "../../lib/useIsMobile";
 import MacroOverlayCard from "./MacroOverlayCard";
 import SectorHeatmapCard from "./SectorHeatMap";
 import RateImpactCard from "./RateImpactCard";
@@ -37,6 +38,7 @@ const BroaderMarketContext: React.FC<BroaderMarketContextProps> = ({
   initialSectorsData,
   initialRateImpactData,
 }) => {
+  const isMobile = useIsMobile();
   const [activeTab, setActiveTab] = useState<Tab>("overview");
 
   const tabs = useMemo(
@@ -114,8 +116,8 @@ const BroaderMarketContext: React.FC<BroaderMarketContextProps> = ({
                   color: isActive ? "#fff" : C.textMuted,
                   transition: "all 0.15s",
                 }}
-                onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.color = C.text; }}
-                onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.color = C.textMuted; }}
+                onMouseEnter={isMobile ? undefined : (e) => { if (!isActive) e.currentTarget.style.color = C.text; }}
+                onMouseLeave={isMobile ? undefined : (e) => { if (!isActive) e.currentTarget.style.color = C.textMuted; }}
               >
                 <Icon size={14} />
                 {tab.label}
@@ -129,7 +131,7 @@ const BroaderMarketContext: React.FC<BroaderMarketContextProps> = ({
       <div style={{ minHeight: 500 }}>
 
         {activeTab === "overview" && (
-          <div style={{ display: "grid", gridTemplateColumns: "5fr 7fr", gap: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "5fr 7fr", gap: 16 }}>
             {/* Left column: Macro + Rates stacked */}
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               {showMacro && <MacroOverlayCard ticker={ticker} initialData={initialMacroData} />}

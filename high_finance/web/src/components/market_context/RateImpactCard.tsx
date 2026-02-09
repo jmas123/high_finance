@@ -10,6 +10,7 @@ import {
   ArrowDownRight,
   X,
 } from "lucide-react";
+import { useIsMobile } from "../../lib/useIsMobile";
 
 /* ─── Types ──────────────────────────────────────────────────── */
 
@@ -75,6 +76,7 @@ const RateImpactCard: React.FC<RateImpactCardProps> = ({
   currentRateEnvironment = "stable",
   initialData,
 }) => {
+  const isMobile = useIsMobile();
   const [data, setData] = useState<RateImpactResponse | null>(initialData ?? null);
   const [loading, setLoading] = useState(!initialData);
   const [error, setError] = useState<string | null>(null);
@@ -266,7 +268,7 @@ const RateImpactCard: React.FC<RateImpactCardProps> = ({
       )}
 
       {/* ─── Body: List + Detail ─── */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))" }}>
 
         {/* Left list */}
         <div style={{ borderRight: `1px solid ${C.borderSubtle}`, maxHeight: 360, overflowY: "auto" }}>
@@ -293,8 +295,8 @@ const RateImpactCard: React.FC<RateImpactCardProps> = ({
                   color: "inherit",
                   transition: "background 0.15s",
                 }}
-                onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = "rgba(255,255,255,0.03)"; }}
-                onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = "transparent"; }}
+                onMouseEnter={isMobile ? undefined : (e) => { if (!isActive) e.currentTarget.style.background = "rgba(255,255,255,0.03)"; }}
+                onMouseLeave={isMobile ? undefined : (e) => { if (!isActive) e.currentTarget.style.background = "transparent"; }}
               >
                 <div style={{ flexShrink: 0 }}>
                   <DirectionIcon dir={a.impact_direction} />
@@ -389,7 +391,7 @@ const RateImpactCard: React.FC<RateImpactCardProps> = ({
               </div>
 
               {/* Historical performance */}
-              <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: 10 }}>
                 <div style={{ padding: 12, background: "rgba(255,255,255,0.03)", borderRadius: 8, border: `1px solid ${C.borderSubtle}` }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: C.textMuted, marginBottom: 6 }}>
                     <ArrowUpRight size={12} /> Rising rates (hist.)

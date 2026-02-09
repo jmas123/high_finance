@@ -6,6 +6,7 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from "react";
+import { useIsMobile } from "../../lib/useIsMobile";
 import {
   createChart,
   CandlestickSeries,
@@ -112,6 +113,7 @@ export function PriceChartWithDrawings({
   onLoadMore,
   isLoadingMore = false,
 }: PriceChartWithDrawingsProps) {
+  const isMobile = useIsMobile();
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -204,7 +206,7 @@ export function PriceChartWithDrawings({
 
     const chart = createChart(chartContainerRef.current, {
       width: chartContainerRef.current.clientWidth,
-      height: 400,
+      height: isMobile ? 280 : 400,
       layout: {
         background: { color: "#1a1a1a" },
         textColor: "#d1d5db",
@@ -876,9 +878,9 @@ export function PriceChartWithDrawings({
   return (
     <div style={{ position: "relative" }}>
       {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-        <h2 style={{ margin: 0, fontSize: 18 }}>{ticker} Price Chart</h2>
-        <div style={{ display: "flex", gap: 4 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, gap: 8 }}>
+        <h2 style={{ margin: 0, fontSize: isMobile ? 15 : 18, whiteSpace: "nowrap" }}>{ticker} Price Chart</h2>
+        <div style={{ display: "flex", gap: 4, overflowX: "auto", flexShrink: 1 }}>
           {PERIODS.map((p) => (
             <button
               key={p.value}

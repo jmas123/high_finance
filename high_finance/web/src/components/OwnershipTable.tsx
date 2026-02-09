@@ -1,3 +1,6 @@
+import { useIsMobile } from "../lib/useIsMobile";
+import { MobileCardRow, MobileCardField } from "./common/MobileCard";
+
 interface Holder {
   holder?: string;
   shares?: number;
@@ -25,11 +28,33 @@ function formatValue(value: number | undefined): string {
 }
 
 export function OwnershipTable({ data }: OwnershipTableProps) {
+  const isMobile = useIsMobile();
+
   if (!data || data.length === 0) {
     return (
       <div style={{ background: "#1a1a1a", border: "1px solid #333", borderRadius: 10, padding: 16 }}>
         <h3 style={{ margin: "0 0 16px", fontSize: 16, fontWeight: 600 }}>Institutional Ownership</h3>
         <div style={{ opacity: 0.6 }}>No ownership data available</div>
+      </div>
+    );
+  }
+
+  if (isMobile) {
+    return (
+      <div style={{ background: "#1a1a1a", border: "1px solid #333", borderRadius: 10, padding: 16 }}>
+        <h3 style={{ margin: "0 0 16px", fontSize: 16, fontWeight: 600 }}>Institutional Ownership</h3>
+        {data.slice(0, 10).map((holder, i) => (
+          <MobileCardRow key={`${holder.holder ?? "unknown"}-${i}`}>
+            <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 8 }}>
+              {holder.holder || "—"}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+              <MobileCardField label="Shares" value={formatShares(holder.shares)} />
+              <MobileCardField label="Value" value={formatValue(holder.value)} />
+              <MobileCardField label="% Held" value={holder.percent_out ? `${(holder.percent_out * 100).toFixed(2)}%` : "—"} />
+            </div>
+          </MobileCardRow>
+        ))}
       </div>
     );
   }
@@ -54,8 +79,8 @@ export function OwnershipTable({ data }: OwnershipTableProps) {
                 background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.02)",
                 transition: "background 0.15s ease"
               }}
-              onMouseEnter={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.05)"}
-              onMouseLeave={(e) => e.currentTarget.style.background = i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.02)"}
+              onMouseEnter={isMobile ? undefined : (e) => e.currentTarget.style.background = "rgba(255,255,255,0.05)"}
+              onMouseLeave={isMobile ? undefined : (e) => e.currentTarget.style.background = i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.02)"}
             >
               <td style={{ padding: "12px 8px", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {holder.holder || "—"}

@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../lib/api";
 import type { PrivateCompanySummary } from "../../lib/types";
+import { useIsMobile } from "../../lib/useIsMobile";
 
 const STATUS_COLORS: Record<string, { bg: string; text: string; label: string }> = {
   private: { bg: "#3b82f620", text: "#3b82f6", label: "Private" },
@@ -18,6 +19,7 @@ function formatValuation(val: number | null): string {
 }
 
 export function PrivateCompanyList() {
+  const isMobile = useIsMobile();
   const navigate = useNavigate();
   const [companies, setCompanies] = useState<PrivateCompanySummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -140,8 +142,8 @@ export function PrivateCompanyList() {
                   cursor: "pointer",
                   transition: "border-color 0.15s",
                 }}
-                onMouseEnter={(e) => (e.currentTarget.style.borderColor = "#555")}
-                onMouseLeave={(e) => (e.currentTarget.style.borderColor = "#333")}
+                onMouseEnter={isMobile ? undefined : (e) => (e.currentTarget.style.borderColor = "#555")}
+                onMouseLeave={isMobile ? undefined : (e) => (e.currentTarget.style.borderColor = "#333")}
               >
                 {/* Header row */}
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>

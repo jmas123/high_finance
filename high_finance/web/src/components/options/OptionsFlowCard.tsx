@@ -1,6 +1,8 @@
 import { useEffect, useState, useRef } from "react";
 import { createPortal } from "react-dom";
 import { api } from "../../lib/api";
+import { useIsMobile } from "../../lib/useIsMobile";
+import { MobileCardRow, MobileCardField } from "../common/MobileCard";
 
 // ===== EXPLANATIONS =====
 const EXPLANATIONS: Record<string, string> = {
@@ -199,6 +201,7 @@ interface OptionsFlowCardProps {
 }
 
 export function OptionsFlowCard({ ticker, initialData }: OptionsFlowCardProps) {
+  const isMobile = useIsMobile();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<OptionsData | null>(initialData ?? null);
@@ -326,7 +329,7 @@ export function OptionsFlowCard({ ticker, initialData }: OptionsFlowCardProps) {
           {/* Key Metrics */}
           <div style={{
             display: "grid",
-            gridTemplateColumns: "repeat(5, 1fr)",
+            gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))",
             gap: 12,
             marginBottom: 16,
             padding: 12,
@@ -491,9 +494,49 @@ export function OptionsFlowCard({ ticker, initialData }: OptionsFlowCardProps) {
           {data.unusual_activity.length > 0 && (
             <div>
               <div style={{ fontSize: 12, opacity: 0.6, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.5px", display: "flex", alignItems: "center" }}>
-                🔥 Unusual Activity (Volume {'>'} 2x Open Interest)
+                Unusual Activity (Volume {'>'} 2x Open Interest)
                 <InfoButton term="unusual_activity" />
               </div>
+              {isMobile ? (
+                <div>
+                  {data.unusual_activity.map((ua, i) => (
+                    <MobileCardRow key={`${ua.type}-${ua.strike}-${i}`}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{
+                            padding: "2px 6px",
+                            borderRadius: 4,
+                            fontSize: 11,
+                            fontWeight: 600,
+                            background: ua.type === "CALL" ? "#14532d" : "#7f1d1d",
+                          }}>
+                            {ua.type}
+                          </span>
+                          <span style={{ fontWeight: 600, fontSize: 14 }}>${ua.strike}</span>
+                        </div>
+                        <span style={{
+                          color: ua.signal === "BULLISH" ? "#22c55e" : ua.signal === "BEARISH" ? "#ef4444" : "#9ca3af",
+                          fontWeight: 600,
+                          fontSize: 12,
+                        }}>
+                          {ua.signal}
+                        </span>
+                      </div>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+                        <MobileCardField label="Premium" value={formatMoney(ua.premium_value)} />
+                        <MobileCardField label="Volume" value={formatNumber(ua.volume)} />
+                        <MobileCardField label="Vol/OI" value={
+                          <span style={{ color: "#f59e0b", fontWeight: 600 }}>{ua.volume_oi_ratio}x</span>
+                        } />
+                      </div>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 6 }}>
+                        <MobileCardField label="OI" value={formatNumber(ua.open_interest)} />
+                        <MobileCardField label="IV" value={`${ua.implied_volatility}%`} />
+                      </div>
+                    </MobileCardRow>
+                  ))}
+                </div>
+              ) : (
               <div style={{ overflowX: "auto" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                   <thead>
@@ -583,6 +626,7 @@ export function OptionsFlowCard({ ticker, initialData }: OptionsFlowCardProps) {
                   </tbody>
                 </table>
               </div>
+              )}
             </div>
           )}
 

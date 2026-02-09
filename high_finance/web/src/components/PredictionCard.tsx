@@ -494,7 +494,7 @@ function PredictionDisplay({ prediction }: { prediction: PredictionResponse }) {
       {/* ── Detailed Metrics Grid ──────────────────────────────────────── */}
       <div style={{
         display: "grid",
-        gridTemplateColumns: "1fr 1fr 1fr",
+        gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
         gap: 16,
         marginBottom: 16,
       }}>

@@ -397,6 +397,7 @@ class MarketService:
         if df.empty:
             return []
 
+        mcaps = self._prefetch_mcaps(etfs)
         rev = {v: k for k, v in SECTOR_ETFS.items()}
         out: list[SectorPerformance] = []
 
@@ -443,13 +444,36 @@ class MarketService:
                     performance_1d=ret(1), performance_1w=ret(5),
                     performance_1m=ret(21), performance_ytd=perf_ytd,
                     volume_vs_avg=vol_r,
-                    market_cap_billions=self._mcap(etf),
+                    market_cap_billions=mcaps.get(etf, 0.0),
                     top_movers=top[:3],
                 ))
             except Exception as exc:
                 logger.warning("Sector %s: %s", name, exc)
 
         return out
+
+    def _prefetch_mcaps(self, tickers: list[str]) -> dict[str, float]:
+        """Fetch market caps for multiple tickers in parallel."""
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        results = {}
+        uncached = []
+        for t in tickers:
+            cached = self._cache.get(f"mcap:{t}")
+            if cached is not None:
+                results[t] = cached
+            else:
+                uncached.append(t)
+
+        if uncached:
+            with ThreadPoolExecutor(max_workers=min(len(uncached), 11)) as pool:
+                futures = {pool.submit(self._mcap, t): t for t in uncached}
+                for fut in as_completed(futures):
+                    t = futures[fut]
+                    try:
+                        results[t] = fut.result(timeout=8)
+                    except Exception:
+                        results[t] = 0.0
+        return results
 
     def _mcap(self, ticker: str) -> float:
         ck = f"mcap:{ticker}"

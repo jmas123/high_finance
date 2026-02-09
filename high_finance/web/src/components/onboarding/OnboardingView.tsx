@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
+import { useIsMobile } from "../../lib/useIsMobile";
 
 // ── Accordion Section Data ───────────────────────────────────────────────────
 type Section = {
@@ -259,6 +260,7 @@ const SECTIONS: Section[] = [
 
 // ── Component ────────────────────────────────────────────────────────────────
 export default function OnboardingView() {
+  const isMobile = useIsMobile();
   const [openSection, setOpenSection] = useState<string | null>(null);
 
   const toggle = (id: string) => {
@@ -311,10 +313,10 @@ export default function OnboardingView() {
                   fontWeight: 600,
                   transition: "background 0.15s",
                 }}
-                onMouseEnter={(e) => {
+                onMouseEnter={isMobile ? undefined : (e) => {
                   if (!isOpen) (e.currentTarget as HTMLButtonElement).style.background = "#1a1a1a";
                 }}
-                onMouseLeave={(e) => {
+                onMouseLeave={isMobile ? undefined : (e) => {
                   if (!isOpen) (e.currentTarget as HTMLButtonElement).style.background = "#111";
                 }}
               >
@@ -395,10 +397,10 @@ export default function OnboardingView() {
                       cursor: "pointer",
                       transition: "background 0.15s",
                     }}
-                    onMouseEnter={(e) => {
+                    onMouseEnter={isMobile ? undefined : (e) => {
                       (e.currentTarget as HTMLAnchorElement).style.background = "#333";
                     }}
-                    onMouseLeave={(e) => {
+                    onMouseLeave={isMobile ? undefined : (e) => {
                       (e.currentTarget as HTMLAnchorElement).style.background = "#222";
                     }}
                   >

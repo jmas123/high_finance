@@ -3,6 +3,7 @@ import { api } from "../../lib/api";
 import { useUserData, type PortfolioPosition } from "../../lib/userData";
 import { useAuth } from "../../lib/auth";
 import { PortfolioBenchmarkTable } from "./PortfolioBenchmarkTable";
+import { useIsMobile } from "../../lib/useIsMobile";
 
 interface LivePosition extends PortfolioPosition {
   currentPrice: number;
@@ -24,6 +25,7 @@ function TickerInput({
 }: {
   onSelect: (ticker: string, name: string) => void;
 }) {
+  const isMobile = useIsMobile();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Array<{ symbol: string; name: string; type: string }>>([]);
   const [showDropdown, setShowDropdown] = useState(false);
@@ -120,8 +122,8 @@ function TickerInput({
                 borderBottom: "1px solid #252525",
                 transition: "background 0.1s",
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = "#252525")}
-              onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+              onMouseEnter={isMobile ? undefined : (e) => (e.currentTarget.style.background = "#252525")}
+              onMouseLeave={isMobile ? undefined : (e) => (e.currentTarget.style.background = "transparent")}
             >
               <div style={{ display: "flex", gap: 8, alignItems: "center", minWidth: 0 }}>
                 <span style={{ fontWeight: 700, color: "#fff", flexShrink: 0 }}>{r.symbol}</span>
@@ -149,6 +151,7 @@ function TickerInput({
 
 // ── Main Component ──────────────────────────────────────────────────────────
 export function PortfolioCard({ onSelect }: PortfolioCardProps) {
+  const isMobile = useIsMobile();
   const { isAuthenticated } = useAuth();
   const { portfolio, addPosition, updatePosition, removePosition } = useUserData();
   const [live, setLive] = useState<LivePosition[]>([]);
@@ -344,7 +347,7 @@ export function PortfolioCard({ onSelect }: PortfolioCardProps) {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "1fr 1fr 1fr 1fr",
+            gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
             gap: 12,
             marginBottom: 14,
             padding: "10px 12px",
@@ -408,7 +411,7 @@ export function PortfolioCard({ onSelect }: PortfolioCardProps) {
             border: "1px solid #333",
           }}
         >
-          <div style={{ display: "grid", gridTemplateColumns: "2fr 80px 90px auto", gap: 8, alignItems: "end" }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "2fr 80px 90px auto", gap: 8, alignItems: "end" }}>
             <div>
               <div style={{ fontSize: 10, color: "#666", marginBottom: 4 }}>TICKER</div>
               <TickerInput onSelect={handleTickerSelected} />
@@ -498,8 +501,8 @@ export function PortfolioCard({ onSelect }: PortfolioCardProps) {
                   key={pos.ticker}
                   onClick={() => onSelect(pos.ticker)}
                   style={{ cursor: "pointer", transition: "background 0.15s" }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = "#1f1f1f")}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                  onMouseEnter={isMobile ? undefined : (e) => (e.currentTarget.style.background = "#1f1f1f")}
+                  onMouseLeave={isMobile ? undefined : (e) => (e.currentTarget.style.background = "transparent")}
                 >
                   <td style={{ padding: "8px", fontWeight: 600, color: "#fff" }}>
                     <div>{pos.ticker}</div>

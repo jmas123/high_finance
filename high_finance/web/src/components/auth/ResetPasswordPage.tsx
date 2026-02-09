@@ -77,7 +77,7 @@ export function ResetPasswordPage() {
               Your password has been reset successfully. You can now sign in with your new password.
             </div>
             <Link
-              to="/"
+              to="/dashboard"
               style={{
                 display: "inline-block",
                 padding: "12px 28px",
@@ -116,7 +116,7 @@ export function ResetPasswordPage() {
               {errorMsg}
             </div>
             <Link
-              to="/"
+              to="/dashboard"
               style={{
                 display: "inline-block",
                 padding: "12px 28px",

@@ -1,10 +1,12 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
+import { useIsMobile } from "../../lib/useIsMobile";
 
 // Module-level singleton: only one tooltip open at a time
 let closeActive: (() => void) | null = null;
 
 export function InfoTip({ text }: { text: string }) {
+  const isMobile = useIsMobile();
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState({ top: 0, left: 0, flipped: false });
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -62,8 +64,8 @@ export function InfoTip({ text }: { text: string }) {
           display: "inline-flex",
           alignItems: "center",
           justifyContent: "center",
-          width: 15,
-          height: 15,
+          width: isMobile ? 28 : 15,
+          height: isMobile ? 28 : 15,
           borderRadius: "50%",
           border: "1px solid #555",
           background: open ? "#3b82f6" : "transparent",

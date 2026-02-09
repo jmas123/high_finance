@@ -219,7 +219,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   colorGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(3, 1fr)",
+    gridTemplateColumns: "repeat(auto-fit, minmax(36px, 1fr))",
     gap: 2,
   },
   colorButton: {

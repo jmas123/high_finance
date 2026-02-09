@@ -3,6 +3,7 @@ import type { Warning } from "../../lib/types";
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { InfoTip } from "../common/InfoTip";
+import { useIsMobile } from "../../lib/useIsMobile";
 
 function ReferenceMarker({
   reference,
@@ -156,6 +157,7 @@ export function SliderWithReferences({
   paramWarnings: Warning[];
   tooltip?: string;
 }) {
+  const isMobile = useIsMobile();
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState("");
   const hasWarning = paramWarnings.some(w => w.severity === "warning" || w.severity === "error");
@@ -235,8 +237,8 @@ export function SliderWithReferences({
               transition: "background 0.15s",
             }}
             title="Click to edit"
-            onMouseEnter={(e) => e.currentTarget.style.background = "rgba(59, 130, 246, 0.1)"}
-            onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+            onMouseEnter={isMobile ? undefined : (e) => e.currentTarget.style.background = "rgba(59, 130, 246, 0.1)"}
+            onMouseLeave={isMobile ? undefined : (e) => e.currentTarget.style.background = "transparent"}
           >
             {(value * 100).toFixed(1)}%
           </div>

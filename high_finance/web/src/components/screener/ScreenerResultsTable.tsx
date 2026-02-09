@@ -4,6 +4,8 @@ import type { ScreenerFilters, ScreenerResponse, ScreenerResult } from "../../li
 import { thBase, tdBase, left, right } from "../../lib/types";
 import { InfoTip } from "../common/InfoTip";
 import { SCREENER_TIPS } from "../../lib/tooltips";
+import { useIsMobile } from "../../lib/useIsMobile";
+import { MobileCardRow, MobileCardField } from "../common/MobileCard";
 
 type Props = {
   results: ScreenerResponse | null;
@@ -171,6 +173,7 @@ export function ScreenerResultsTable({
   universeTotal,
   filters,
 }: Props) {
+  const isMobile = useIsMobile();
   const [visibleCols, setVisibleCols] = useState<Set<string>>(loadVisibleColumns);
   const [showColumnPicker, setShowColumnPicker] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -240,6 +243,115 @@ export function ScreenerResultsTable({
         color: "#888",
       }}>
         No stocks match your filters. Try adjusting your criteria.
+      </div>
+    );
+  }
+
+  if (isMobile) {
+    return (
+      <div style={{
+        background: "#1a1a1a",
+        border: "1px solid #333",
+        borderRadius: 10,
+        overflow: "hidden",
+      }}>
+        {/* Mobile header with count & pagination */}
+        <div style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          padding: "10px 16px",
+          borderBottom: "1px solid #333",
+          flexWrap: "wrap",
+          gap: 8,
+        }}>
+          <span style={{ fontSize: 13, color: "#888" }}>
+            {total.toLocaleString()} {universeTotal > 0 ? `of ${universeTotal.toLocaleString()}` : "matches"}
+            {loading && <span style={{ marginLeft: 8, color: "#3b82f6" }}>Updating...</span>}
+          </span>
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <button
+              onClick={() => onPageChange(Math.max(0, offset - limit))}
+              disabled={offset === 0}
+              style={{
+                padding: "4px 10px",
+                background: "#333",
+                border: "none",
+                borderRadius: 4,
+                color: offset === 0 ? "#555" : "#fff",
+                cursor: offset === 0 ? "not-allowed" : "pointer",
+                fontSize: 12,
+              }}
+            >
+              Prev
+            </button>
+            <span style={{ fontSize: 12, color: "#888" }}>{currentPage}/{totalPages}</span>
+            <button
+              onClick={() => onPageChange(offset + limit)}
+              disabled={offset + limit >= total}
+              style={{
+                padding: "4px 10px",
+                background: "#333",
+                border: "none",
+                borderRadius: 4,
+                color: offset + limit >= total ? "#555" : "#fff",
+                cursor: offset + limit >= total ? "not-allowed" : "pointer",
+                fontSize: 12,
+              }}
+            >
+              Next
+            </button>
+          </div>
+        </div>
+
+        {/* Mobile cards */}
+        <div style={{ padding: 8 }}>
+          {results.results.map((row) => {
+            const change1d = row.price_change_1d;
+            const changeColor = typeof change1d === "number"
+              ? change1d > 0 ? "#22c55e" : change1d < 0 ? "#ef4444" : "#888"
+              : "#888";
+
+            return (
+              <MobileCardRow
+                key={row.ticker}
+                onClick={() => onSelectTicker?.(row.ticker)}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                  <div>
+                    <span style={{ fontWeight: 600, fontSize: 14, color: "#3b82f6" }}>{row.ticker}</span>
+                    <span style={{ marginLeft: 8, fontSize: 12, color: "#aaa" }}>
+                      {row.company_name || ""}
+                    </span>
+                  </div>
+                  {row.sector && (
+                    <span style={{
+                      background: "#333",
+                      padding: "2px 8px",
+                      borderRadius: 999,
+                      fontSize: 10,
+                      color: "#aaa",
+                    }}>
+                      {row.sector}
+                    </span>
+                  )}
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+                  <MobileCardField label="Price" value={row.current_price != null ? `$${row.current_price.toFixed(2)}` : "—"} />
+                  <MobileCardField label="1D Chg" value={
+                    <span style={{ color: changeColor }}>{formatPct(change1d)}</span>
+                  } />
+                  <MobileCardField label="Mkt Cap" value={formatLarge(row.market_cap)} />
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginTop: 6 }}>
+                  <MobileCardField label="P/E" value={formatNum(row.pe_ratio)} />
+                  <MobileCardField label="Fwd P/E" value={formatNum(row.forward_pe)} />
+                  <MobileCardField label="EV/EBITDA" value={formatNum(row.ev_to_ebitda)} />
+                </div>
+              </MobileCardRow>
+            );
+          })}
+        </div>
       </div>
     );
   }
@@ -430,10 +542,10 @@ export function ScreenerResultsTable({
                   cursor: onSelectTicker ? "pointer" : "default",
                   transition: "background 0.15s",
                 }}
-                onMouseEnter={e => {
+                onMouseEnter={isMobile ? undefined : e => {
                   (e.currentTarget as HTMLElement).style.background = "rgba(59,130,246,0.1)";
                 }}
-                onMouseLeave={e => {
+                onMouseLeave={isMobile ? undefined : e => {
                   (e.currentTarget as HTMLElement).style.background =
                     idx % 2 === 0 ? "transparent" : "rgba(255,255,255,0.02)";
                 }}

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { ScreenerFilters } from "../../lib/types";
+import { useIsMobile } from "../../lib/useIsMobile";
 
 const SECTORS = [
   "Information Technology",
@@ -80,6 +81,7 @@ function countSectionFilters(filters: ScreenerFilters, section: FilterSection): 
 export function ScreenerFiltersPanel({
   filters, onChange, onClear, onPreset, sectorCounts, liveCount, universeTotal,
 }: Props) {
+  const isMobile = useIsMobile();
   const [expandedSections, setExpandedSections] = useState<Set<FilterSection>>(
     new Set(["valuation", "sectors"])
   );
@@ -269,11 +271,11 @@ export function ScreenerFiltersPanel({
               cursor: "pointer",
               transition: "all 0.15s",
             }}
-            onMouseEnter={e => {
+            onMouseEnter={isMobile ? undefined : e => {
               (e.currentTarget as HTMLElement).style.borderColor = "#3b82f6";
               (e.currentTarget as HTMLElement).style.color = "#fff";
             }}
-            onMouseLeave={e => {
+            onMouseLeave={isMobile ? undefined : e => {
               (e.currentTarget as HTMLElement).style.borderColor = "#444";
               (e.currentTarget as HTMLElement).style.color = "#ccc";
             }}

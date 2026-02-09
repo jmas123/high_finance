@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { projectsApi } from "./api";
 import type { ProjectSummary } from "./types";
+import { useIsMobile } from "../../lib/useIsMobile";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ProjectListCard – shown on the dashboard alongside Watchlist + Portfolio
@@ -14,6 +15,7 @@ interface ProjectListCardProps {
 }
 
 export function ProjectListCard({ onOpenProject, onCreateProject, refreshKey, onRefresh }: ProjectListCardProps) {
+  const isMobile = useIsMobile();
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"active" | "all">("active");
@@ -291,11 +293,11 @@ export function ProjectListCard({ onOpenProject, onCreateProject, refreshKey, on
                       transition: "opacity 0.15s",
                     }}
                     title="Delete project"
-                    onMouseEnter={(e) => {
+                    onMouseEnter={isMobile ? undefined : (e) => {
                       e.currentTarget.style.opacity = "1";
                       e.currentTarget.style.color = "#ef4444";
                     }}
-                    onMouseLeave={(e) => {
+                    onMouseLeave={isMobile ? undefined : (e) => {
                       e.currentTarget.style.opacity = "0.4";
                       e.currentTarget.style.color = "#666";
                     }}

@@ -715,7 +715,7 @@ export function AIHistoryView() {
           Your AI-generated memos and analyses are saved here.
         </div>
         <button
-          onClick={() => navigate("/")}
+          onClick={() => navigate("/dashboard")}
           style={{
             padding: "10px 24px",
             background: "#3b82f6",

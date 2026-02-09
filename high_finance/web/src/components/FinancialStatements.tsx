@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { api } from "../lib/api";
 import type { FinancialStatementsResponse } from "../lib/types";
 import { renderMarkdown } from "./common/MarkdownRenderer";
+import { useIsMobile } from "../lib/useIsMobile";
 
 interface FinancialStatementsProps {
   data: FinancialStatementsResponse;
@@ -72,6 +73,7 @@ function formatDate(dateStr: string, period: "quarterly" | "annual"): string {
 
 
 export function FinancialStatements({ data, ticker }: FinancialStatementsProps) {
+  const isMobile = useIsMobile();
   const [activeTab, setActiveTab] = useState("income_statement");
   const [analysis, setAnalysis] = useState<string | null>(null);
   const [analysisSavedId, setAnalysisSavedId] = useState<number | null>(null);
@@ -352,6 +354,19 @@ const statementData =
         </div>
       )}
 
+      <div style={{ position: "relative" }}>
+        {isMobile && (
+          <div style={{
+            position: "absolute",
+            top: 0,
+            right: 0,
+            bottom: 0,
+            width: 24,
+            background: "linear-gradient(to left, #1a1a1a, transparent)",
+            zIndex: 1,
+            pointerEvents: "none",
+          }} />
+        )}
       <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
           <thead>
@@ -493,6 +508,7 @@ const statementData =
             {" "}excluded — only analyst estimates available, not full reported financials
           </div>
         )}
+      </div>
       </div>
     </div>
   );
