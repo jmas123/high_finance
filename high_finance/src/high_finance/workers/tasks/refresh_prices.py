@@ -150,14 +150,14 @@ def fetch_and_save_prices(
     company_id: int,
     ticker: str,
     period: str = "max",
-    start_date: Optional[str] = "2012-01-01",
+    start_date: Optional[str] = "2019-01-01",
 ) -> tuple[int, bool]:
     """
     Fetch prices from yfinance and save to database.
 
     Args:
-        start_date: Earliest date to fetch (YYYY-MM-DD). Defaults to 2012-01-01
-                    (STOCK Act signed April 2012). Overrides period if set.
+        start_date: Earliest date to fetch (YYYY-MM-DD). Defaults to 2019-01-01
+                    (covers all Quiver congress trade data). Overrides period if set.
 
     Returns:
         Tuple of (count of new prices, success bool)
@@ -265,14 +265,6 @@ def refresh_prices_logic(
         for b in benchmarks:
             if b[0] not in existing_ids:
                 companies.append(b)
-
-    # Clean up pre-2012 price data (wasted disk from earlier "max" runs)
-    deleted = db.execute(
-        text("DELETE FROM prices WHERE date < '2012-01-01'")
-    ).rowcount
-    db.commit()
-    if deleted:
-        logger.info(f"Cleaned up {deleted} pre-2012 price rows to free disk space")
 
     total = len(companies)
     updated = 0
