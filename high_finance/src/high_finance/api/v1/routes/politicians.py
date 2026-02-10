@@ -13,7 +13,7 @@ from high_finance.api.v1.schemas.politician import (
     PoliticianTradeWithPoliticianOut,
 )
 from high_finance.core.cache import get_or_compute
-from high_finance.db.session import get_db
+from high_finance.db.session import get_db, SessionLocal
 from high_finance.services.politician_backtest import (
     backtest_all_politicians_sync,
     run_backtest_sync,
@@ -28,9 +28,6 @@ from high_finance.services.politicians import (
 
 router = APIRouter()
 
-# Cache for politician grades to avoid repeated DB queries in the same request
-_grade_cache: Dict[int, str | None] = {}
-
 
 # ── Backtest endpoints (must come BEFORE /{politician_id} to avoid route clash) ─
 
@@ -41,7 +38,6 @@ async def leaderboard(
     hold_days: int = 30,
     min_trades: int = 3,
     since_year: Optional[int] = None,
-    db: Session = Depends(get_db),
 ):
     """Congress trading leaderboard — backtests all politicians with enough trades.
 
@@ -50,11 +46,17 @@ async def leaderboard(
     cache_key = f"hf:backtest:leaderboard:{delay_days}:{hold_days}:{min_trades}:{since_year or ''}"
 
     async def compute():
-        entries = await asyncio.to_thread(
-            backtest_all_politicians_sync,
-            db, delay_days, hold_days, min_trades,
-            None, None, since_year,  # chamber/party always None — filtered client-side
-        )
+        def _run():
+            db = SessionLocal()
+            try:
+                return backtest_all_politicians_sync(
+                    db, delay_days, hold_days, min_trades,
+                    None, None, since_year,
+                )
+            finally:
+                db.close()
+
+        entries = await asyncio.to_thread(_run)
         return {
             "delay_days": delay_days,
             "hold_days": hold_days,
@@ -71,16 +73,22 @@ async def backtest(
     delay_days: int = 3,
     hold_days: int = 30,
     since_year: Optional[int] = None,
-    db: Session = Depends(get_db),
 ):
     """Full backtest for a single politician — equity curve + per-trade details."""
     cache_key = f"hf:backtest:{politician_id}:{delay_days}:{hold_days}:{since_year or ''}"
 
     async def compute():
-        result = await asyncio.to_thread(
-            run_backtest_sync, db, politician_id, delay_days, hold_days,
-            since_year=since_year,
-        )
+        def _run():
+            db = SessionLocal()
+            try:
+                return run_backtest_sync(
+                    db, politician_id, delay_days, hold_days,
+                    since_year=since_year,
+                )
+            finally:
+                db.close()
+
+        result = await asyncio.to_thread(_run)
         if "error" in result:
             raise HTTPException(status_code=404, detail=result["error"])
         return result

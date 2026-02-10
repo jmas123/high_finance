@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../lib/api";
 import type { LeaderboardEntry, LeaderboardResponse } from "../../lib/types";
@@ -14,7 +14,13 @@ const DELAY_OPTIONS = [0, 1, 3, 7, 14];
 const HOLD_OPTIONS = [30, 60, 90];
 const CHAMBER_OPTIONS = ["", "Senate", "House"];
 const PARTY_OPTIONS = ["", "Democrat", "Republican"];
-const YEAR_OPTIONS = [0, 2020, 2021, 2022, 2023, 2024, 2025]; // 0 = All Time
+const currentYear = new Date().getFullYear();
+const YEAR_OPTIONS = [0, ...Array.from({ length: currentYear - 2019 }, (_, i) => 2020 + i)];
+
+/** Null-safe toFixed helper */
+function safeFixed(val: number | null | undefined, digits: number): string {
+  return val != null ? val.toFixed(digits) : "—";
+}
 
 function gradeColor(grade: string | null): string {
   if (!grade) return "#666";
@@ -65,24 +71,33 @@ export function CongressLeaderboard() {
 
   const [sortKey, setSortKey] = useState<SortKey>("total_return_pct");
   const [sortAsc, setSortAsc] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
 
-  const load = useCallback(async () => {
+  useEffect(() => {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     setLoading(true);
     setError(null);
-    try {
-      // Only send backtest params — chamber/party are filtered client-side
-      const res = await api.politicianLeaderboard(delayDays, holdDays, {
-        sinceYear: sinceYear || undefined,
-      });
-      setData(res);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load leaderboard");
-    } finally {
-      setLoading(false);
-    }
-  }, [delayDays, holdDays, sinceYear]);
 
-  useEffect(() => { load(); }, [load]);
+    api.politicianLeaderboard(delayDays, holdDays, {
+      sinceYear: sinceYear || undefined,
+    })
+      .then((res) => {
+        if (!controller.signal.aborted) setData(res);
+      })
+      .catch((e) => {
+        if (!controller.signal.aborted) {
+          setError(e instanceof Error ? e.message : "Failed to load leaderboard");
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [delayDays, holdDays, sinceYear]);
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -295,10 +310,10 @@ export function CongressLeaderboard() {
                     {e.chamber || "—"}{e.state ? ` • ${e.state}` : ""} • {e.num_trades_priced} positions
                   </div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
-                    <MobileCardField label="Win Rate" value={`${e.win_rate.toFixed(1)}%`} />
+                    <MobileCardField label="Win Rate" value={`${safeFixed(e.win_rate, 1)}%`} />
                     <MobileCardField label="Total Return" value={
                       <span style={{ color: returnColor(e.total_return_pct), fontWeight: 600 }}>
-                        {e.total_return_pct > 0 ? "+" : ""}{e.total_return_pct.toFixed(1)}%
+                        {e.total_return_pct > 0 ? "+" : ""}{safeFixed(e.total_return_pct, 1)}%
                       </span>
                     } />
                     <MobileCardField label="Avg/Trade" value={
@@ -312,7 +327,7 @@ export function CongressLeaderboard() {
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginTop: 6 }}>
                     <MobileCardField label="Alpha vs SPY" value={
                       <span style={{ color: returnColor(e.alpha_pct), fontWeight: 600 }}>
-                        {e.alpha_pct > 0 ? "+" : ""}{e.alpha_pct.toFixed(1)}%
+                        {e.alpha_pct > 0 ? "+" : ""}{safeFixed(e.alpha_pct, 1)}%
                       </span>
                     } />
                     <MobileCardField label="Ann. Return" value={
@@ -323,7 +338,9 @@ export function CongressLeaderboard() {
                       </span>
                     } />
                     <MobileCardField label="Max DD" value={
-                      <span style={{ color: "#ef4444" }}>-{e.max_drawdown_pct.toFixed(1)}%</span>
+                      <span style={{ color: e.max_drawdown_pct ? "#ef4444" : "#888" }}>
+                        {e.max_drawdown_pct ? `-${safeFixed(e.max_drawdown_pct, 1)}%` : "0.0%"}
+                      </span>
                     } />
                   </div>
                 </MobileCardRow>
@@ -462,11 +479,11 @@ export function CongressLeaderboard() {
                     </td>
                     <td style={{ ...tdBase, ...right }}>{e.num_trades_priced}</td>
                     <td style={{ ...tdBase, ...right }}>
-                      {e.win_rate.toFixed(1)}%
+                      {safeFixed(e.win_rate, 1)}%
                     </td>
                     <td style={{ ...tdBase, ...right, color: returnColor(e.total_return_pct), fontWeight: 600 }}>
                       {e.total_return_pct > 0 ? "+" : ""}
-                      {e.total_return_pct.toFixed(1)}%
+                      {safeFixed(e.total_return_pct, 1)}%
                     </td>
                     <td style={{ ...tdBase, ...right, color: returnColor(e.avg_return_per_trade_pct ?? null) }}>
                       {e.avg_return_per_trade_pct != null
@@ -480,10 +497,10 @@ export function CongressLeaderboard() {
                     </td>
                     <td style={{ ...tdBase, ...right, color: returnColor(e.alpha_pct), fontWeight: 600 }}>
                       {e.alpha_pct > 0 ? "+" : ""}
-                      {e.alpha_pct.toFixed(1)}%
+                      {safeFixed(e.alpha_pct, 1)}%
                     </td>
-                    <td style={{ ...tdBase, ...right, color: "#ef4444" }}>
-                      -{e.max_drawdown_pct.toFixed(1)}%
+                    <td style={{ ...tdBase, ...right, color: e.max_drawdown_pct ? "#ef4444" : "#888" }}>
+                      {e.max_drawdown_pct ? `-${safeFixed(e.max_drawdown_pct, 1)}%` : "0.0%"}
                     </td>
                     <td style={{ ...tdBase, textAlign: "center" }}>
                       <span

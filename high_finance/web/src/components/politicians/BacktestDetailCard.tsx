@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { api } from "../../lib/api";
 import type { BacktestResponse, EquityCurvePoint, BacktestTradeResult } from "../../lib/types";
@@ -8,7 +8,13 @@ import { CONGRESS_TIPS } from "../../lib/tooltips";
 
 const DELAY_OPTIONS = [0, 1, 3, 7, 14];
 const HOLD_OPTIONS = [30, 60, 90];
-const YEAR_OPTIONS = [0, 2020, 2021, 2022, 2023, 2024, 2025];
+const currentYear = new Date().getFullYear();
+const YEAR_OPTIONS = [0, ...Array.from({ length: currentYear - 2019 }, (_, i) => 2020 + i)];
+
+/** Null-safe toFixed helper */
+function safeFixed(val: number | null | undefined, digits: number): string {
+  return val != null ? val.toFixed(digits) : "—";
+}
 
 function returnColor(val: number | null): string {
   if (val == null) return "#888";
@@ -67,10 +73,13 @@ function EquityCurveChart({ data }: { data: EquityCurvePoint[] }) {
     .map((d, i) => `${i === 0 ? "M" : "L"} ${x(i)} ${y(d.spy_value)}`)
     .join(" ");
 
-  // Y axis labels (4 ticks)
+  // Y axis labels (4 ticks) — format appropriately for the value range
   const yTicks = [0, 0.25, 0.5, 0.75, 1].map((pct) => {
     const val = minVal + pct * yRange;
-    return { y: y(val), label: `$${Math.round(val / 1000)}K` };
+    const label = val >= 1000
+      ? `$${(val / 1000).toFixed(1)}K`
+      : `$${Math.round(val)}`;
+    return { y: y(val), label };
   });
 
   // X axis labels (first, middle, last date)
@@ -244,22 +253,33 @@ export function BacktestDetailCard() {
   const [data, setData] = useState<BacktestResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
-  const load = useCallback(async () => {
+  useEffect(() => {
     if (!pid) return;
+
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     setLoading(true);
     setError(null);
-    try {
-      const res = await api.politicianBacktest(pid, delayDays, holdDays, sinceYear || undefined);
-      setData(res);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load backtest");
-    } finally {
-      setLoading(false);
-    }
-  }, [pid, delayDays, holdDays, sinceYear]);
 
-  useEffect(() => { load(); }, [load]);
+    api.politicianBacktest(pid, delayDays, holdDays, sinceYear || undefined)
+      .then((res) => {
+        if (!controller.signal.aborted) setData(res);
+      })
+      .catch((e) => {
+        if (!controller.signal.aborted) {
+          setError(e instanceof Error ? e.message : "Failed to load backtest");
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [pid, delayDays, holdDays, sinceYear]);
 
   if (!pid || isNaN(pid)) {
     return (
@@ -417,7 +437,7 @@ export function BacktestDetailCard() {
           >
             <StatBox
               label="Total Return"
-              value={`${s.total_return_pct > 0 ? "+" : ""}${s.total_return_pct.toFixed(1)}%`}
+              value={`${s.total_return_pct > 0 ? "+" : ""}${safeFixed(s.total_return_pct, 1)}%`}
               color={returnColor(s.total_return_pct)}
             />
             <StatBox
@@ -431,15 +451,15 @@ export function BacktestDetailCard() {
             />
             <StatBox
               label="Alpha vs SPY"
-              value={`${s.alpha_pct > 0 ? "+" : ""}${s.alpha_pct.toFixed(1)}%`}
+              value={`${s.alpha_pct > 0 ? "+" : ""}${safeFixed(s.alpha_pct, 1)}%`}
               color={returnColor(s.alpha_pct)}
               tooltip={CONGRESS_TIPS.alpha_vs_spy}
             />
-            <StatBox label="Win Rate" value={`${s.win_rate.toFixed(1)}%`} tooltip={CONGRESS_TIPS.win_rate} />
+            <StatBox label="Win Rate" value={`${safeFixed(s.win_rate, 1)}%`} tooltip={CONGRESS_TIPS.win_rate} />
             <StatBox
               label="Max Drawdown"
-              value={`-${s.max_drawdown_pct.toFixed(1)}%`}
-              color="#ef4444"
+              value={s.max_drawdown_pct ? `-${safeFixed(s.max_drawdown_pct, 1)}%` : "0.0%"}
+              color={s.max_drawdown_pct ? "#ef4444" : "#888"}
               tooltip={CONGRESS_TIPS.max_dd}
             />
             <StatBox

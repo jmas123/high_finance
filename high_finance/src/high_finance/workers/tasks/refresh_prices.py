@@ -97,10 +97,10 @@ def get_companies_with_trades(db: Session) -> list[tuple[int, str, str]]:
         existing_tickers.add(ticker)
         created_count += 1
 
-        # Link existing trades to this new company
+        # Link existing trades to this new company (case-insensitive match)
         db.execute(
-            text("UPDATE politician_trades SET company_id = :cid WHERE ticker_raw = :t AND company_id IS NULL"),
-            {"cid": company.id, "t": ticker_raw},
+            text("UPDATE politician_trades SET company_id = :cid WHERE UPPER(ticker_raw) = :t AND company_id IS NULL"),
+            {"cid": company.id, "t": ticker},
         )
 
     if created_count:
@@ -149,7 +149,7 @@ def fetch_and_save_prices(
     db: Session,
     company_id: int,
     ticker: str,
-    period: str = "2y",
+    period: str = "max",
 ) -> tuple[int, bool]:
     """
     Fetch prices from yfinance and save to database.
@@ -211,7 +211,7 @@ def fetch_and_save_prices(
 def refresh_prices_logic(
     db: Session,
     tickers: Optional[list[str]] = None,
-    period: str = "2y",
+    period: str = "max",
 ) -> dict:
     """
     Core logic to refresh price history.
@@ -220,7 +220,8 @@ def refresh_prices_logic(
         db: Database session
         tickers: Optional list of specific tickers. If None, refreshes all
                  companies with politician trades.
-        period: yfinance period string (default "2y" for 2 years)
+        period: yfinance period string (default "max" for full history,
+                needed to cover congress trades back to 2012+)
 
     Returns:
         Result dict with status and counts.
@@ -272,14 +273,14 @@ def refresh_prices_logic(
 @tracked_job("price_history")
 def refresh_prices_job(
     tickers: Optional[list[str]] = None,
-    period: str = "2y",
+    period: str = "max",
 ) -> dict:
     """
     RQ job wrapper - creates its own DB session.
 
     Args:
         tickers: Optional list of specific tickers to refresh.
-        period: yfinance period string.
+        period: yfinance period string (default "max" for full history).
     """
     db: Session = SessionLocal()
     try:

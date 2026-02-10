@@ -7,7 +7,7 @@ import { useIsMobile } from "../../lib/useIsMobile";
 import { MobileCardRow, MobileCardField } from "../common/MobileCard";
 
 type FlatRow = PoliticianTrade & {
-  politician: Politician; // guaranteed after flatten
+  politician: Politician | null;
   context?: PoliticianTradeWithContext["context"];
 };
 
@@ -63,7 +63,7 @@ function flattenTradeData(data: PoliticianTradeWithContext[] | null): FlatRow[] 
   if (!data) return [];
   return data.map((r) => ({
     ...r.trade,
-    politician: r.politician ?? r.trade.politician ?? ({} as Politician),
+    politician: r.politician ?? r.trade.politician ?? null,
     context: r.context,
   }));
 }
@@ -97,7 +97,7 @@ export function PoliticianTradesCard({ ticker, initialData }: PoliticianTradesCa
 
         const flattened: FlatRow[] = (data ?? []).map((r: PoliticianTradeWithContext) => ({
           ...r.trade,
-          politician: r.politician ?? (r.trade as any).politician,
+          politician: r.politician ?? (r.trade as any).politician ?? null,
           context: r.context,
         }));
 

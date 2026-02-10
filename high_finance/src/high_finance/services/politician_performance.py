@@ -75,7 +75,7 @@ def politician_rolling_performance(
         entry_close = _closest_close_on_or_after(db, t.company_id, entry_dt)
         exit_close = _closest_close_on_or_after(db, t.company_id, entry_dt + timedelta(days=window_days))
 
-        if entry_close is None or exit_close is None or entry_close == 0:
+        if entry_close is None or exit_close is None or entry_close <= 0:
             continue
 
         returns.append((exit_close / entry_close) - 1.0)
