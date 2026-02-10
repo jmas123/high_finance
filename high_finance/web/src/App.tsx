@@ -716,7 +716,6 @@ function TickerView() {
   const { ticker: urlTicker } = useParams<{ ticker: string }>();
   const navigate = useNavigate();
   const isMobile = useIsMobile();
-  const isLargeScreen = useIsLargeScreen();
 
   // Validate ticker from URL — redirect to home if invalid
   const normalizedTicker = urlTicker?.toUpperCase() ?? "";
