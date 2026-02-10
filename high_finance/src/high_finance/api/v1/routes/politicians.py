@@ -40,18 +40,20 @@ async def leaderboard(
     delay_days: int = 3,
     hold_days: int = 30,
     min_trades: int = 3,
-    chamber: Optional[str] = None,
-    party: Optional[str] = None,
     since_year: Optional[int] = None,
     db: Session = Depends(get_db),
 ):
-    """Congress trading leaderboard — backtests all politicians with enough trades."""
-    cache_key = f"hf:backtest:leaderboard:{delay_days}:{hold_days}:{min_trades}:{chamber or ''}:{party or ''}:{since_year or ''}"
+    """Congress trading leaderboard — backtests all politicians with enough trades.
+
+    Chamber/party filtering is done client-side to reduce cache key space.
+    """
+    cache_key = f"hf:backtest:leaderboard:{delay_days}:{hold_days}:{min_trades}:{since_year or ''}"
 
     async def compute():
         entries = await asyncio.to_thread(
             backtest_all_politicians_sync,
-            db, delay_days, hold_days, min_trades, chamber, party, since_year,
+            db, delay_days, hold_days, min_trades,
+            None, None, since_year,  # chamber/party always None — filtered client-side
         )
         return {
             "delay_days": delay_days,
@@ -60,7 +62,7 @@ async def leaderboard(
             "computed_at": datetime.now(timezone.utc).isoformat(),
         }
 
-    return await get_or_compute(cache_key, 3600, compute)
+    return await get_or_compute(cache_key, 3600, compute, lock_ttl=120)
 
 
 @router.get("/{politician_id}/backtest", response_model=BacktestResponseOut)

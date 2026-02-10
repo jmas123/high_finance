@@ -70,9 +70,8 @@ export function CongressLeaderboard() {
     setLoading(true);
     setError(null);
     try {
+      // Only send backtest params — chamber/party are filtered client-side
       const res = await api.politicianLeaderboard(delayDays, holdDays, {
-        chamber: chamber || undefined,
-        party: party || undefined,
         sinceYear: sinceYear || undefined,
       });
       setData(res);
@@ -81,7 +80,7 @@ export function CongressLeaderboard() {
     } finally {
       setLoading(false);
     }
-  }, [delayDays, holdDays, chamber, party, sinceYear]);
+  }, [delayDays, holdDays, sinceYear]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -94,17 +93,22 @@ export function CongressLeaderboard() {
     }
   };
 
-  const sorted = data
-    ? [...data.entries].sort((a, b) => {
-        const av = a[sortKey];
-        const bv = b[sortKey];
-        if (av == null && bv == null) return 0;
-        if (av == null) return 1;
-        if (bv == null) return -1;
-        const cmp = av < bv ? -1 : av > bv ? 1 : 0;
-        return sortAsc ? cmp : -cmp;
-      })
-    : [];
+  // Client-side filtering for chamber/party (avoids separate cache keys per combo)
+  const filtered = data?.entries.filter((e) => {
+    if (chamber && !(e.chamber ?? "").toLowerCase().includes(chamber.toLowerCase())) return false;
+    if (party && !(e.party ?? "").toLowerCase().includes(party.toLowerCase())) return false;
+    return true;
+  }) ?? [];
+
+  const sorted = [...filtered].sort((a, b) => {
+    const av = a[sortKey];
+    const bv = b[sortKey];
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    const cmp = av < bv ? -1 : av > bv ? 1 : 0;
+    return sortAsc ? cmp : -cmp;
+  });
 
   const pillStyle = (active: boolean): React.CSSProperties => ({
     padding: "5px 12px",

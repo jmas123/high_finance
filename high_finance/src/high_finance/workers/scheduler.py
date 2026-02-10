@@ -133,6 +133,17 @@ def register_jobs(scheduler: Scheduler) -> None:
     logger.info("Registered: price_history_scheduled (daily 5 PM weekdays)")
 
     # ==========================================================================
+    # Leaderboard Prewarm - Daily 6 PM EST weekdays (1hr after refresh_prices)
+    # ==========================================================================
+    scheduler.cron(
+        "0 18 * * 1-5",  # 6 PM weekdays
+        func="high_finance.workers.tasks.prewarm_leaderboard.prewarm_leaderboard_job",
+        id="prewarm_leaderboard_scheduled",
+        timeout=7200,  # 2 hours (3 combos × ~90s each, with safety margin)
+    )
+    logger.info("Registered: prewarm_leaderboard_scheduled (daily 6 PM weekdays)")
+
+    # ==========================================================================
     # Cleanup Old Records - Sunday 2 AM
     # ==========================================================================
     scheduler.cron(

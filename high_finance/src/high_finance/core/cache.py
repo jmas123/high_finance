@@ -134,6 +134,7 @@ async def get_or_compute(
     key: str,
     ttl: int,
     compute_fn: Callable[[], Awaitable[Any]],
+    lock_ttl: int = 30,
 ) -> Any:
     """
     Cache-aside with distributed SETNX lock to prevent stampedes.
@@ -143,6 +144,11 @@ async def get_or_compute(
     3. If acquired: compute, cache, release lock.
     4. If not acquired: poll cache until result appears or timeout.
     5. On any Redis error: fall through to compute directly.
+
+    Args:
+        lock_ttl: How long the distributed lock lives (seconds). Set this
+                  higher than the expected computation time to prevent
+                  stampedes from lock expiry mid-computation.
     """
     # 1. Cache hit
     cached = await get_cached(key)
@@ -153,14 +159,16 @@ async def get_or_compute(
     lock_key = f"lock:{key}"
     try:
         r = await get_redis()
-        acquired = await r.set(lock_key, b"1", nx=True, ex=30)
+        acquired = await r.set(lock_key, b"1", nx=True, ex=lock_ttl)
     except Exception:
         # Redis down — compute directly
         return await compute_fn()
 
     if not acquired:
-        # 4. Another worker is computing — poll for result (15s max)
-        for _ in range(30):
+        # 4. Another worker is computing — poll for result
+        # Poll for lock_ttl // 2 seconds (at least 15s), at 0.5s intervals
+        poll_count = max(lock_ttl, 30)  # at least 30 iterations (15s)
+        for _ in range(poll_count):
             await asyncio.sleep(0.5)
             cached = await get_cached(key)
             if cached is not None:

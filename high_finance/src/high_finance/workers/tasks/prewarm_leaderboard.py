@@ -24,10 +24,12 @@ PREWARM_COMBOS = [
 ]
 
 
-def _cache_key(delay: int, hold: int, min_trades: int = 3,
-               chamber: str = "", party: str = "", year=None) -> str:
-    """Build the same cache key format as the API route."""
-    return f"hf:backtest:leaderboard:{delay}:{hold}:{min_trades}:{chamber}:{party}:{year or ''}"
+def _cache_key(delay: int, hold: int, min_trades: int = 3, year=None) -> str:
+    """Build the same cache key format as the API route.
+
+    Note: chamber/party are no longer in the cache key — filtering is client-side.
+    """
+    return f"hf:backtest:leaderboard:{delay}:{hold}:{min_trades}:{year or ''}"
 
 
 def _compute_and_cache_sync(combo: dict) -> dict:
@@ -62,9 +64,44 @@ def _compute_and_cache_sync(combo: dict) -> dict:
     return {"key": key, "entries": len(entries)}
 
 
+def _clear_stale_leaderboard_cache() -> int:
+    """Delete all leaderboard cache keys so prewarm writes fresh data.
+
+    Pattern: hf:backtest:leaderboard:* — matches leaderboard keys only,
+    NOT individual politician backtest keys (hf:backtest:{int}:...).
+    """
+    from redis import Redis
+    from high_finance.core.config import settings
+
+    r = Redis.from_url(settings.REDIS_URL)
+    pattern = "hf:backtest:leaderboard:*"
+    deleted = 0
+    cursor = 0
+    while True:
+        cursor, keys = r.scan(cursor, match=pattern, count=100)
+        if keys:
+            deleted += r.delete(*keys)
+        if cursor == 0:
+            break
+    # Also delete any lingering locks for leaderboard keys
+    cursor = 0
+    while True:
+        cursor, keys = r.scan(cursor, match="lock:hf:backtest:leaderboard:*", count=100)
+        if keys:
+            deleted += r.delete(*keys)
+        if cursor == 0:
+            break
+    logger.info("Cleared %d stale leaderboard cache keys", deleted)
+    return deleted
+
+
 @tracked_job("prewarm_leaderboard")
 def prewarm_leaderboard_job() -> dict:
     """RQ job: pre-warm leaderboard cache for common parameter combos."""
+    # Clear stale cache first — ensures prewarm writes fresh data
+    # (important after data corrections like trade→company linking)
+    _clear_stale_leaderboard_cache()
+
     results = []
     failed = []
 
