@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 
 from high_finance.db.session import SessionLocal
 from high_finance.db.models import Investor, Holding, Company
-from high_finance.workers.tasks.base import create_job_result
+from high_finance.workers.tasks.base import create_job_result, tracked_job
 
 logger = logging.getLogger(__name__)
 
@@ -258,6 +258,7 @@ def refresh_13f_logic(
     )
 
 
+@tracked_job("13f_holdings")
 def refresh_13f_job(limit: int = 100) -> dict:
     """
     RQ job wrapper - creates its own DB session.

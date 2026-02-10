@@ -15,6 +15,7 @@ from sqlalchemy import text
 
 from high_finance.db.session import SessionLocal
 from high_finance.db.models.screener import ScreenerUniverse, ScreenerCache
+from high_finance.workers.tasks.base import tracked_job
 
 
 def clamp(val, lo=None, hi=None):
@@ -310,6 +311,7 @@ def refresh_screener_cache_logic(
     }
 
 
+@tracked_job("screener_cache")
 def refresh_screener_cache_job(
     batch_size: int = 50,
     delay: float = 1.0,
@@ -346,6 +348,7 @@ def refresh_single_ticker_job(ticker: str) -> dict:
     return refresh_screener_cache_job(tickers=[ticker], batch_size=1, delay=0)
 
 
+@tracked_job("screener_cache_market")
 def refresh_screener_cache_market_job(
     batch_size: int = 50,
     delay: float = 1.0,

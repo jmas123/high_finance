@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from high_finance.db.session import SessionLocal
 from high_finance.db.models.screener import ScreenerUniverse
+from high_finance.workers.tasks.base import tracked_job
 
 
 # Wikipedia URL for S&P 500 constituents
@@ -102,6 +103,7 @@ def refresh_screener_universe_logic(db: Session) -> dict:
     }
 
 
+@tracked_job("screener_universe")
 def refresh_screener_universe_job() -> dict:
     """
     RQ job wrapper - creates its own DB session.

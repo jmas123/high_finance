@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from high_finance.db.session import SessionLocal
 from high_finance.db.models.price import Price
 from high_finance.db.models.company import Company
-from high_finance.workers.tasks.base import create_job_result
+from high_finance.workers.tasks.base import create_job_result, tracked_job
 
 logger = logging.getLogger(__name__)
 
@@ -175,6 +175,7 @@ def refresh_prices_logic(
     )
 
 
+@tracked_job("price_history")
 def refresh_prices_job(
     tickers: Optional[list[str]] = None,
     period: str = "2y",

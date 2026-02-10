@@ -199,6 +199,10 @@ def cleanup_old_executions_job(days: int = 90) -> dict:
     """
     RQ job wrapper for cleanup.
 
+    Note: This job does NOT use @tracked_job to avoid circular imports
+    (tracked_job imports from this module). The cleanup job is low-priority
+    and doesn't need DB status tracking.
+
     Args:
         days: Age threshold in days.
     """

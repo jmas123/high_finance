@@ -1,6 +1,8 @@
 import httpx
 from sqlalchemy.orm import Session
 
+from high_finance.workers.tasks.base import tracked_job
+
 from high_finance.db.models.politician import Politician
 from high_finance.db.models.committee import Committee
 from high_finance.db.models.subcommittee import Subcommittee
@@ -107,6 +109,7 @@ def refresh_committees(db: Session) -> int:
     return inserted
 
 
+@tracked_job("committees")
 def refresh_committees_job() -> dict:
     """
     RQ job wrapper - creates its own DB session.

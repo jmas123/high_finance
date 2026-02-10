@@ -4,6 +4,8 @@ Base Task Utilities
 Common utilities, patterns, and types for RQ tasks.
 """
 
+import functools
+import logging
 from contextlib import contextmanager
 from datetime import datetime
 from typing import Generator, Literal, Optional
@@ -12,6 +14,8 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from high_finance.db.session import SessionLocal
+
+logger = logging.getLogger(__name__)
 
 
 class JobResult(BaseModel):
@@ -93,3 +97,59 @@ def create_job_result(
     result_dict.update(extra_fields)
 
     return result_dict
+
+
+def tracked_job(job_name: str):
+    """
+    Decorator that automatically tracks job completion/failure in the DB.
+
+    Uses rq.get_current_job() to find the job_id, then calls
+    record_job_complete or record_job_failure when the wrapped
+    function finishes.
+
+    Works for both admin-triggered jobs (which already have a DB record
+    from record_job_start) and scheduler-triggered jobs (record_job_complete
+    will create a record if one doesn't exist).
+    """
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            from rq import get_current_job
+            from high_finance.services.job_tracker import (
+                record_job_complete,
+                record_job_failure,
+            )
+
+            rq_job = get_current_job()
+            job_id = rq_job.id if rq_job else None
+
+            try:
+                result = func(*args, **kwargs)
+
+                if job_id:
+                    db = SessionLocal()
+                    try:
+                        record_job_complete(db, job_id, {
+                            "job_name": job_name,
+                            **(result if isinstance(result, dict) else {}),
+                        })
+                    except Exception:
+                        logger.exception(f"Failed to record job completion for {job_id}")
+                    finally:
+                        db.close()
+
+                return result
+
+            except Exception as e:
+                if job_id:
+                    db = SessionLocal()
+                    try:
+                        record_job_failure(db, job_id, str(e), job_name=job_name)
+                    except Exception:
+                        logger.exception(f"Failed to record job failure for {job_id}")
+                    finally:
+                        db.close()
+                raise
+
+        return wrapper
+    return decorator
