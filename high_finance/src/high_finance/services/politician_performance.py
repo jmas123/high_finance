@@ -56,7 +56,10 @@ def politician_rolling_performance(
     """
     trades = (
         db.query(PoliticianTrade)
-        .filter(PoliticianTrade.politician_id == politician_id)
+        .filter(
+            PoliticianTrade.politician_id == politician_id,
+            PoliticianTrade.transaction_type.ilike("%purchase%"),
+        )
         .order_by(desc(PoliticianTrade.disclosure_date))
         .limit(n * 4)  # oversample due to missing company_id / missing prices
         .all()
@@ -133,10 +136,3 @@ def calculate_politician_grade(avg_return_pct: Optional[float], hit_rate: Option
         return "F"
 
 
-def get_politician_grade(db: Session, politician_id: int) -> Optional[str]:
-    """
-    Get the grade for a politician based on their rolling performance.
-    Uses 30-day window with last 10 trades as default.
-    """
-    perf = politician_rolling_performance(db, politician_id, window_days=30, n=10)
-    return calculate_politician_grade(perf.get("avg_return_pct"), perf.get("hit_rate"))

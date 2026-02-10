@@ -125,6 +125,8 @@ export const CONGRESS_TIPS: Record<string, string> = {
     "How long you hold each copied position before selling. Shorter = more trading. Longer = more exposure to the member's conviction.",
   win_rate:
     "Percentage of trades that were profitable when closed. 50%+ is better than a coin flip, but also depends on how big the wins vs losses are.",
+  recent_hit_rate:
+    "Percentage of the last 10 buy trades with positive returns within 30 days of the transaction date. Only includes purchases — sells are excluded because their signal is ambiguous.",
   alpha_vs_spy:
     "Excess return above the S&P 500 over the same period. Positive alpha = the politician's trades beat the market. Negative = underperformed.",
   max_dd:

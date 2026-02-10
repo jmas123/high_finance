@@ -234,7 +234,7 @@ export function PoliticianTradesCard({ ticker, initialData }: PoliticianTradesCa
                     <MobileCardField label="Amount" value={formatAmount(trade.amount_min, trade.amount_max)} />
                     <MobileCardField label="Trade Date" value={formatDate(trade.transaction_date)} />
                     <MobileCardField label="Disclosure" value={formatDate(trade.disclosure_date)} />
-                    <MobileCardField label="Win Rate" value={
+                    <MobileCardField label="Recent Hit Rate" value={
                       politician?.hit_rate != null ? (
                         <span style={{ color: hitRateColor(politician.hit_rate), fontWeight: 600 }}>
                           {Math.round(politician.hit_rate * 100)}%
@@ -258,7 +258,7 @@ export function PoliticianTradesCard({ ticker, initialData }: PoliticianTradesCa
               );
             })}
             <div style={{ marginTop: 10, fontSize: 12, opacity: 0.6 }}>
-              Note: Disclosure dates can lag transaction dates. Win rate reflects the percentage of recent trades with positive returns within 30 days.
+              Note: Disclosure dates can lag transaction dates. Recent Hit Rate reflects the percentage of last 10 buy trades with positive 30-day returns from transaction date.
             </div>
           </div>
         ) : (
@@ -268,7 +268,7 @@ export function PoliticianTradesCard({ ticker, initialData }: PoliticianTradesCa
               <tr style={{ textAlign: "left", borderBottom: "1px solid #333" }}>
                 <th style={{ padding: "10px 8px" }}>Politician</th>
                 <th style={{ padding: "10px 8px" }}>
-                  <span style={{ display: "inline-flex", alignItems: "center" }}>Win Rate<InfoTip text={CONGRESS_TIPS.win_rate} /></span>
+                  <span style={{ display: "inline-flex", alignItems: "center" }}>Recent Hit Rate<InfoTip text={CONGRESS_TIPS.recent_hit_rate} /></span>
                 </th>
                 <th style={{ padding: "10px 8px" }}>Action</th>
                 <th style={{ padding: "10px 8px" }}>
@@ -365,7 +365,7 @@ export function PoliticianTradesCard({ ticker, initialData }: PoliticianTradesCa
           </table>
 
           <div style={{ marginTop: 10, fontSize: 12, opacity: 0.6 }}>
-            Note: Disclosure dates can lag transaction dates. Win rate reflects the percentage of recent trades with positive returns within 30 days.
+            Note: Disclosure dates can lag transaction dates. Recent Hit Rate reflects the percentage of last 10 buy trades with positive 30-day returns from transaction date.
           </div>
         </div>
         )
