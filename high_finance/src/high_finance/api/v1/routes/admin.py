@@ -334,17 +334,14 @@ async def cancel_job(
     """
     Cancel a queued or running job.
     """
-    queue = get_queue()
-    job = queue.fetch_job(job_id)
-
-    if job:
-        status = job.get_status()
-        if status == "finished":
-            raise HTTPException(
-                status_code=400,
-                detail="Cannot cancel a finished job",
-            )
-        job.cancel()
+    # Try to cancel in RQ (best-effort — job may already be gone)
+    try:
+        queue = get_queue()
+        job = queue.fetch_job(job_id)
+        if job:
+            job.cancel()
+    except Exception:
+        pass  # RQ job already gone or in invalid state — that's fine
 
     # Always update DB record so the job can be re-triggered
     execution = db.query(JobExecution).filter_by(job_id=job_id).first()
