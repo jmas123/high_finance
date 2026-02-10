@@ -6,7 +6,7 @@ from high_finance.workers.tasks.congress_trades_logic import refresh_congress_tr
 
 
 @tracked_job("congress_trades")
-def refresh_congress_trades_job(symbol: str | None = None, limit: int = 200) -> dict:
+def refresh_congress_trades_job(symbol: str | None = None, limit: int = 500) -> dict:
     """
     RQ-safe task wrapper.
     Creates its own DB session and closes it properly.

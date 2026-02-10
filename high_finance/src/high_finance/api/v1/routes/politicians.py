@@ -39,7 +39,7 @@ _grade_cache: Dict[int, str | None] = {}
 async def leaderboard(
     delay_days: int = 3,
     hold_days: int = 30,
-    min_trades: int = 5,
+    min_trades: int = 3,
     chamber: Optional[str] = None,
     party: Optional[str] = None,
     since_year: Optional[int] = None,
