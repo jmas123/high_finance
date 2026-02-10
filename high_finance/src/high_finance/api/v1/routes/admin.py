@@ -329,6 +329,7 @@ async def get_job_execution_history(
 async def cancel_job(
     job_id: str,
     admin: bool = Depends(verify_admin),
+    db: Session = Depends(get_db),
 ):
     """
     Cancel a queued or running job.
@@ -336,18 +337,21 @@ async def cancel_job(
     queue = get_queue()
     job = queue.fetch_job(job_id)
 
-    if not job:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Job not found: {job_id}",
-        )
+    if job:
+        status = job.get_status()
+        if status == "finished":
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot cancel a finished job",
+            )
+        job.cancel()
 
-    status = job.get_status()
-    if status == "finished":
-        raise HTTPException(
-            status_code=400,
-            detail="Cannot cancel a finished job",
-        )
+    # Always update DB record so the job can be re-triggered
+    execution = db.query(JobExecution).filter_by(job_id=job_id).first()
+    if execution and execution.status == "running":
+        execution.status = "cancelled"
+        execution.completed_at = datetime.utcnow()
+        execution.error_message = "Manually cancelled by admin"
+        db.commit()
 
-    job.cancel()
     return {"status": "cancelled", "job_id": job_id}
