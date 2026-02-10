@@ -214,9 +214,9 @@ def fetch_and_save_prices(
 
         del hist  # Free DataFrame memory immediately
 
-        # Insert in batches of 500, committing each batch to keep session small
+        # Insert in small batches — Railway Postgres chokes on large INSERT statements
         count = 0
-        batch_size = 500
+        batch_size = 50
         for i in range(0, len(rows_to_insert), batch_size):
             batch = rows_to_insert[i : i + batch_size]
             for r in batch:
