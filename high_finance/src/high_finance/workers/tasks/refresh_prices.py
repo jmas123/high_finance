@@ -110,6 +110,41 @@ def get_companies_with_trades(db: Session) -> list[tuple[int, str, str]]:
     return result
 
 
+def _enrich_company(db: Session, company_id: int, stock: yf.Ticker) -> None:
+    """Backfill sector/industry/name on Company stubs using yfinance info."""
+    company = db.query(Company).filter(Company.id == company_id).first()
+    if not company or (company.sector and company.industry):
+        return  # already has data
+
+    try:
+        info = stock.info or {}
+        sector = info.get("sector")
+        industry = info.get("industry")
+        sic = info.get("sic")
+        long_name = info.get("longName") or info.get("shortName")
+
+        changed = False
+        if sector and not company.sector:
+            company.sector = sector
+            changed = True
+        if industry and not company.industry:
+            company.industry = industry
+            changed = True
+        if sic and not company.sic_code:
+            company.sic_code = str(sic)[:4]
+            changed = True
+        if long_name and company.name == company.ticker:
+            company.name = long_name
+            changed = True
+
+        if changed:
+            db.commit()
+            logger.debug(f"Enriched {company.ticker}: sector={company.sector}, industry={company.industry}")
+    except Exception as e:
+        logger.debug(f"Could not enrich {company.ticker}: {e}")
+        db.rollback()
+
+
 def fetch_and_save_prices(
     db: Session,
     company_id: int,
@@ -161,6 +196,10 @@ def fetch_and_save_prices(
             count += 1
 
         db.commit()
+
+        # Backfill sector/industry on stub companies (needed for relevance scoring)
+        _enrich_company(db, company_id, stock)
+
         return count, True
 
     except Exception as e:
