@@ -10,9 +10,12 @@ import { WarningBadge } from "./Warnings";
 import { DivergenceExplainer } from "./DivergenceExplainer";
 import { AISuggestionPanel } from "./AISuggestionPanel";
 import { fmtMoney, fmtPct, fmtPctSigned, fmtPx } from "../Functions";
-import { api } from "../../lib/api";
+import { api, fetchWithTimeout, getAuthHeaders } from "../../lib/api";
 import { InfoTip } from "../common/InfoTip";
 import { VALUATION_TIPS } from "../../lib/tooltips";
+
+// ── constants ────────────────────────────────────────────────────────────────
+const VALUATION_BASE = (import.meta.env.VITE_API_URL || "") + "/api/v1";
 
 // ── localStorage persistence for DCF inputs ──────────────────────────────────
 const DCF_STORAGE_KEY = "hf_dcf_inputs";
@@ -167,9 +170,9 @@ export function DCFCard({ ticker, onStateChange, initialData }: DCFCardProps) {
             wacc: String(saved.wacc),
             terminal_g: String(saved.terminal_g),
           });
-          const res = await fetch(
-            `/api/v1/valuation/${encodeURIComponent(ticker)}?${q.toString()}`,
-            { signal: controller.signal },
+          const res = await fetchWithTimeout(
+            `${VALUATION_BASE}/valuation/${encodeURIComponent(ticker)}?${q.toString()}`,
+            { signal: controller.signal, headers: getAuthHeaders() },
           );
           if (!res.ok) throw new Error(await res.text());
           json = (await res.json()) as ValuationBundle;
@@ -178,9 +181,9 @@ export function DCFCard({ ticker, onStateChange, initialData }: DCFCardProps) {
           json = initialData;
         } else {
           // Fetch with smart defaults
-          const res = await fetch(
-            `/api/v1/valuation/${encodeURIComponent(ticker)}`,
-            { signal: controller.signal },
+          const res = await fetchWithTimeout(
+            `${VALUATION_BASE}/valuation/${encodeURIComponent(ticker)}`,
+            { signal: controller.signal, headers: getAuthHeaders() },
           );
           if (!res.ok) throw new Error(await res.text());
           json = (await res.json()) as ValuationBundle;
@@ -247,14 +250,15 @@ export function DCFCard({ ticker, onStateChange, initialData }: DCFCardProps) {
           wacc: String(wacc),
           terminal_g: String(terminalG),
         });
-        const res = await fetch(
-          `/api/v1/valuation/${encodeURIComponent(ticker)}?${q.toString()}`,
-          { signal: controller.signal },
+        const res = await fetchWithTimeout(
+          `${VALUATION_BASE}/valuation/${encodeURIComponent(ticker)}?${q.toString()}`,
+          { signal: controller.signal, headers: getAuthHeaders() },
         );
         if (!res.ok) throw new Error(await res.text());
         const json = (await res.json()) as ValuationBundle;
         if (mounted) {
           setData(json);
+          setErr(null); // Clear any previous error on success
           setLastSaved(new Date());
           // Persist inputs to localStorage
           saveInputs(ticker, {

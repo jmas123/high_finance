@@ -55,7 +55,7 @@ export const FairValueRangeBar = memo(function FairValueRangeBar({
         }} />
 
         {/* Analyst range (if available) */}
-        {analystLow && analystHigh && (
+        {analystLow != null && analystHigh != null && (
           <div style={{
             position: "absolute",
             left: `${pos(analystLow)}%`,
@@ -126,7 +126,7 @@ export const FairValueRangeBar = memo(function FairValueRangeBar({
         )}
 
         {/* Current price marker */}
-        {current && (
+        {current != null && (
           <div style={{ position: "absolute", left: `${pos(current)}%`, top: isClustered ? 16 : -12, transform: "translateX(-50%)", textAlign: "center", zIndex: 20 }}>
             <div style={{ fontSize: 9, background: "#fff", color: "#000", padding: "2px 6px", borderRadius: 4, fontWeight: 600, border: "2px solid #333", boxShadow: "0 2px 8px rgba(0,0,0,0.6)" }}>
               NOW: {fmtPx(current)}
@@ -136,7 +136,7 @@ export const FairValueRangeBar = memo(function FairValueRangeBar({
         )}
 
         {/* Analyst target marker */}
-        {analystTarget && (
+        {analystTarget != null && (
           <div style={{ position: "absolute", left: `${pos(analystTarget)}%`, bottom: -8, transform: "translateX(-50%)", textAlign: "center", zIndex: 10 }}>
             <div style={{ width: 0, height: 0, borderLeft: "5px solid transparent", borderRight: "5px solid transparent", borderBottom: "5px solid #a855f7", margin: "0 auto" }} />
             <div style={{ fontSize: 9, background: "#a855f7", color: "#fff", padding: "2px 6px", borderRadius: 4, fontWeight: 600, marginTop: 2 }}>
@@ -147,7 +147,7 @@ export const FairValueRangeBar = memo(function FairValueRangeBar({
       </div>
 
       {/* Legend */}
-      {analystTarget && (
+      {analystTarget != null && (
         <div style={{ marginTop: 16, display: "flex", gap: 16, justifyContent: "center", fontSize: 10, opacity: 0.7 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
             <div style={{ width: 12, height: 4, background: "linear-gradient(90deg, #ef4444, #22c55e)", borderRadius: 2 }} />

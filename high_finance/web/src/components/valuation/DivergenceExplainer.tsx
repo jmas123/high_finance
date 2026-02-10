@@ -1,4 +1,4 @@
-import { useState, memo } from "react";
+import { useState, useEffect, memo } from "react";
 import type { DivergenceAnalysis, ValuationScenarioInputs } from "../../lib/types";
 import { fmtPct, fmtPctSigned, fmtPx } from "../Functions";
 import { InfoTip } from "../common/InfoTip";
@@ -23,6 +23,11 @@ export const DivergenceExplainer = memo(function DivergenceExplainer({
   hasPreMarketValues,
 }: DivergenceExplainerProps) {
   const [expanded, setExpanded] = useState(divergence.divergence_tier === "extreme");
+
+  // Auto-expand when tier escalates to extreme (initial useState only reads once)
+  useEffect(() => {
+    if (divergence.divergence_tier === "extreme") setExpanded(true);
+  }, [divergence.divergence_tier]);
 
   const implied = divergence.implied_assumptions;
   const isDownside = divergence.divergence_pct < 0;

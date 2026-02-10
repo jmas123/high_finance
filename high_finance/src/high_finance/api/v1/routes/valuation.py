@@ -12,6 +12,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
+from high_finance.api.v1.deps import validate_ticker
 from high_finance.core.rate_limit import limiter
 from high_finance.core.security import get_current_user, User
 from high_finance.db.session import get_db
@@ -26,7 +27,7 @@ router = APIRouter()
 
 @router.get("/{ticker}")
 async def read_valuation(
-    ticker: str,
+    ticker: str = Depends(validate_ticker),
     growth: Optional[float] = Query(default=None, description="Revenue growth rate (5Y CAGR). Will be clamped to -10% to 50%."),
     margin: Optional[float] = Query(default=None, description="Operating margin. Will be clamped to -10% to 50%."),
     tax: Optional[float] = Query(default=None, description="Tax rate. Will be clamped to 10% to 35%."),
@@ -53,7 +54,7 @@ async def read_valuation(
     """
     try:
         return await get_valuation_bundle(
-            ticker.upper(),
+            ticker,
             growth=growth,
             margin=margin,
             tax=tax,

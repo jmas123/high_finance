@@ -17,7 +17,7 @@ import math
 from typing import Any, Dict, List, Optional
 
 from high_finance.services.financials import get_financial_statements
-from high_finance.core.cache import get_cached, get_or_compute, set_cached, valuation_ttl
+from high_finance.core.cache import get_or_compute, valuation_ttl
 from high_finance.services.yf_cache import get_yf_info
 from high_finance.utils.yf_fields import (
     REVENUE, OPERATING_INCOME, EBITDA, NET_INCOME, DEPRECIATION,
@@ -303,8 +303,12 @@ def _compute_smart_defaults(
         defaults["wacc"]["suggested"] = wacc_est
         defaults["wacc"]["source"] = f"CAPM (β={beta:.2f})"
     
-    # Clamp WACC to slider bounds (5% to 20%)
-    defaults["wacc"]["suggested"] = max(0.05, min(0.20, defaults["wacc"]["suggested"]))
+    # Clamp WACC to slider bounds — floor is riskFreeRate + 4% (equity risk premium)
+    # per CLAUDE.md rule: market-implied WACC should never go below rfr + 4%
+    rfr = _safe(info.get("riskFreeRate"), 0.043)  # fallback to current ~4.3%
+    wacc_floor = rfr + 0.04
+    defaults["wacc"]["suggested"] = max(wacc_floor, min(0.20, defaults["wacc"]["suggested"]))
+    defaults["wacc"]["floor"] = wacc_floor  # expose for frontend reference
     
     # Effective tax rate
     col = _latest_column(annual_is)
@@ -490,7 +494,10 @@ def _dcf(
     for t, cf in enumerate(fcf, start=1):
         pv += cf / ((1.0 + wacc) ** t)
 
-    tv = (fcf[-1] * (1.0 + terminal_g)) / max(1e-9, (wacc - terminal_g))
+    # Enforce minimum 2% gap to prevent astronomical terminal values
+    # (gap of 0.01 = 100x multiplier, 0.02 = 50x which is aggressive but sane)
+    effective_terminal_g = min(terminal_g, wacc - 0.02)
+    tv = (fcf[-1] * (1.0 + effective_terminal_g)) / max(1e-9, (wacc - effective_terminal_g))
     pv_tv = tv / ((1.0 + wacc) ** years)
 
     return {
@@ -960,15 +967,19 @@ async def get_valuation_bundle(
 
     if is_default:
         cache_key = f"hf:valuation_bundle:{ticker}"
-        cached = await get_cached(cache_key)
-        if cached is not None:
-            return cached
 
-        result = await _compute_bundle(ticker, None, None, None, None, None)
-        # Only cache successful results — errors may be transient (yfinance flaky)
-        if "error" not in result:
-            await set_cached(cache_key, result, valuation_ttl())
-        return result
+        async def _compute_default():
+            result = await _compute_bundle(ticker, None, None, None, None, None)
+            # Raise to prevent get_or_compute from caching errors (transient yfinance failures)
+            if "error" in result:
+                raise ValueError(result["error"])
+            return result
+
+        try:
+            return await get_or_compute(cache_key, valuation_ttl(), _compute_default)
+        except ValueError:
+            # Error result — compute without cache so user sees the error message
+            return await _compute_bundle(ticker, None, None, None, None, None)
 
     return await _compute_bundle(ticker, growth, margin, tax, wacc, terminal_g)
 
@@ -1011,10 +1022,12 @@ async def _compute_bundle(
     final_terminal_g = terminal_g if terminal_g is not None else smart_defaults["terminal_g"]["suggested"]
 
     # Final safety clamp to ensure values are within valid ranges
+    # WACC floor uses riskFreeRate + 4% (same as smart_defaults computation)
+    wacc_floor = smart_defaults["wacc"].get("floor", 0.083)
     final_growth = max(-0.10, min(0.50, final_growth))
     final_margin = max(-0.10, min(0.50, final_margin))
     final_tax = max(0.10, min(0.35, final_tax))
-    final_wacc = max(0.05, min(0.20, final_wacc))
+    final_wacc = max(wacc_floor, min(0.20, final_wacc))
     final_terminal_g = max(0.00, min(0.04, final_terminal_g))
 
     base_inputs = {
@@ -1042,12 +1055,20 @@ async def _compute_bundle(
         cash_equiv = _get_line(annual_bs, bs_col, CASH)
         short_term_inv = _get_line(annual_bs, bs_col, SHORT_TERM_INVESTMENTS)
         agg_liquidity = _get_line(annual_bs, bs_col, CASH_AND_STI)
-        cash_total = _safe(agg_liquidity or (_safe(cash_equiv, 0) + _safe(short_term_inv, 0)), 0.0)
+        # Use aggregate if reported (even if 0.0); fall back to summing components
+        # Can't use `or` — Python treats 0.0 as falsy, which would skip a legit $0 cash value
+        if agg_liquidity is not None and math.isfinite(agg_liquidity):
+            cash_total = float(agg_liquidity)
+        else:
+            cash_total = _safe(cash_equiv, 0) + _safe(short_term_inv, 0)
 
         long_term_debt = _get_line(annual_bs, bs_col, LONG_TERM_DEBT)
         short_term_debt = _get_line(annual_bs, bs_col, SHORT_TERM_DEBT)
-        total_debt = _get_line(annual_bs, bs_col, TOTAL_DEBT)
-        debt_total = _safe(total_debt or (_safe(long_term_debt, 0) + _safe(short_term_debt, 0)), 0.0)
+        agg_debt = _get_line(annual_bs, bs_col, TOTAL_DEBT)
+        if agg_debt is not None and math.isfinite(agg_debt):
+            debt_total = float(agg_debt)
+        else:
+            debt_total = _safe(long_term_debt, 0) + _safe(short_term_debt, 0)
 
         net_debt = debt_total - cash_total
 
@@ -1068,10 +1089,11 @@ async def _compute_bundle(
     )
 
     equity_value = dcf["enterprise_value"] - net_debt
+    equity_is_negative = equity_value < 0
     fair_value_per_share = (equity_value / shares) if shares and shares > 0 else None
 
     upside_downside = None
-    if fair_value_per_share and current_price and current_price > 0:
+    if fair_value_per_share is not None and current_price and current_price > 0:
         upside_downside = {
             "current_price": float(current_price),
             "fair_value": float(fair_value_per_share),
@@ -1169,7 +1191,8 @@ async def _compute_bundle(
         },
         "dcf": dcf,
         "equity_value_est": float(equity_value),
-        "fair_value_per_share_est": float(fair_value_per_share) if fair_value_per_share else None,
+        "equity_negative": equity_is_negative,
+        "fair_value_per_share_est": float(fair_value_per_share) if fair_value_per_share is not None else None,
         "upside_downside": upside_downside,
         "sensitivity": sensitivity,
         "multiples": multiples,

@@ -29,7 +29,7 @@ def _fetch_financial_statements_sync(ticker: str) -> Dict[str, Any]:
                     continue
                 try:
                     result[date_str][key] = float(value)
-                except:
+                except (TypeError, ValueError):
                     continue
         return result
 
