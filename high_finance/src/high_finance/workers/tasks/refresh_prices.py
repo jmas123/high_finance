@@ -46,41 +46,53 @@ def _ensure_benchmarks(db: Session) -> list[tuple[int, str, str]]:
     return results
 
 
-def get_companies_with_trades(db: Session) -> list[tuple[int, str, str]]:
-    """Get companies that have politician trades and need price data.
+def get_companies_with_trades(db: Session, min_buy_trades: int = 2) -> list[tuple[int, str, str]]:
+    """Get companies that have enough politician buy trades to matter for backtesting.
+
+    Only returns tickers with >= min_buy_trades purchase trades. This prevents
+    fetching prices for thousands of obscure tickers that will never appear in
+    any backtest (leaderboard requires min 3 priced trades).
 
     Two sources:
     1. Companies already linked via company_id (existing matches)
     2. Unmatched ticker_raw values — creates Company records for these so
        prices can be fetched (most bulk-backfilled trades have company_id=NULL)
     """
-    # 1. Already-linked companies
+    # 1. Already-linked companies with enough buy trades
     linked = db.execute(
         text("""
-            SELECT DISTINCT c.id, c.ticker, c.name
+            SELECT c.id, c.ticker, c.name
             FROM companies c
             JOIN politician_trades pt ON pt.company_id = c.id
             WHERE c.ticker IS NOT NULL
+              AND pt.transaction_type ILIKE '%purchase%'
+            GROUP BY c.id, c.ticker, c.name
+            HAVING COUNT(*) >= :min_trades
             ORDER BY c.ticker
-        """)
+        """),
+        {"min_trades": min_buy_trades},
     ).fetchall()
 
     existing_tickers = {row[1] for row in linked}
     result = list(linked)
 
-    # 2. Unmatched tickers — create Company stubs so we can attach prices
+    # 2. Unmatched tickers with enough buy trades — create Company stubs
     unmatched = db.execute(
         text("""
-            SELECT DISTINCT pt.ticker_raw
+            SELECT pt.ticker_raw, COUNT(*) as cnt
             FROM politician_trades pt
             WHERE pt.ticker_raw IS NOT NULL
               AND pt.company_id IS NULL
-              AND pt.ticker_raw NOT IN (SELECT ticker FROM companies WHERE ticker IS NOT NULL)
-        """)
+              AND pt.transaction_type ILIKE '%purchase%'
+              AND UPPER(pt.ticker_raw) NOT IN (SELECT ticker FROM companies WHERE ticker IS NOT NULL)
+            GROUP BY pt.ticker_raw
+            HAVING COUNT(*) >= :min_trades
+        """),
+        {"min_trades": min_buy_trades},
     ).fetchall()
 
     created_count = 0
-    for (ticker_raw,) in unmatched:
+    for ticker_raw, _cnt in unmatched:
         ticker = ticker_raw.strip().upper()
         if not ticker or ticker in existing_tickers:
             continue
@@ -107,6 +119,7 @@ def get_companies_with_trades(db: Session) -> list[tuple[int, str, str]]:
         db.commit()
         logger.info(f"Created {created_count} Company stubs for unmatched trade tickers (skipped {len(unmatched) - created_count} non-equity IDs)")
 
+    logger.info(f"Price refresh targeting {len(result)} companies with >= {min_buy_trades} buy trades")
     return result
 
 
