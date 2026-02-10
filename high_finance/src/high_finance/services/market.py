@@ -193,7 +193,7 @@ HIKING_WINDOWS = [
 ]
 CUTTING_WINDOWS = [
     ("2019-07-31", "2020-01-29"),  # Mid-cycle insurance cuts (pre-COVID)
-    ("2024-09-18", "2025-01-29"),  # Current easing cycle
+    ("2024-09-18", "2025-12-10"),  # Current easing cycle (last cut: Dec 2025)
 ]
 
 # Yahoo Finance tickers for the macro dashboard
@@ -254,10 +254,12 @@ class MarketService:
         cache_key = "hf:market:macro"
 
         async def _compute():
-            raw = await asyncio.to_thread(self._build_macro)
+            raw = await asyncio.wait_for(
+                asyncio.to_thread(self._build_macro), timeout=20,
+            )
             return [m.model_dump(mode="json") for m in raw]
 
-        cached = await get_or_compute(cache_key, 900, _compute)
+        cached = await get_or_compute(cache_key, macro_ttl(), _compute)
         return [MacroIndicator(**m) for m in cached]
 
     def _build_macro(self) -> list[MacroIndicator]:
@@ -371,7 +373,9 @@ class MarketService:
         cache_key = "hf:market:sectors"
 
         async def _compute():
-            raw = await asyncio.to_thread(self._build_sectors)
+            raw = await asyncio.wait_for(
+                asyncio.to_thread(self._build_sectors), timeout=30,
+            )
             return [s.model_dump(mode="json") for s in raw]
 
         cached = await get_or_compute(cache_key, 300, _compute)
@@ -499,10 +503,12 @@ class MarketService:
         cache_key = "hf:market:rate_impact"
 
         async def _compute():
-            raw = await asyncio.to_thread(self._build_rate_impact)
+            raw = await asyncio.wait_for(
+                asyncio.to_thread(self._build_rate_impact), timeout=30,
+            )
             return [a.model_dump(mode="json") for a in raw]
 
-        cached = await get_or_compute(cache_key, 86400, _compute)
+        cached = await get_or_compute(cache_key, 14400, _compute)
         all_analyses = [RateImpactAnalysis(**a) for a in cached]
         if sector:
             return [a for a in all_analyses if a.sector == sector]
@@ -612,7 +618,9 @@ class MarketService:
         cache_key = "hf:market:breadth"
 
         async def _compute():
-            raw = await asyncio.to_thread(self._build_breadth)
+            raw = await asyncio.wait_for(
+                asyncio.to_thread(self._build_breadth), timeout=30,
+            )
             return raw.model_dump(mode="json")
 
         cached = await get_or_compute(cache_key, 300, _compute)
@@ -640,7 +648,7 @@ class MarketService:
             n = len(sample)
             adv = int((chg > 0).sum())
             dec = int((chg < 0).sum())
-            scale = 3400 / n
+            scale = 4400 / n
 
             sma50 = closes.iloc[-50:].mean() if len(closes) >= 50 else last
             sma200 = closes.iloc[-200:].mean() if len(closes) >= 200 else last
@@ -684,7 +692,9 @@ class MarketService:
     ) -> Optional[RateImpactAnalysis]:
         """Look up rate impact for a stock's sector."""
         try:
-            info = await asyncio.to_thread(lambda: yf.Ticker(ticker).info)
+            info = await asyncio.wait_for(
+                asyncio.to_thread(lambda: yf.Ticker(ticker).info), timeout=10,
+            )
             sector = info.get("sector")
         except Exception:
             sector = None

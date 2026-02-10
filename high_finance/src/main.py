@@ -60,7 +60,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         elif path.startswith("/api/v1/ticker/"):
             response.headers["Cache-Control"] = "public, max-age=60, stale-while-revalidate=300"
         elif path.startswith("/api/v1/market/"):
-            response.headers["Cache-Control"] = "public, max-age=30"
+            response.headers["Cache-Control"] = "public, max-age=60, stale-while-revalidate=300"
         else:
             response.headers["Cache-Control"] = "no-cache"
 

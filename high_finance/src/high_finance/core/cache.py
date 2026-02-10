@@ -213,8 +213,8 @@ def valuation_ttl() -> int:
 
 
 def macro_ttl() -> int:
-    """5 min."""
-    return 300
+    """5 min during market hours, 15 min when closed."""
+    return 300 if is_market_hours() else 900
 
 
 def news_ttl() -> int:

@@ -347,8 +347,8 @@ const SectorHeatmapCard: React.FC<SectorHeatmapCardProps> = ({
       {/* ─── Footer ─── */}
       <div style={{ padding: "10px 16px", borderTop: `1px solid ${C.borderSubtle}`, background: "rgba(255,255,255,0.02)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div style={{ fontSize: 11, color: C.textSec }}>
-          <span style={{ color: C.green, fontWeight: 500 }}>{data.market_leader}</span> leading |{" "}
-          <span style={{ color: C.red, fontWeight: 500 }}>{data.market_laggard}</span> lagging
+          <span style={{ color: C.green, fontWeight: 500 }}>{data.market_leader ?? "—"}</span> leading |{" "}
+          <span style={{ color: C.red, fontWeight: 500 }}>{data.market_laggard ?? "—"}</span> lagging
         </div>
         <div style={{ fontSize: 11, color: C.textMuted }}>
           {new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
@@ -364,7 +364,7 @@ const SectorHeatmapCard: React.FC<SectorHeatmapCardProps> = ({
                 <div style={{ fontSize: 11, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.05em" }}>Sector</div>
                 <div style={{ marginTop: 4, fontSize: 18, fontWeight: 600, color: C.text }}>{activeSector.sector}</div>
                 <div style={{ marginTop: 6, fontSize: 13, color: C.textSec }}>
-                  <span style={{ color: C.text, fontWeight: 500 }}>{activeSector.ticker}</span> · ${activeSector.market_cap_billions.toLocaleString()}B market cap
+                  <span style={{ color: C.text, fontWeight: 500 }}>{activeSector.ticker}</span> · ${(activeSector.market_cap_billions ?? 0).toLocaleString()}B market cap
                 </div>
               </div>
               <button onClick={() => setActiveSector(null)} style={{ background: "none", border: "none", cursor: "pointer", padding: 6 }} title="Close">

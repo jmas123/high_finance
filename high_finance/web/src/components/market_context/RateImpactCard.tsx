@@ -256,13 +256,13 @@ const RateImpactCard: React.FC<RateImpactCardProps> = ({
         <div style={{ padding: "8px 16px", borderBottom: `1px solid ${C.borderSubtle}`, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
           <span style={{ fontSize: 11, color: C.textMuted, marginRight: 4 }}>Top buckets:</span>
           <span style={{ padding: "2px 8px", fontSize: 11, borderRadius: 4, border: "1px solid rgba(239,68,68,0.2)", background: "rgba(239,68,68,0.08)", color: "#fca5a5" }}>
-            High: {data.by_sensitivity.high.slice(0, 2).join(", ")}
+            High: {(data.by_sensitivity?.high ?? []).slice(0, 2).join(", ") || "None"}
           </span>
           <span style={{ padding: "2px 8px", fontSize: 11, borderRadius: 4, border: "1px solid rgba(16,185,129,0.2)", background: "rgba(16,185,129,0.08)", color: "#6ee7b7" }}>
-            Beneficiaries: {data.rate_beneficiaries.slice(0, 2).join(", ")}
+            Beneficiaries: {(data.rate_beneficiaries ?? []).slice(0, 2).join(", ") || "None"}
           </span>
           <span style={{ padding: "2px 8px", fontSize: 11, borderRadius: 4, border: "1px solid rgba(245,158,11,0.2)", background: "rgba(245,158,11,0.08)", color: "#fcd34d" }}>
-            Sensitive: {data.rate_sensitive.slice(0, 2).join(", ")}
+            Sensitive: {(data.rate_sensitive ?? []).slice(0, 2).join(", ") || "None"}
           </span>
         </div>
       )}
