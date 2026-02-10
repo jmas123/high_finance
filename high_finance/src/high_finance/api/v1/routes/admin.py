@@ -94,7 +94,7 @@ JOBS = {
     "price_history": {
         "func": refresh_prices_job,
         "description": "Update historical price data",
-        "timeout": 3600,
+        "timeout": 7200,
         "schedule": "Daily 5 PM weekdays",
     },
     "cleanup": {
