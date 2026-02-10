@@ -42,8 +42,15 @@ def _ensure_benchmarks(db: Session) -> list[tuple[int, str, str]]:
 
 
 def get_companies_with_trades(db: Session) -> list[tuple[int, str, str]]:
-    """Get companies that have politician trades and need price data."""
-    result = db.execute(
+    """Get companies that have politician trades and need price data.
+
+    Two sources:
+    1. Companies already linked via company_id (existing matches)
+    2. Unmatched ticker_raw values — creates Company records for these so
+       prices can be fetched (most bulk-backfilled trades have company_id=NULL)
+    """
+    # 1. Already-linked companies
+    linked = db.execute(
         text("""
             SELECT DISTINCT c.id, c.ticker, c.name
             FROM companies c
@@ -52,6 +59,43 @@ def get_companies_with_trades(db: Session) -> list[tuple[int, str, str]]:
             ORDER BY c.ticker
         """)
     ).fetchall()
+
+    existing_tickers = {row[1] for row in linked}
+    result = list(linked)
+
+    # 2. Unmatched tickers — create Company stubs so we can attach prices
+    unmatched = db.execute(
+        text("""
+            SELECT DISTINCT pt.ticker_raw
+            FROM politician_trades pt
+            WHERE pt.ticker_raw IS NOT NULL
+              AND pt.company_id IS NULL
+              AND pt.ticker_raw NOT IN (SELECT ticker FROM companies WHERE ticker IS NOT NULL)
+        """)
+    ).fetchall()
+
+    for (ticker_raw,) in unmatched:
+        ticker = ticker_raw.strip().upper()
+        if not ticker or ticker in existing_tickers:
+            continue
+
+        # Create a stub Company record
+        company = Company(ticker=ticker, name=ticker)
+        db.add(company)
+        db.flush()
+        result.append((company.id, company.ticker, company.name))
+        existing_tickers.add(ticker)
+
+        # Link existing trades to this new company
+        db.execute(
+            text("UPDATE politician_trades SET company_id = :cid WHERE ticker_raw = :t AND company_id IS NULL"),
+            {"cid": company.id, "t": ticker_raw},
+        )
+
+    if unmatched:
+        db.commit()
+        logger.info(f"Created {len(unmatched)} Company stubs for unmatched trade tickers")
+
     return result
 
 
