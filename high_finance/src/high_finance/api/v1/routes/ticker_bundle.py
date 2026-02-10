@@ -411,8 +411,14 @@ async def get_ticker_bundle(
         fundamentals = comps_full
         comps = None
 
-    # If both company and fundamentals failed, the ticker is probably invalid
+    # If both company and fundamentals failed, distinguish upstream failure vs invalid ticker
     if company is None and fundamentals is None:
+        if "comps" in errors:
+            # Upstream data fetch failed — ticker may be valid but data unavailable
+            raise HTTPException(
+                status_code=503,
+                detail="Data temporarily unavailable — please try again",
+            )
         raise HTTPException(status_code=404, detail="Ticker not found")
 
     return TickerBundleResponse(

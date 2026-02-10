@@ -27,6 +27,7 @@ export function TickerSearchInput({
   const [results, setResults] = useState<Array<{ symbol: string; name: string; type: string }>>([]);
   const [showDropdown, setShowDropdown] = useState(false);
   const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -46,20 +47,23 @@ export function TickerSearchInput({
 
     if (debounceRef.current) clearTimeout(debounceRef.current);
 
-    if (val.trim().length < 1) {
+    if (val.trim().length < 2) {
       setResults([]);
       setShowDropdown(false);
+      setSearchError(null);
       return;
     }
 
     debounceRef.current = setTimeout(async () => {
       setSearching(true);
+      setSearchError(null);
       try {
         const res = await api.search(val.trim());
         setResults(res.slice(0, 6));
         setShowDropdown(true);
       } catch {
         setResults([]);
+        setSearchError("Search unavailable");
       } finally {
         setSearching(false);
       }
@@ -102,6 +106,9 @@ export function TickerSearchInput({
         <span style={{ position: "absolute", right: 8, top: 6, fontSize: 10, color: "#555" }}>
           …
         </span>
+      )}
+      {searchError && (
+        <div style={{ color: "#f87171", fontSize: 11, marginTop: 4 }}>{searchError}</div>
       )}
       {showDropdown && results.length > 0 && (
         <div

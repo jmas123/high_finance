@@ -98,7 +98,9 @@ export function ScreenerCard({ onSelectTicker }: Props) {
         const data = await api.screenerCount(f);
         setLiveCount(data.count);
         setUniverseTotal(data.universe_total);
-      } catch {}
+      } catch {
+        setLiveCount(null);
+      }
     }, 200);
   }, []);
 
@@ -163,7 +165,6 @@ export function ScreenerCard({ onSelectTicker }: Props) {
     const cleared = { ...DEFAULT_FILTERS };
     setFilters(cleared);
     runScreen(cleared);
-    setLiveCount(null);
   };
 
   // Apply a preset (replaces all filters + runs immediately)

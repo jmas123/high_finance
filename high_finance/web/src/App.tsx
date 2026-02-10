@@ -990,6 +990,23 @@ function TickerView() {
         {error ? (
           <div style={{ ...styles.errorBanner, textAlign: "left" }}>
             <b>Error:</b> {error}
+            <div style={{ marginTop: 12 }}>
+              <button
+                onClick={() => ticker && loadTicker(ticker)}
+                style={{
+                  background: "#2563eb",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: 6,
+                  padding: "8px 16px",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                Try Again
+              </button>
+            </div>
           </div>
         ) : (
           `Loading ${ticker}...`

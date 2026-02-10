@@ -87,7 +87,16 @@ async function getJSON<T>(path: string, timeoutMs?: number): Promise<T> {
   const res = await fetchWithTimeout(path, { headers: getAuthHeaders() }, timeoutMs);
   if (!res.ok) {
     handleResponseError(res);
-    throw new Error(await res.text());
+    let message: string;
+    try {
+      const body = await res.json();
+      message = body.detail || body.message || `Error ${res.status}`;
+    } catch {
+      message = await res.text();
+    }
+    const err = new Error(message);
+    (err as any).status = res.status;
+    throw err;
   }
   return res.json();
 }
@@ -96,7 +105,16 @@ async function postJSON<T>(path: string): Promise<T> {
   const res = await fetchWithTimeout(path, { method: "POST", headers: getAuthHeaders() });
   if (!res.ok) {
     handleResponseError(res);
-    throw new Error(await res.text());
+    let message: string;
+    try {
+      const body = await res.json();
+      message = body.detail || body.message || `Error ${res.status}`;
+    } catch {
+      message = await res.text();
+    }
+    const err = new Error(message);
+    (err as any).status = res.status;
+    throw err;
   }
   return res.json();
 }
