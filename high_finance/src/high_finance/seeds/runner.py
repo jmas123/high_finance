@@ -162,6 +162,18 @@ def enqueue_slow_seeds() -> dict:
             )
             jobs["prices"] = prices_job.id
             logger.info(f"Enqueued prices (depends_on congress): {prices_job.id}")
+
+            # Pre-warm leaderboard cache after prices are loaded
+            from high_finance.workers.tasks.prewarm_leaderboard import prewarm_leaderboard_job
+
+            prewarm_job = queue.enqueue(
+                prewarm_leaderboard_job,
+                job_id="seed_prewarm_leaderboard",
+                job_timeout=7200,
+                depends_on=prices_job,
+            )
+            jobs["prewarm_leaderboard"] = prewarm_job.id
+            logger.info(f"Enqueued prewarm_leaderboard (depends_on prices): {prewarm_job.id}")
         else:
             logger.warning(
                 "QUIVER_API_KEY not set — skipping congress trades, committees, and prices. "

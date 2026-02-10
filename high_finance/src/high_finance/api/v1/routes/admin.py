@@ -47,6 +47,7 @@ from high_finance.workers.tasks.refresh_13f import refresh_13f_job
 from high_finance.workers.tasks.refresh_prices import refresh_prices_job
 from high_finance.services.job_tracker import cleanup_old_executions_job
 from high_finance.workers.tasks.backfill_congress_trades import backfill_congress_trades_job
+from high_finance.workers.tasks.prewarm_leaderboard import prewarm_leaderboard_job
 
 router = APIRouter()
 
@@ -108,6 +109,12 @@ JOBS = {
         "description": "Bulk backfill ~109K congress trades from Quiver API",
         "timeout": 7200,
         "schedule": "Manual / seed-on-startup only",
+    },
+    "prewarm_leaderboard": {
+        "func": prewarm_leaderboard_job,
+        "description": "Pre-warm leaderboard cache for common parameter combos",
+        "timeout": 7200,
+        "schedule": "After refresh_prices / manual",
     },
 }
 
@@ -359,6 +366,21 @@ async def cancel_job(
         db.commit()
 
     return {"status": "cancelled", "job_id": job_id}
+
+
+@router.post("/cache/leaderboard/clear")
+@limiter.limit("10/minute")
+async def clear_leaderboard_cache(
+    request: Request,
+    admin: bool = Depends(verify_admin),
+):
+    """
+    Clear all cached leaderboard results.
+    Uses SCAN+DELETE on pattern hf:backtest:leaderboard*.
+    """
+    from high_finance.core.cache import invalidate_cache
+    await invalidate_cache("backtest", "leaderboard")
+    return {"status": "cleared", "pattern": "hf:backtest:leaderboard*"}
 
 
 @router.post("/seed/trigger")

@@ -83,8 +83,8 @@ function handleResponseError(res: Response): void {
   }
 }
 
-async function getJSON<T>(path: string): Promise<T> {
-  const res = await fetchWithTimeout(path, { headers: getAuthHeaders() });
+async function getJSON<T>(path: string, timeoutMs?: number): Promise<T> {
+  const res = await fetchWithTimeout(path, { headers: getAuthHeaders() }, timeoutMs);
   if (!res.ok) {
     handleResponseError(res);
     throw new Error(await res.text());
@@ -975,7 +975,7 @@ valuationAISuggest: (ticker: string) =>
     if (opts?.chamber) q.set("chamber", opts.chamber);
     if (opts?.party) q.set("party", opts.party);
     if (opts?.sinceYear != null) q.set("since_year", String(opts.sinceYear));
-    return getJSON<LeaderboardResponse>(`${BASE}/politicians/leaderboard?${q.toString()}`);
+    return getJSON<LeaderboardResponse>(`${BASE}/politicians/leaderboard?${q.toString()}`, 120_000);
   },
 
   politicianBacktest: (politicianId: number, delayDays = 3, holdDays = 30, sinceYear?: number) => {
