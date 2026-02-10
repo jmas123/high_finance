@@ -75,6 +75,15 @@ async def lifespan(app: FastAPI):
     loop = asyncio.get_running_loop()
     loop.set_default_executor(executor)
     logger.info("Thread pool executor configured with max_workers=10")
+
+    # Auto-populate seed data on fresh deploys
+    try:
+        from high_finance.seeds.runner import run_fast_seeds
+        result = run_fast_seeds()
+        logger.info(f"Fast seed result: {result}")
+    except Exception:
+        logger.exception("Fast seeds failed — API will start without seed data")
+
     yield
     # Shutdown: clean up Redis connection
     try:

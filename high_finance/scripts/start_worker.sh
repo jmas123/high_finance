@@ -11,6 +11,10 @@ echo "Starting RQ Worker + Scheduler..."
 echo "Redis URL: ${REDIS_URL:-(not set)}"
 echo "Timezone: $(date +%Z)"
 
+# Check if seed jobs need to be enqueued
+echo "Checking if seed jobs need to be enqueued..."
+python -m high_finance.workers.seed_on_startup || echo "Seed startup check failed (non-fatal)"
+
 # Start the scheduler in the background
 echo "Starting scheduler..."
 python -m high_finance.workers.scheduler &

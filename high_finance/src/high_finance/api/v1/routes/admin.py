@@ -46,6 +46,7 @@ from high_finance.workers.tasks.refresh_comittees import refresh_committees_job
 from high_finance.workers.tasks.refresh_13f import refresh_13f_job
 from high_finance.workers.tasks.refresh_prices import refresh_prices_job
 from high_finance.services.job_tracker import cleanup_old_executions_job
+from high_finance.workers.tasks.backfill_congress_trades import backfill_congress_trades_job
 
 router = APIRouter()
 
@@ -101,6 +102,12 @@ JOBS = {
         "description": "Clean up old job execution records",
         "timeout": 900,
         "schedule": "Sunday 2 AM",
+    },
+    "backfill_congress_trades": {
+        "func": backfill_congress_trades_job,
+        "description": "Bulk backfill ~109K congress trades from Quiver API",
+        "timeout": 7200,
+        "schedule": "Manual / seed-on-startup only",
     },
 }
 
@@ -352,3 +359,34 @@ async def cancel_job(
         db.commit()
 
     return {"status": "cancelled", "job_id": job_id}
+
+
+@router.post("/seed/trigger")
+@limiter.limit("2/hour")
+async def trigger_seed(
+    request: Request,
+    admin: bool = Depends(verify_admin),
+):
+    """
+    Force re-run all seed operations.
+    Clears Redis seed flags, runs fast seeds synchronously,
+    then enqueues slow seeds as background jobs.
+
+    Rate limited to 2 per hour.
+    """
+    from high_finance.seeds.runner import clear_seed_flags, run_fast_seeds, enqueue_slow_seeds
+
+    # Clear flags so seeds actually run
+    clear_result = clear_seed_flags()
+
+    # Run fast seeds synchronously
+    fast_result = run_fast_seeds()
+
+    # Enqueue slow seeds
+    slow_result = enqueue_slow_seeds()
+
+    return {
+        "clear_flags": clear_result,
+        "fast_seeds": fast_result,
+        "slow_seeds": slow_result,
+    }
