@@ -18,6 +18,7 @@ from high_finance.api.v1.schemas.politician import PoliticianTradeOut
 from high_finance.services.politicians import get_company_politician_trades, ensure_company_trades_fresh
 
 from high_finance.api.v1.schemas.company import ComparableAnalysis
+from high_finance.api.v1.deps import _TICKER_RE
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +75,15 @@ async def read_company_comps(
 
     # Option 2: Ad-hoc peer list from query param
     elif peers:
-        peer_tickers = [t.strip().upper() for t in peers.split(",") if t.strip()]
+        raw = [t.strip().upper() for t in peers.split(",") if t.strip()]
+        invalid = [t for t in raw if not _TICKER_RE.match(t)]
+        if invalid:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid ticker format: {', '.join(invalid[:5])}",
+            )
+        # Deduplicate (preserve order) and remove target ticker
+        peer_tickers = list(dict.fromkeys(t for t in raw if t != ticker.upper()))
         if len(peer_tickers) > 30:
             raise HTTPException(
                 status_code=400,
@@ -134,7 +143,15 @@ async def export_company_comps(
 
     # Option 2: Ad-hoc peer list from request body
     elif body.peers:
-        peer_tickers = [t.strip().upper() for t in body.peers if t.strip()]
+        raw = [t.strip().upper() for t in body.peers if t.strip()]
+        invalid = [t for t in raw if not _TICKER_RE.match(t)]
+        if invalid:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid ticker format: {', '.join(invalid[:5])}",
+            )
+        # Deduplicate (preserve order) and remove target ticker
+        peer_tickers = list(dict.fromkeys(t for t in raw if t != ticker.upper()))
         if len(peer_tickers) > 30:
             raise HTTPException(
                 status_code=400,

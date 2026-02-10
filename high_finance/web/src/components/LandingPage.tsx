@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { useIsMobile } from "../lib/useIsMobile";
+import { useIsMobile, useIsLargeScreen } from "../lib/useIsMobile";
 
 interface LandingPageProps {
   onOpenAuth: () => void;
@@ -79,6 +79,7 @@ const STEPS = [
 export function LandingPage({ onOpenAuth }: LandingPageProps) {
   const navigate = useNavigate();
   const isMobile = useIsMobile();
+  const isLargeScreen = useIsLargeScreen();
 
   return (
     <div style={{
@@ -164,7 +165,7 @@ export function LandingPage({ onOpenAuth }: LandingPageProps) {
 
       {/* ── Feature Grid ────────────────────────────────────────────── */}
       <section style={{
-        maxWidth: 1100,
+        maxWidth: isLargeScreen ? 1300 : 1100,
         margin: "0 auto",
         padding: "0 24px 60px",
       }}>

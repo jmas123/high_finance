@@ -950,6 +950,7 @@ export function OptionDecaySimulator({ ticker, initialOptionsData, initialIVCont
               padding: 12,
               background: "rgba(255,255,255,0.02)",
               borderRadius: 8,
+              maxWidth: 600,
             }}
           >
             <div style={{ textAlign: "center" }}>

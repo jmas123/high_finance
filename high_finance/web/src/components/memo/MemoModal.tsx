@@ -134,7 +134,7 @@ export function MemoModal({ ticker, isOpen, onClose }: MemoModalProps) {
           background: "#1a1a1a",
           borderRadius: 12,
           width: 720,
-          maxWidth: "95vw",
+          maxWidth: "min(95vw, 800px)",
           maxHeight: "85vh",
           display: "flex",
           flexDirection: "column",

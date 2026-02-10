@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, useRef, useState, useEffect } from "react";
 import { fmtPrice } from "../Functions";
 
 export const FanChart = memo(function FanChart({
@@ -19,9 +19,22 @@ export const FanChart = memo(function FanChart({
   s0: number;
   horizonDays: number;
 }) {
-  if (!fan?.length) return null;
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(900);
 
-  const width = 900;
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    setWidth(Math.round(el.clientWidth));
+    const ro = new ResizeObserver(([entry]) => {
+      setWidth(Math.round(entry.contentRect.width));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  if (!fan?.length) return <div ref={containerRef} />;
+
   const height = 200;
   const pad = { left: 50, right: 20, top: 15, bottom: 30 };
   const chartW = width - pad.left - pad.right;
@@ -63,73 +76,75 @@ export const FanChart = memo(function FanChart({
   const yStep = (yMax - yMin) / yTicks;
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} style={{ width: "100%", height: 200, display: "block" }}>
-      {/* Grid */}
-      {Array.from({ length: yTicks + 1 }).map((_, i) => {
-        const y = yMin + i * yStep;
-        return (
-          <g key={i}>
-            <line
-              x1={pad.left}
-              y1={sy(y)}
-              x2={width - pad.right}
-              y2={sy(y)}
-              stroke="#222"
-              strokeWidth="1"
-            />
-            <text x={pad.left - 8} y={sy(y) + 3} fill="#555" fontSize="9" textAnchor="end">
-              {fmtPrice(y)}
+    <div ref={containerRef}>
+      <svg viewBox={`0 0 ${width} ${height}`} style={{ width: "100%", height: 200, display: "block" }}>
+        {/* Grid */}
+        {Array.from({ length: yTicks + 1 }).map((_, i) => {
+          const y = yMin + i * yStep;
+          return (
+            <g key={i}>
+              <line
+                x1={pad.left}
+                y1={sy(y)}
+                x2={width - pad.right}
+                y2={sy(y)}
+                stroke="#222"
+                strokeWidth="1"
+              />
+              <text x={pad.left - 8} y={sy(y) + 3} fill="#555" fontSize="9" textAnchor="end">
+                {fmtPrice(y)}
+              </text>
+            </g>
+          );
+        })}
+
+        {/* Starting price line */}
+        <line
+          x1={pad.left}
+          y1={sy(s0)}
+          x2={width - pad.right}
+          y2={sy(s0)}
+          stroke="#666"
+          strokeWidth="1"
+          strokeDasharray="4,4"
+        />
+
+        {/* Bands */}
+        <path d={bandPath("p95", "p5")} fill="rgba(59, 130, 246, 0.08)" />
+        <path d={bandPath("p90", "p10")} fill="rgba(59, 130, 246, 0.12)" />
+        <path d={bandPath("p75", "p25")} fill="rgba(59, 130, 246, 0.18)" />
+
+        {/* Lines */}
+        <path d={linePath("p50")} fill="none" stroke="rgba(59, 130, 246, 0.95)" strokeWidth="2.5" />
+        <path d={linePath("p90")} fill="none" stroke="rgba(59, 130, 246, 0.4)" strokeWidth="1.5" />
+        <path d={linePath("p10")} fill="none" stroke="rgba(59, 130, 246, 0.4)" strokeWidth="1.5" />
+
+        {/* X-axis labels */}
+        {[0, Math.floor(horizonDays / 4), Math.floor(horizonDays / 2), Math.floor((3 * horizonDays) / 4), horizonDays].map(
+          (day, i) => (
+            <text
+              key={i}
+              x={sx(day)}
+              y={height - 8}
+              fill="#555"
+              fontSize="9"
+              textAnchor="middle"
+            >
+              {day}d
             </text>
-          </g>
-        );
-      })}
+          )
+        )}
 
-      {/* Starting price line */}
-      <line
-        x1={pad.left}
-        y1={sy(s0)}
-        x2={width - pad.right}
-        y2={sy(s0)}
-        stroke="#666"
-        strokeWidth="1"
-        strokeDasharray="4,4"
-      />
-
-      {/* Bands */}
-      <path d={bandPath("p95", "p5")} fill="rgba(59, 130, 246, 0.08)" />
-      <path d={bandPath("p90", "p10")} fill="rgba(59, 130, 246, 0.12)" />
-      <path d={bandPath("p75", "p25")} fill="rgba(59, 130, 246, 0.18)" />
-
-      {/* Lines */}
-      <path d={linePath("p50")} fill="none" stroke="rgba(59, 130, 246, 0.95)" strokeWidth="2.5" />
-      <path d={linePath("p90")} fill="none" stroke="rgba(59, 130, 246, 0.4)" strokeWidth="1.5" />
-      <path d={linePath("p10")} fill="none" stroke="rgba(59, 130, 246, 0.4)" strokeWidth="1.5" />
-
-      {/* X-axis labels */}
-      {[0, Math.floor(horizonDays / 4), Math.floor(horizonDays / 2), Math.floor((3 * horizonDays) / 4), horizonDays].map(
-        (day, i) => (
-          <text
-            key={i}
-            x={sx(day)}
-            y={height - 8}
-            fill="#555"
-            fontSize="9"
-            textAnchor="middle"
-          >
-            {day}d
-          </text>
-        )
-      )}
-
-      {/* Legend */}
-      <g transform={`translate(${width - 120}, ${pad.top + 10})`}>
-        <rect x="0" y="0" width="10" height="10" fill="rgba(59, 130, 246, 0.95)" rx="2" />
-        <text x="14" y="9" fill="#888" fontSize="9">Median (p50)</text>
-        <rect x="0" y="16" width="10" height="10" fill="rgba(59, 130, 246, 0.18)" rx="2" />
-        <text x="14" y="25" fill="#888" fontSize="9">p25-p75</text>
-        <rect x="0" y="32" width="10" height="10" fill="rgba(59, 130, 246, 0.08)" rx="2" />
-        <text x="14" y="41" fill="#888" fontSize="9">p5-p95</text>
-      </g>
-    </svg>
+        {/* Legend */}
+        <g transform={`translate(${width - 120}, ${pad.top + 10})`}>
+          <rect x="0" y="0" width="10" height="10" fill="rgba(59, 130, 246, 0.95)" rx="2" />
+          <text x="14" y="9" fill="#888" fontSize="9">Median (p50)</text>
+          <rect x="0" y="16" width="10" height="10" fill="rgba(59, 130, 246, 0.18)" rx="2" />
+          <text x="14" y="25" fill="#888" fontSize="9">p25-p75</text>
+          <rect x="0" y="32" width="10" height="10" fill="rgba(59, 130, 246, 0.08)" rx="2" />
+          <text x="14" y="41" fill="#888" fontSize="9">p5-p95</text>
+        </g>
+      </svg>
+    </div>
   );
 });

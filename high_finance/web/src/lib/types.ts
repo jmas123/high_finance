@@ -277,6 +277,7 @@ export type MetricStats = {
   p75: number | null;
   min: number | null;
   max: number | null;
+  n?: number;
 };
 
 export type CompsResponse = {
@@ -291,6 +292,9 @@ export type CompsResponse = {
 
   // NEW: Implied price at peer median for each valuation metric
   implied_prices: Record<string, number | null>;
+
+  // Explains why specific implied prices are None
+  implied_price_notes?: Record<string, string>;
 
   // legacy fields (can stay optional)
   average_pe?: number | null;

@@ -84,7 +84,7 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
             borderRadius: 12,
             padding: 24,
             width: 360,
-            maxWidth: "90vw",
+            maxWidth: "min(90vw, 420px)",
             border: "1px solid #333",
             position: "relative",
           }}
@@ -161,7 +161,7 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
           borderRadius: 12,
           padding: 24,
           width: 360,
-          maxWidth: "90vw",
+          maxWidth: "min(90vw, 420px)",
           border: "1px solid #333",
           position: "relative",
         }}

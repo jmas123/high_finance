@@ -18,12 +18,21 @@ from redis import Redis
 
 logger = logging.getLogger(__name__)
 
-# Most-used parameter combos based on frontend defaults
-PREWARM_COMBOS = [
-    {"delay_days": 3, "hold_days": 30, "since_year": None},
-    {"delay_days": 3, "hold_days": 30, "since_year": 2023},
-    {"delay_days": 3, "hold_days": 30, "since_year": 2024},
-]
+
+def _build_prewarm_combos() -> list[dict]:
+    """Build prewarm combos dynamically so year filters stay current."""
+    current_year = datetime.now(timezone.utc).year
+    return [
+        # Default: all-time, 30-day hold
+        {"delay_days": 3, "hold_days": 30, "since_year": None},
+        # Current year and previous two years
+        {"delay_days": 3, "hold_days": 30, "since_year": current_year},
+        {"delay_days": 3, "hold_days": 30, "since_year": current_year - 1},
+        {"delay_days": 3, "hold_days": 30, "since_year": current_year - 2},
+        # 60-day hold is the second most common alternative
+        {"delay_days": 3, "hold_days": 60, "since_year": None},
+        {"delay_days": 3, "hold_days": 60, "since_year": current_year},
+    ]
 
 
 def _cache_key(delay: int, hold: int, min_trades: int = 3, year=None) -> str:
@@ -103,10 +112,11 @@ def prewarm_leaderboard_job() -> dict:
     # (important after data corrections like trade→company linking)
     _clear_stale_leaderboard_cache()
 
+    combos = _build_prewarm_combos()
     results = []
     failed = []
 
-    for combo in PREWARM_COMBOS:
+    for combo in combos:
         label = f"delay={combo['delay_days']},hold={combo['hold_days']},year={combo.get('since_year', 'all')}"
         try:
             info = _compute_and_cache_sync(combo)
@@ -118,7 +128,7 @@ def prewarm_leaderboard_job() -> dict:
     return create_job_result(
         status="ok" if not failed else "error",
         updated=len(results),
-        total=len(PREWARM_COMBOS),
+        total=len(combos),
         failed=failed,
         combos=results,
     )

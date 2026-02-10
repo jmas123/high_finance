@@ -29,7 +29,7 @@ function ReferenceMarker({
       
       setPosition({
         top: shouldFlip ? rect.bottom + 10 : rect.top - 10,
-        left: Math.max(160, Math.min(window.innerWidth - 160, rect.left + rect.width / 2)),
+        left: Math.max(150, Math.min(window.innerWidth - 150, rect.left + rect.width / 2)),
         flipped: shouldFlip,
       });
     }

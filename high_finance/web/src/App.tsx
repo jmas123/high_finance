@@ -106,7 +106,7 @@ import { PrivateCompanyList } from "./components/private/PrivateCompanyList";
 import { PrivateCompanyProfileView } from "./components/private/PrivateCompanyProfile";
 
 // ── Mobile ────────────────────────────────────────────────────────────────
-import { useIsMobile } from "./lib/useIsMobile";
+import { useIsMobile, useIsLargeScreen } from "./lib/useIsMobile";
 import { MobileTabBar } from "./components/navigation/MobileTabBar";
 
 // ── Loading fallback for lazy components ─────────────────────────────────────
@@ -257,6 +257,7 @@ export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
   const isMobile = useIsMobile();
+  const isLargeScreen = useIsLargeScreen();
 
   // Determine active tab from current route
   const getActiveTab = () => {
@@ -291,6 +292,7 @@ export default function App() {
     <div style={styles.appContainer}>
       <div style={{
         ...styles.contentWrapper,
+        ...(isLargeScreen ? { maxWidth: 1400 } : {}),
         ...(isMobile ? { padding: "12px 14px", paddingBottom: 80 } : {}),
       }}>
         {/* Header with Search + Calendar + Auth */}
@@ -714,6 +716,7 @@ function TickerView() {
   const { ticker: urlTicker } = useParams<{ ticker: string }>();
   const navigate = useNavigate();
   const isMobile = useIsMobile();
+  const isLargeScreen = useIsLargeScreen();
 
   // Validate ticker from URL — redirect to home if invalid
   const normalizedTicker = urlTicker?.toUpperCase() ?? "";
@@ -1692,7 +1695,7 @@ function CreateProjectModal({
           borderRadius: 12,
           padding: 24,
           width: 420,
-          maxWidth: "90vw",
+          maxWidth: "min(90vw, 480px)",
         }}
         onClick={(e) => e.stopPropagation()}
       >

@@ -43,7 +43,13 @@ def is_extreme(val, metric: str) -> bool:
     return val > threshold
 
 
-def normalize_return(val):
+def _normalize_etf_return(val):
+    """Normalize ETF return values from yfinance.
+
+    ETF-only: yfinance sometimes returns ETF returns as percentages (17.8)
+    instead of fractions (0.178). Do NOT use for stock metrics like
+    revenue_growth — those are already fractions and 1.5 (150% growth) is valid.
+    """
     if val is None:
         return None
     try:
@@ -123,7 +129,7 @@ def get_etf_fundamentals(info: dict) -> dict:
         "nav_price": info.get("navPrice"),
         "expense_ratio": info.get("annualReportExpenseRatio"),  # e.g., 0.0003 = 0.03%
         "yield": info.get("yield"),  # Distribution yield
-        "ytd_return":normalize_return(info.get("ytdReturn")),
+        "ytd_return": _normalize_etf_return(info.get("ytdReturn")),
         "three_year_return": info.get("threeYearAverageReturn"),
         "five_year_return": info.get("fiveYearAverageReturn"),
         
@@ -477,20 +483,36 @@ async def get_company_fundamentals(
 
     averages = {m: avg(m) for m in metrics}
 
-    # ── NEW: Compute full statistics (mean, median, p25, p75, min, max) ──
+    # ── Compute full statistics (mean, median, p25, p75, min, max) ──
     def compute_stats(metric: str) -> dict:
-        vals = [p.get(metric) for p in peers_data if isinstance(p.get(metric), (int, float))]
-        if not vals:
-            return {"mean": None, "median": None, "p25": None, "p75": None, "min": None, "max": None}
-        sorted_vals = sorted(vals)
-        n = len(sorted_vals)
+        raw_vals = [p.get(metric) for p in peers_data if isinstance(p.get(metric), (int, float))]
+        if not raw_vals:
+            return {"mean": None, "median": None, "p25": None, "p75": None, "min": None, "max": None, "n": 0}
+
+        # Filter extreme-value peers for stats (keeps min/max from raw)
+        threshold = EXTREME_THRESHOLDS.get(metric)
+        if threshold is not None:
+            vals = [v for v in raw_vals if v <= threshold]
+            if not vals:
+                vals = raw_vals  # all extreme → use them anyway
+        else:
+            vals = raw_vals
+
+        n = len(vals)
+        if n == 1:
+            v = vals[0]
+            return {"mean": v, "median": v, "p25": v, "p75": v, "min": raw_vals[0], "max": raw_vals[-1], "n": len(raw_vals)}
+
+        # statistics.quantiles with method='inclusive' handles small n correctly
+        quantile_vals = statistics.quantiles(vals, n=4, method="inclusive")
         return {
             "mean": sum(vals) / n,
             "median": statistics.median(vals),
-            "p25": sorted_vals[n // 4] if n >= 4 else sorted_vals[0],
-            "p75": sorted_vals[(3 * n) // 4] if n >= 4 else sorted_vals[-1],
-            "min": sorted_vals[0],
-            "max": sorted_vals[-1],
+            "p25": quantile_vals[0],
+            "p75": quantile_vals[2],
+            "min": min(raw_vals),
+            "max": max(raw_vals),
+            "n": len(raw_vals),
         }
 
     stats = {m: compute_stats(m) for m in metrics}
@@ -549,10 +571,27 @@ async def get_company_fundamentals(
     }
 
     implied_prices = {}
+    implied_price_notes: dict[str, str] = {}
     valuation_metrics = ["pe_ratio", "forward_pe", "ev_to_ebitda", "ev_to_sales"]
     for m in valuation_metrics:
         if m in stats:
             implied_prices[m] = compute_implied_price(m, stats[m].get("median"), target_with_extras)
+            # Explain why an implied price is missing
+            if implied_prices[m] is None:
+                median_val = stats[m].get("median")
+                if median_val is None or median_val <= 0:
+                    implied_price_notes[m] = "Insufficient peer data to compute median"
+                elif m == "pe_ratio":
+                    eps_val = target_with_extras.get("eps")
+                    if eps_val is None or eps_val <= 0:
+                        implied_price_notes[m] = "EPS is negative or unavailable — P/E implied price cannot be calculated"
+                elif m == "forward_pe":
+                    fwd_pe = target_with_extras.get("forward_pe")
+                    if not fwd_pe or fwd_pe <= 0:
+                        implied_price_notes[m] = "Forward P/E unavailable for this company"
+                elif m in ("ev_to_ebitda", "ev_to_sales"):
+                    driver = "EBITDA" if m == "ev_to_ebitda" else "Revenue"
+                    implied_price_notes[m] = f"{driver} or shares outstanding unavailable"
 
     return {
         "target": data,
@@ -561,4 +600,5 @@ async def get_company_fundamentals(
         "averages": averages,
         "statistics": stats,
         "implied_prices": implied_prices,
+        "implied_price_notes": implied_price_notes,
     }

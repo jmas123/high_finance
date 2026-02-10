@@ -38,7 +38,7 @@ function formatRelativeTime(isoString: string): string {
 }
 
 function formatMetric(metric: string, value: number | null | undefined): string {
-  if (value == null) return "—";
+  if (value == null || !Number.isFinite(value)) return "—";
 
   if (metric === "market_cap") return formatLarge(value);
 
@@ -71,7 +71,7 @@ function formatPremiumDiscount(
   target: number | null | undefined,
   median: number | null | undefined
 ): { text: string; color: string } | null {
-  if (target == null || median == null || median === 0) return null;
+  if (target == null || median == null || median === 0 || !Number.isFinite(target) || !Number.isFinite(median)) return null;
   const pct = ((target - median) / median) * 100;
   const isPositive = pct > 0;
   return {
@@ -107,7 +107,7 @@ type SortState = {
 
 export function CompsTable({ data, ticker, isAuthenticated, onRefetch, onTickerClick }: Props) {
   const isMobile = useIsMobile();
-  const { target, peers, template, statistics, implied_prices } = data;
+  const { target, peers, template, statistics, implied_prices, implied_price_notes } = data;
 
   // Peer group state
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
@@ -159,12 +159,14 @@ export function CompsTable({ data, ticker, isAuthenticated, onRefetch, onTickerC
         const aVal = (a as any)[col] as number | null | undefined;
         const bVal = (b as any)[col] as number | null | undefined;
 
-        // Nulls sort to bottom regardless of direction
-        if (aVal == null && bVal == null) return 0;
-        if (aVal == null) return 1;
-        if (bVal == null) return -1;
+        // Nulls and non-finite sort to bottom regardless of direction
+        const aOk = aVal != null && Number.isFinite(aVal);
+        const bOk = bVal != null && Number.isFinite(bVal);
+        if (!aOk && !bOk) return 0;
+        if (!aOk) return 1;
+        if (!bOk) return -1;
 
-        return (aVal - bVal) * dir;
+        return (aVal! - bVal!) * dir;
       });
     }
 
@@ -267,7 +269,7 @@ export function CompsTable({ data, ticker, isAuthenticated, onRefetch, onTickerC
           <div>
             <div style={{ fontSize: 16, fontWeight: 600 }}>Comparable Analysis</div>
             <div style={{ fontSize: 12, opacity: 0.6, marginTop: 2 }}>
-              {template?.label ?? "Relative valuation"} vs. peers ({target.industry})
+              {template?.label ?? "Relative valuation"} vs. peers{target.industry ? ` (${target.industry})` : ""}
             </div>
           </div>
 
@@ -381,7 +383,7 @@ export function CompsTable({ data, ticker, isAuthenticated, onRefetch, onTickerC
                         borderRadius: 4,
                       }}
                     >
-                      {premiumBadge.text} vs Med
+                      {premiumBadge.text}
                     </span>
                   )}
                 </div>
@@ -441,7 +443,7 @@ export function CompsTable({ data, ticker, isAuthenticated, onRefetch, onTickerC
               })}
               {/* vs Median column for valuation metrics */}
               {valuationMetrics.length > 0 && (
-                <th style={{ ...thBase, ...right, color: "#666" }}>vs Med</th>
+                <th style={{ ...thBase, ...right, color: "#666" }}>Premium / Discount</th>
               )}
             </tr>
           </thead>
@@ -625,6 +627,16 @@ export function CompsTable({ data, ticker, isAuthenticated, onRefetch, onTickerC
                       </span>
                     )}
                   </div>
+                  {/* Show notes explaining missing implied prices */}
+                  {implied_price_notes && Object.keys(implied_price_notes).length > 0 && (
+                    <div style={{ marginTop: 6, fontSize: 11, color: "#666" }}>
+                      {Object.entries(implied_price_notes).map(([key, note]) => (
+                        <span key={key} style={{ marginRight: 16 }}>
+                          {metricLabel(key)}: {note}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </td>
               </tr>
             )}

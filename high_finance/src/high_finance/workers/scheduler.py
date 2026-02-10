@@ -9,6 +9,7 @@ Run this as a separate process:
 Schedule (all times in Eastern Time):
 - Congressional trades: Every 4 hours
 - Screener cache: 9:30 AM, every 15 min 10 AM-4 PM, 4 PM (weekdays, market days only)
+- Screener cache (weekend): Saturday 8 AM (safety net against Redis flushes)
 - S&P 500 universe: Monday 6 AM
 - Committee membership: 1st of month, 3 AM
 - 13F holdings: 20th of Feb/May/Aug/Nov (quarterly SEC EDGAR)
@@ -87,6 +88,16 @@ def register_jobs(scheduler: Scheduler) -> None:
     )
     logger.info("Registered: screener_cache_close (4:00 PM weekdays)")
 
+    # Weekend safety net — ensures screener has data even after Redis flush
+    # Uses refresh_screener_cache_job directly (no is_trading_day guard)
+    scheduler.cron(
+        "0 8 * * 6",  # Saturday 8 AM
+        func="high_finance.workers.tasks.refresh_screener_cache.refresh_screener_cache_job",
+        id="screener_cache_weekend",
+        timeout=1800,
+    )
+    logger.info("Registered: screener_cache_weekend (Saturday 8 AM)")
+
     # ==========================================================================
     # S&P 500 Universe - Monday 6 AM
     # ==========================================================================
@@ -139,7 +150,7 @@ def register_jobs(scheduler: Scheduler) -> None:
         "0 18 * * 1-5",  # 6 PM weekdays
         func="high_finance.workers.tasks.prewarm_leaderboard.prewarm_leaderboard_job",
         id="prewarm_leaderboard_scheduled",
-        timeout=7200,  # 2 hours (3 combos × ~90s each, with safety margin)
+        timeout=7200,  # 2 hours (6 combos × ~90s each, with safety margin)
     )
     logger.info("Registered: prewarm_leaderboard_scheduled (daily 6 PM weekdays)")
 

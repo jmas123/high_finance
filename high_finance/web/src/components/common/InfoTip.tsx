@@ -27,7 +27,7 @@ export function InfoTip({ text }: { text: string }) {
 
         setPos({
           top: shouldFlip ? rect.bottom + 8 : rect.top - 8,
-          left: Math.max(160, Math.min(window.innerWidth - 160, rect.left + rect.width / 2)),
+          left: Math.max(140, Math.min(window.innerWidth - 140, rect.left + rect.width / 2)),
           flipped: shouldFlip,
         });
       }

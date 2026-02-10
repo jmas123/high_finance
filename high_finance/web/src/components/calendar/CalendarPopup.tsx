@@ -114,7 +114,7 @@ export function CalendarPopup({ isOpen, onClose, onTickerClick }: CalendarPopupP
           background: "#1a1a1a",
           borderRadius: 12,
           width: 420,
-          maxWidth: "90vw",
+          maxWidth: "min(90vw, 480px)",
           border: "1px solid #333",
           overflow: "hidden",
         }}

@@ -99,7 +99,7 @@ def create_job_result(
     return result_dict
 
 
-def tracked_job(job_name: str):
+def tracked_job(job_name: str, *, alert_on_failure: bool = True):
     """
     Decorator that automatically tracks job completion/failure in the DB.
 
@@ -110,6 +110,10 @@ def tracked_job(job_name: str):
     Works for both admin-triggered jobs (which already have a DB record
     from record_job_start) and scheduler-triggered jobs (record_job_complete
     will create a record if one doesn't exist).
+
+    Args:
+        job_name: Identifier for this job type.
+        alert_on_failure: If True (default), send a Slack alert on failure.
     """
     def decorator(func):
         @functools.wraps(func)
@@ -149,6 +153,15 @@ def tracked_job(job_name: str):
                         logger.exception(f"Failed to record job failure for {job_id}")
                     finally:
                         db.close()
+
+                # Best-effort Slack alert — never let notification failure mask the real error
+                if alert_on_failure:
+                    try:
+                        from high_finance.utils.alerts import send_job_failure_alert
+                        send_job_failure_alert(job_name, job_id or "unknown", str(e))
+                    except Exception:
+                        logger.warning(f"Failed to send Slack alert for {job_name}")
+
                 raise
 
         return wrapper

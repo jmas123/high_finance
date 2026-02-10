@@ -15,6 +15,7 @@ class MetricStats(BaseModel):
     p75: Optional[float] = None
     min: Optional[float] = None
     max: Optional[float] = None
+    n: int = 0
 
 class CompanyFundamentals(BaseModel):
     ticker: str
@@ -92,6 +93,9 @@ class ComparableAnalysis(BaseModel):
 
     # NEW: Implied price at peer median for each valuation metric
     implied_prices: Dict[str, Optional[float]] = {}
+
+    # Explains why specific implied prices are None
+    implied_price_notes: Dict[str, str] = {}
 
     # Legacy fields
     average_pe: Optional[float] = None
