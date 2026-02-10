@@ -32,12 +32,11 @@ def _fetch_yf_info_sync(ticker: str, max_retries: int = 2) -> dict:
             stock = yf.Ticker(ticker)
             return stock.info or {}
         except Exception as exc:
-            is_retryable = "401" in str(exc) or "Unauthorized" in str(exc)
-            if is_retryable and attempt < max_retries:
+            if attempt < max_retries:
                 wait = 1.5 * (attempt + 1)
                 logger.warning(
-                    "yfinance 401 for %s (attempt %d/%d), retrying in %.1fs",
-                    ticker, attempt + 1, max_retries + 1, wait,
+                    "yfinance error for %s (attempt %d/%d): %s — retrying in %.1fs",
+                    ticker, attempt + 1, max_retries + 1, exc, wait,
                 )
                 time.sleep(wait)
                 continue

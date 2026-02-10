@@ -8,6 +8,7 @@ import asyncio
 import logging
 from typing import Optional, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
@@ -415,9 +416,13 @@ async def get_ticker_bundle(
     if company is None and fundamentals is None:
         if "comps" in errors:
             # Upstream data fetch failed — ticker may be valid but data unavailable
-            raise HTTPException(
+            return JSONResponse(
                 status_code=503,
-                detail="Data temporarily unavailable — please try again",
+                content={"detail": "Data temporarily unavailable — please try again"},
+                headers={
+                    "Cache-Control": "no-store",
+                    "Retry-After": "10",
+                },
             )
         raise HTTPException(status_code=404, detail="Ticker not found")
 

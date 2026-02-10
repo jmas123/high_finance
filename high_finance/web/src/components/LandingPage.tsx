@@ -39,7 +39,7 @@ const FEATURES = [
   {
     emoji: "🤖",
     title: "ML Predictions",
-    desc: "Machine learning models score each stock on 30-day directional probability with feature breakdowns.",
+    desc: "Machine learning models score each stock on 5-day directional probability with feature breakdowns.",
   },
   {
     emoji: "📁",
@@ -49,7 +49,7 @@ const FEATURES = [
   {
     emoji: "🏗️",
     title: "Private Companies",
-    desc: "Profiles and analysis for pre-IPO and private companies you can't find on Bloomberg.",
+    desc: "Profiles and analysis for pre-IPO and private companies.",
   },
   {
     emoji: "✨",
@@ -143,7 +143,7 @@ export function LandingPage({ onOpenAuth }: LandingPageProps) {
               cursor: "pointer",
             }}
           >
-            Try It Free
+            Try It
           </button>
           <button
             onClick={onOpenAuth}
@@ -296,7 +296,7 @@ export function LandingPage({ onOpenAuth }: LandingPageProps) {
               cursor: "pointer",
             }}
           >
-            Try It Free
+            Try it
           </button>
           <button
             onClick={onOpenAuth}

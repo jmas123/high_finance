@@ -173,7 +173,14 @@ async def get_or_compute(
             cached = await get_cached(key)
             if cached is not None:
                 return cached
-        # Timeout — compute anyway as stale protection
+            # If lock was released without caching, computation failed — try ourselves
+            try:
+                lock_exists = await r.exists(lock_key)
+                if not lock_exists:
+                    break
+            except Exception:
+                break
+        # Timeout or failed lock — compute ourselves
         return await compute_fn()
 
     # 3. We hold the lock — compute and cache
