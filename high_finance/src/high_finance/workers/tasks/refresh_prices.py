@@ -165,37 +165,53 @@ def fetch_and_save_prices(
             logger.warning(f"No price data returned for {ticker}")
             return 0, False
 
-        count = 0
-        for date, row in hist.iterrows():
-            # Skip invalid data (NaN check)
+        # Batch-fetch existing dates in one query (avoids N+1 per row)
+        existing_dates: set[str] = {
+            row[0]
+            for row in db.query(Price.date)
+            .filter(Price.company_id == company_id)
+            .all()
+        }
+
+        # Pre-extract data from DataFrame into plain Python list, then free the DF.
+        # yfinance "max" DataFrames can be 50MB+ per ticker — must not hold them.
+        rows_to_insert: list[dict] = []
+        for dt, row in hist.iterrows():
             if any(v != v for v in [row["Open"], row["High"], row["Low"], row["Close"]]):
                 continue
-
-            date_str = date.strftime("%Y-%m-%d")
-
-            # Check if price already exists
-            existing = db.query(Price).filter(
-                Price.company_id == company_id,
-                Price.date == date_str
-            ).first()
-
-            if existing:
+            date_str = dt.strftime("%Y-%m-%d")
+            if date_str in existing_dates:
                 continue
+            rows_to_insert.append({
+                "date": date_str,
+                "open": round(float(row["Open"]), 2),
+                "high": round(float(row["High"]), 2),
+                "low": round(float(row["Low"]), 2),
+                "close": round(float(row["Close"]), 2),
+                "volume": int(row["Volume"]) if row["Volume"] == row["Volume"] else 0,
+            })
 
-            price = Price(
-                company_id=company_id,
-                symbol=ticker,
-                date=date_str,
-                open_price=round(float(row["Open"]), 2),
-                high_price=round(float(row["High"]), 2),
-                low_price=round(float(row["Low"]), 2),
-                close_price=round(float(row["Close"]), 2),
-                volume=int(row["Volume"]) if row["Volume"] == row["Volume"] else 0,
-            )
-            db.add(price)
-            count += 1
+        del hist  # Free DataFrame memory immediately
 
-        db.commit()
+        # Insert in batches of 500, committing each batch to keep session small
+        count = 0
+        batch_size = 500
+        for i in range(0, len(rows_to_insert), batch_size):
+            batch = rows_to_insert[i : i + batch_size]
+            for r in batch:
+                db.add(Price(
+                    company_id=company_id,
+                    symbol=ticker,
+                    date=r["date"],
+                    open_price=r["open"],
+                    high_price=r["high"],
+                    low_price=r["low"],
+                    close_price=r["close"],
+                    volume=r["volume"],
+                ))
+            db.commit()
+            db.expunge_all()  # Release tracked objects from session memory
+            count += len(batch)
 
         # Backfill sector/industry on stub companies (needed for relevance scoring)
         _enrich_company(db, company_id, stock)
