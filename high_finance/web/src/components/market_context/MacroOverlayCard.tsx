@@ -109,7 +109,7 @@ export default function MacroOverlayCard({ ticker, onIndicatorClick, initialData
   const fetchMacroData = async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/v1/market/macro-indicators");
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ""}/api/v1/market/macro-indicators`);
       if (!res.ok) throw new Error("Failed to fetch macro data");
       const result = await res.json();
       setData(result);

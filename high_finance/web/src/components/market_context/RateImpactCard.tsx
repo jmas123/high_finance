@@ -102,7 +102,7 @@ const RateImpactCard: React.FC<RateImpactCardProps> = ({
     try {
       // Always fetch ALL sectors so the list is never empty.
       // We'll pre-select the one matching the ticker's sector.
-      const response = await fetch("/api/v1/market/rate-impact");
+      const response = await fetch(`${import.meta.env.VITE_API_URL || ""}/api/v1/market/rate-impact`);
       if (!response.ok) throw new Error("Failed to fetch rate impact data");
       const result: RateImpactResponse = await response.json();
       setData(result);

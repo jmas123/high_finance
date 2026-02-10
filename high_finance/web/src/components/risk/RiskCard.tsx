@@ -63,7 +63,7 @@ export function RiskCard({ ticker, initialData }: RiskCardProps) {
         q.set("target_price", String(targetPrice));
       }
 
-      const res = await fetch(`/api/v1/risk/${encodeURIComponent(ticker)}?${q.toString()}`);
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ""}/api/v1/risk/${encodeURIComponent(ticker)}?${q.toString()}`);
       if (!res.ok) throw new Error(await res.text());
       const json = (await res.json()) as RiskBundle;
       setData(json);

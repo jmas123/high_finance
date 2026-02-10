@@ -85,7 +85,7 @@ const SectorHeatmapCard: React.FC<SectorHeatmapCardProps> = ({
   const fetchSectorData = async () => {
     setLoading(true);
     try {
-      const response = await fetch("/api/v1/market/sectors");
+      const response = await fetch(`${import.meta.env.VITE_API_URL || ""}/api/v1/market/sectors`);
       if (!response.ok) throw new Error("Failed to fetch sector data");
       const result = await response.json();
       setData(result);

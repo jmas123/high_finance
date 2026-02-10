@@ -16,7 +16,7 @@ import {
 } from "react";
 import { useAuth } from "./auth";
 
-const BASE = "/api/v1/me";
+const BASE = (import.meta.env.VITE_API_URL || "") + "/api/v1/me";
 const TOKEN_KEY = "hf_access_token";
 
 // Local storage keys (fallback when not authenticated)
