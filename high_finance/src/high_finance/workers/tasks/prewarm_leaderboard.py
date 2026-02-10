@@ -13,6 +13,8 @@ import logging
 from datetime import datetime, timezone
 
 from high_finance.workers.tasks.base import db_session, create_job_result, tracked_job
+from redis import Redis
+
 
 logger = logging.getLogger(__name__)
 
@@ -33,16 +35,15 @@ def _cache_key(delay: int, hold: int, min_trades: int = 3, year=None) -> str:
 
 
 def _compute_and_cache_sync(combo: dict) -> dict:
-    """Compute one leaderboard combo and write to Redis cache."""
     from high_finance.services.politician_backtest import backtest_all_politicians_sync
-    from high_finance.core.cache import set_cached
+    from high_finance.core.config import settings
+    import orjson
+    from redis import Redis
 
     delay = combo["delay_days"]
     hold = combo["hold_days"]
     year = combo.get("since_year")
-
     key = _cache_key(delay, hold, year=year)
-    logger.info("Pre-warming leaderboard: %s", key)
 
     with db_session() as db:
         entries = backtest_all_politicians_sync(
@@ -57,12 +58,12 @@ def _compute_and_cache_sync(combo: dict) -> dict:
         "computed_at": datetime.now(timezone.utc).isoformat(),
     }
 
-    # Write to cache with 1-hour TTL (matches the route's get_or_compute TTL)
-    asyncio.get_event_loop().run_until_complete(set_cached(key, result, 3600))
+    # Sync Redis write — no asyncio needed in RQ worker
+    r = Redis.from_url(settings.REDIS_URL)
+    raw = orjson.dumps(result)
+    r.set(key, raw, ex=3600)
     logger.info("Cached %s (%d entries)", key, len(entries))
-
     return {"key": key, "entries": len(entries)}
-
 
 def _clear_stale_leaderboard_cache() -> int:
     """Delete all leaderboard cache keys so prewarm writes fresh data.
