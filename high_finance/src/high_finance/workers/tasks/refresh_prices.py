@@ -6,12 +6,17 @@ This job ensures we have price data needed for win rate calculations.
 """
 
 import logging
+import re
 from datetime import datetime
 from typing import Optional
 
 import yfinance as yf
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+
+# Stock tickers: 1-5 uppercase letters, optionally with a dot or dash (BRK-B, BF.A)
+# Excludes CUSIPs (9-char alphanumeric like 91282CEG2), fund codes, and other non-equity IDs
+_TICKER_RE = re.compile(r"^[A-Z]{1,5}([.\-][A-Z]{1,2})?$")
 
 from high_finance.db.session import SessionLocal
 from high_finance.db.models.price import Price
@@ -74,9 +79,14 @@ def get_companies_with_trades(db: Session) -> list[tuple[int, str, str]]:
         """)
     ).fetchall()
 
+    created_count = 0
     for (ticker_raw,) in unmatched:
         ticker = ticker_raw.strip().upper()
         if not ticker or ticker in existing_tickers:
+            continue
+
+        # Skip CUSIPs, fund codes, and other non-equity identifiers
+        if not _TICKER_RE.match(ticker):
             continue
 
         # Create a stub Company record
@@ -85,6 +95,7 @@ def get_companies_with_trades(db: Session) -> list[tuple[int, str, str]]:
         db.flush()
         result.append((company.id, company.ticker, company.name))
         existing_tickers.add(ticker)
+        created_count += 1
 
         # Link existing trades to this new company
         db.execute(
@@ -92,9 +103,9 @@ def get_companies_with_trades(db: Session) -> list[tuple[int, str, str]]:
             {"cid": company.id, "t": ticker_raw},
         )
 
-    if unmatched:
+    if created_count:
         db.commit()
-        logger.info(f"Created {len(unmatched)} Company stubs for unmatched trade tickers")
+        logger.info(f"Created {created_count} Company stubs for unmatched trade tickers (skipped {len(unmatched) - created_count} non-equity IDs)")
 
     return result
 
