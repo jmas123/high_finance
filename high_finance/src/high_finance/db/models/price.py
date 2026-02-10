@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Float, Integer, String, ForeignKey
+from sqlalchemy import BigInteger, Column, Float, Integer, String, ForeignKey
 from sqlalchemy.orm import relationship
 from ..base import Base
 
@@ -18,6 +18,6 @@ class Price(Base):
     high_price = Column(Float)
     low_price = Column(Float)
     close_price = Column(Float)
-    volume = Column(Integer)
+    volume = Column(BigInteger)
 
     company = relationship("Company", back_populates="prices")

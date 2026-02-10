@@ -8,7 +8,7 @@ Create Date: 2026-02-10
 from alembic import op
 
 revision = "014_add_prices_composite_index"
-down_revision = "013_add_account_lockout"
+down_revision = "014_add_password_reset_fields"
 branch_labels = None
 depends_on = None
 
