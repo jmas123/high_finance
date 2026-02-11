@@ -17,7 +17,7 @@ RUN apt-get update && apt-get install -y \
 
 # Copy the requirements file and install Python dependencies
 COPY requirements.txt .
-RUN --mount=type=cache,id=pip-cache,target=/root/.cache/pip \
+RUN --mount=type=cache,id=s/e3c4f7b3-afd4-4875-a76c-d28cbd6aacf3-pip,target=/root/.cache/pip \
     pip install -r requirements.txt
 
 COPY alembic.ini /app/alembic.ini
