@@ -3,6 +3,7 @@ import statistics
 from datetime import datetime, timezone
 from sqlalchemy import func
 from high_finance.db.models import Company
+from high_finance.db.models.screener import ScreenerCache
 from high_finance.core.cache import get_or_compute, fundamentals_ttl
 from high_finance.services.yf_cache import get_yf_info
 
@@ -446,14 +447,16 @@ async def get_company_fundamentals(
     else:
         # Auto-select peers by industry/sector proximity
         current_mcap = market_cap or 0
-        peers_query = db.query(Company).filter(
-            Company.industry == industry,
-            Company.ticker != ticker,
-            Company.market_cap.isnot(None)
-        ).order_by(func.abs(Company.market_cap - current_mcap)).limit(5)
-        peers_list = peers_query.all()
+        peers_list = []
 
-        if len(peers_list) < 5:
+        if industry:
+            peers_list = db.query(Company).filter(
+                Company.industry == industry,
+                Company.ticker != ticker,
+                Company.market_cap.isnot(None)
+            ).order_by(func.abs(Company.market_cap - current_mcap)).limit(5).all()
+
+        if len(peers_list) < 5 and sector:
             existing = [p.ticker for p in peers_list] + [ticker]
             needed = 5 - len(peers_list)
             sector_peers = db.query(Company).filter(
@@ -463,16 +466,69 @@ async def get_company_fundamentals(
             ).order_by(func.abs(Company.market_cap - current_mcap)).limit(needed).all()
             peers_list.extend(sector_peers)
 
-        peer_tasks = [
-            get_company_fundamentals(peer.ticker, db, fetch_peers=False)
-            for peer in peers_list
-        ]
-        peer_results = await asyncio.gather(*peer_tasks, return_exceptions=True)
-        for r in peer_results:
-            if isinstance(r, Exception):
-                continue
-            if r:
-                peers_data.append(r)
+        # Use screener_cache for peers (avoids concurrent yfinance rate limiting)
+        def _peer_from_cache(row: ScreenerCache) -> dict:
+            """Build a Fundamentals-compatible dict from screener_cache data."""
+            def f(v):
+                return float(v) if v is not None else None
+            return {
+                "ticker": row.ticker,
+                "name": None,
+                "sector": None,
+                "industry": None,
+                "market_cap": f(row.market_cap),
+                "current_price": f(row.current_price),
+                "pe_ratio": f(row.pe_ratio),
+                "forward_pe": f(row.forward_pe),
+                "pb_ratio": f(row.pb_ratio),
+                "ev_to_ebitda": f(row.ev_to_ebitda),
+                "ev_to_sales": None,
+                "roe": f(row.roe),
+                "revenue_growth": f(row.revenue_growth),
+                "gross_margins": None,
+                "dividend_yield": f(row.dividend_yield),
+                "price_change": None, "price_change_pct": None,
+                "quote_type": "EQUITY", "is_etf": False, "is_mutual_fund": False, "is_index": False,
+                "comp_template": None, "eps": None,
+                "profit_margin": f(row.profit_margin),
+                "beta": f(row.beta),
+                "revenue": None,
+                "fifty_two_week_high": None, "fifty_two_week_low": None,
+                "fifty_day_avg": None, "two_hundred_day_avg": None,
+                "net_debt_est": None,
+                "fetched_at": row.cached_at.isoformat() if row.cached_at else None,
+                "pe_extreme": is_extreme(f(row.pe_ratio), "pe_ratio"),
+                "forward_pe_extreme": is_extreme(f(row.forward_pe), "forward_pe"),
+                "ev_to_ebitda_extreme": is_extreme(f(row.ev_to_ebitda), "ev_to_ebitda"),
+                "ev_to_sales_extreme": False,
+                "pb_extreme": is_extreme(f(row.pb_ratio), "pb_ratio"),
+                "total_assets": None, "nav_price": None, "expense_ratio": None,
+                "yield": None, "ytd_return": None, "three_year_return": None,
+                "five_year_return": None, "category": None, "fund_family": None,
+                "holdings_count": None,
+            }
+
+        peer_ticker_list = [p.ticker for p in peers_list]
+        cache_rows = {}
+        if peer_ticker_list:
+            cache_rows = {
+                row.ticker: row
+                for row in db.query(ScreenerCache).filter(
+                    ScreenerCache.ticker.in_(peer_ticker_list)
+                ).all()
+            }
+
+        for t in peer_ticker_list:
+            if t in cache_rows:
+                peers_data.append(_peer_from_cache(cache_rows[t]))
+            else:
+                # Fallback: fetch from yfinance (sequentially to avoid rate limiting)
+                try:
+                    r = await get_company_fundamentals(t, db, fetch_peers=False)
+                    if r:
+                        peers_data.append(r)
+                except Exception:
+                    continue
 
     # Averages for whatever the template asks for
     metrics = comp_template["metrics"]
