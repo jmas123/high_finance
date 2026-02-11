@@ -28,7 +28,7 @@ def fetch_sp500_tickers() -> list[dict]:
     headers = {
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
     }
-    response = requests.get(SP500_WIKI_URL, headers=headers)
+    response = requests.get(SP500_WIKI_URL, headers=headers, timeout=15)
     response.raise_for_status()
 
     tables = pd.read_html(StringIO(response.text))

@@ -76,11 +76,16 @@ async def lifespan(app: FastAPI):
     loop.set_default_executor(executor)
     logger.info("Thread pool executor configured with max_workers=40")
 
-    # Auto-populate seed data on fresh deploys
+    # Auto-populate seed data on fresh deploys (with timeout so slow seeds can't block startup)
+    import concurrent.futures
     try:
         from high_finance.seeds.runner import run_fast_seeds
-        result = run_fast_seeds()
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(run_fast_seeds)
+            result = future.result(timeout=30)
         logger.info(f"Fast seed result: {result}")
+    except concurrent.futures.TimeoutError:
+        logger.warning("Fast seeds timed out after 30s — API starting without seed data")
     except Exception:
         logger.exception("Fast seeds failed — API will start without seed data")
 
