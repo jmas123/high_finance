@@ -504,11 +504,30 @@ class MarketService:
 
         async def _compute():
             raw = await asyncio.wait_for(
-                asyncio.to_thread(self._build_rate_impact), timeout=30,
+                asyncio.to_thread(self._build_rate_impact), timeout=45,
             )
-            return [a.model_dump(mode="json") for a in raw]
+            result = [a.model_dump(mode="json") for a in raw]
 
-        cached = await get_or_compute(cache_key, 14400, _compute)
+            # Quality gate — don't cache bad results for 4 hours
+            if len(result) < 6:
+                logger.warning("Rate impact quality gate: only %d/%d sectors, refusing to cache", len(result), len(SECTOR_ETFS))
+                raise ValueError(f"Too few sectors: {len(result)}")
+            zero_corr = sum(1 for a in result if a.get("correlation_to_rates", 0) == 0.0)
+            if zero_corr > len(result) / 2:
+                logger.warning("Rate impact quality gate: %d/%d sectors have zero correlation, refusing to cache", zero_corr, len(result))
+                raise ValueError(f"Too many zero correlations: {zero_corr}/{len(result)}")
+
+            return result
+
+        try:
+            cached = await get_or_compute(cache_key, 14400, _compute)
+        except ValueError:
+            # Quality gate failed — compute directly without caching
+            raw = await asyncio.wait_for(
+                asyncio.to_thread(self._build_rate_impact), timeout=45,
+            )
+            cached = [a.model_dump(mode="json") for a in raw]
+
         all_analyses = [RateImpactAnalysis(**a) for a in cached]
         if sector:
             return [a for a in all_analyses if a.sector == sector]
@@ -522,20 +541,42 @@ class MarketService:
           3. 1-year rolling correlation of daily returns vs 10Y yield changes
         """
         etfs = list(SECTOR_ETFS.values())
-        try:
-            df = yf.download(
-                etfs + ["^TNX"],
-                start="2015-01-01",
-                progress=False, threads=True,
-            )
-            closes = df["Close"]
-        except Exception as exc:
-            logger.error("Rate impact download: %s", exc)
+        tickers = etfs + ["^TNX"]
+
+        # Retry loop — yfinance is flaky on Railway
+        closes = None
+        for attempt in range(2):
+            try:
+                df = yf.download(
+                    tickers,
+                    start="2015-01-01",
+                    progress=False, threads=True,
+                )
+                if not df.empty and "Close" in df.columns:
+                    closes = df["Close"]
+                    break
+                logger.warning("Rate impact attempt %d: empty or missing Close", attempt + 1)
+            except Exception as exc:
+                logger.warning("Rate impact download attempt %d: %s", attempt + 1, exc)
+            if attempt == 0:
+                time.sleep(2)
+
+        if closes is None:
+            logger.error("Rate impact: all download attempts failed")
             return []
 
+        # Validate ^TNX presence
         rates = closes.get("^TNX")
         if rates is not None:
             rates = rates.dropna()
+        if rates is None or len(rates) < 50:
+            logger.warning("Rate impact: ^TNX missing or sparse (%d points)", len(rates) if rates is not None else 0)
+
+        # Log which ETFs are available
+        available = [etf for etf in etfs if etf in closes.columns and closes[etf].dropna().shape[0] > 50]
+        logger.info("Rate impact: %d/%d ETFs available, ^TNX has %d points",
+                     len(available), len(etfs),
+                     len(rates) if rates is not None else 0)
 
         out: list[RateImpactAnalysis] = []
 
@@ -553,11 +594,11 @@ class MarketService:
                 out.append(RateImpactAnalysis(
                     sector=sector_name,
                     sensitivity=meta["sensitivity"],
-                    correlation_to_rates=corr,
+                    correlation_to_rates=corr if corr is not None else 0.0,
                     impact_direction=meta["direction"],
                     explanation=meta["explanation"],
-                    historical_performance_rising_rates=hiking,
-                    historical_performance_falling_rates=cutting,
+                    historical_performance_rising_rates=hiking if hiking is not None else 0.0,
+                    historical_performance_falling_rates=cutting if cutting is not None else 0.0,
                 ))
             except Exception as exc:
                 logger.warning("Rate impact %s: %s", sector_name, exc)
@@ -565,7 +606,7 @@ class MarketService:
         return out
 
     @staticmethod
-    def _avg_return(prices: pd.Series, windows: list[tuple[str, str]]) -> float:
+    def _avg_return(prices: pd.Series, windows: list[tuple[str, str]]) -> Optional[float]:
         """Average total return (%) across date windows."""
         rets: list[float] = []
         for s, e in windows:
@@ -584,31 +625,31 @@ class MarketService:
                 rets.append(tr)
             except Exception:
                 continue
-        return round(sum(rets) / len(rets), 1) if rets else 0.0
+        return round(sum(rets) / len(rets), 1) if rets else None
 
     @staticmethod
     def _corr(
         etf: pd.Series,
         rates: Optional[pd.Series],
         lookback: int = 252,
-    ) -> float:
+    ) -> Optional[float]:
         """1-year correlation: daily ETF return vs daily yield change."""
         if rates is None or rates.empty:
-            return 0.0
+            return None
         try:
             common = etf.index.intersection(rates.index)
             if len(common) < lookback // 2:
-                return 0.0
+                return None
             common = common[-lookback:]
             er = etf[common].pct_change().dropna()
             rc = rates[common].diff().dropna()
             aligned = er.index.intersection(rc.index)
             if len(aligned) < 50:
-                return 0.0
+                return None
             c = er[aligned].corr(rc[aligned])
-            return round(c, 2) if pd.notna(c) else 0.0
+            return round(c, 2) if pd.notna(c) else None
         except Exception:
-            return 0.0
+            return None
 
     # ──────────────────────────────────────────────────────────
     # Market Breadth  (approximated from sample)
