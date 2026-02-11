@@ -65,7 +65,7 @@ async def leaderboard(
             "computed_at": datetime.now(timezone.utc).isoformat(),
         }
 
-    return await get_or_compute(cache_key, 3600, compute, lock_ttl=120)
+    return await get_or_compute(cache_key, 3600, compute, lock_ttl=600)
 
 
 @router.get("/{politician_id}/backtest", response_model=BacktestResponseOut)
