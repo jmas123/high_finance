@@ -97,6 +97,9 @@ class PriceCache:
             self._data[cid].append((date_str, float(close_price)))
             self._dates[cid].append(date_str)
 
+
+            
+
     def get_close_on_or_after(
         self,
         company_id: int,
