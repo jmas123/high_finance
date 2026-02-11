@@ -48,6 +48,7 @@ from high_finance.workers.tasks.refresh_prices import refresh_prices_job
 from high_finance.services.job_tracker import cleanup_old_executions_job
 from high_finance.workers.tasks.backfill_congress_trades import backfill_congress_trades_job
 from high_finance.workers.tasks.prewarm_leaderboard import prewarm_leaderboard_job
+from high_finance.workers.tasks.enrich_politician_state import enrich_politician_state_job
 
 router = APIRouter()
 
@@ -115,6 +116,12 @@ JOBS = {
         "description": "Pre-warm leaderboard cache for common parameter combos",
         "timeout": 7200,
         "schedule": "After refresh_prices / manual",
+    },
+    "enrich_politician_state": {
+        "func": enrich_politician_state_job,
+        "description": "Fill in politician state from congress-legislators dataset",
+        "timeout": 300,
+        "schedule": "Manual / after backfill",
     },
 }
 

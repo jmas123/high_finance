@@ -44,11 +44,10 @@ def fetch_bulk_trades() -> list[dict]:
         "Accept": "application/json",
         "Authorization": f"Token {key}",
     }
-    params = {"version": "2"}  # V2 includes State, Chamber, Name fields
 
-    logger.info(f"Fetching bulk congress trades from {url} (V2)")
+    logger.info(f"Fetching bulk congress trades from {url}")
     start = time.time()
-    r = httpx.get(url, headers=headers, params=params, timeout=120.0)
+    r = httpx.get(url, headers=headers, timeout=120.0)
     r.raise_for_status()
     data = r.json()
     elapsed = time.time() - start
