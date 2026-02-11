@@ -18,6 +18,7 @@ Key design decisions:
 
 from __future__ import annotations
 
+import bisect
 import logging
 import math
 from collections import defaultdict
@@ -38,6 +39,81 @@ from high_finance.services.politician_performance import (
 from high_finance.utils.safe_math import safe_return, safe_round
 
 logger = logging.getLogger(__name__)
+
+
+# ── In-Memory Price Cache ────────────────────────────────────────────────────
+
+
+class PriceCache:
+    """Bulk-loaded price lookup with binary search.
+
+    Replaces per-position SQL queries (_closest_close_on_or_after) with a
+    single bulk SELECT + O(log n) bisect lookups.  For a leaderboard with
+    400 politicians × 50 positions × 2 lookups each = 40,000 DB round-trips,
+    this collapses them into 1 query + 40,000 in-memory bisects (~1 ms total).
+    """
+
+    def __init__(self) -> None:
+        # company_id → [(date_str, close_price), ...] sorted by date_str
+        self._data: dict[int, list[tuple[str, float]]] = {}
+        # company_id → [date_str, ...] parallel list for bisect
+        self._dates: dict[int, list[str]] = {}
+
+    def bulk_load(
+        self,
+        db: Session,
+        company_ids: set[int],
+        min_date: Optional[date] = None,
+    ) -> None:
+        """Load all close prices for *company_ids* in one query."""
+        if not company_ids:
+            return
+
+        q = (
+            db.query(Price.company_id, Price.date, Price.close_price)
+            .filter(
+                Price.company_id.in_(company_ids),
+                Price.close_price.isnot(None),
+            )
+        )
+        if min_date:
+            q = q.filter(Price.date >= min_date.isoformat())
+
+        q = q.order_by(Price.company_id, Price.date)
+
+        for cid, date_str, close_price in q:
+            if cid not in self._data:
+                self._data[cid] = []
+                self._dates[cid] = []
+            self._data[cid].append((date_str, float(close_price)))
+            self._dates[cid].append(date_str)
+
+    def get_close_on_or_after(
+        self,
+        company_id: int,
+        target: date,
+        max_gap_days: int = 7,
+    ) -> Optional[float]:
+        """Binary-search for the nearest close price on or after *target*."""
+        dates = self._dates.get(company_id)
+        if not dates:
+            return None
+
+        target_str = target.isoformat()
+        max_date_str = (target + timedelta(days=max_gap_days)).isoformat()
+
+        idx = bisect.bisect_left(dates, target_str)
+        if idx >= len(dates):
+            return None
+
+        if dates[idx] > max_date_str:
+            return None
+
+        return self._data[company_id][idx][1]
+
+    def has_any_prices(self, company_id: int) -> bool:
+        """Check whether any price data exists for this company."""
+        return company_id in self._data
 
 
 # ── SPY Helpers ──────────────────────────────────────────────────────────────
@@ -79,6 +155,8 @@ def run_backtest_sync(
     hold_days: int = 30,
     starting_capital: float = 10_000.0,
     since_year: int = 2020,
+    price_cache: Optional[PriceCache] = None,
+    spy_id: Optional[int] = None,
 ) -> dict:
     """
     Backtest a single politician's Buy trades with cohort-based compounding.
@@ -136,6 +214,21 @@ def run_backtest_sync(
     num_positions = len(position_map)
     num_cohorts = len(sorted_cohort_dates)
 
+    # ── Build price cache if not provided (individual backtest path) ──
+    if price_cache is None:
+        _company_ids = {k[0] for k in position_map}  # company_ids from deduped positions
+        if spy_id is None:
+            spy_id = _get_spy_company_id(db)
+        if spy_id:
+            _company_ids.add(spy_id)
+        price_cache = PriceCache()
+        price_cache.bulk_load(
+            db, _company_ids,
+            min_date=date(since_year, 1, 1) if since_year else None,
+        )
+    elif spy_id is None:
+        spy_id = _get_spy_company_id(db)
+
     # ── Step 3: Process cohorts ──────────────────────────────────────────
     trade_results: list[dict] = []
     portfolio_value = starting_capital
@@ -143,8 +236,6 @@ def run_backtest_sync(
     cohort_returns_list: list[float] = []  # one per cohort (for win rate / Sharpe)
     all_position_returns: list[float] = []  # flat list of every position return
     skip_reasons = {"no_entry_price": 0, "no_exit_price": 0, "invalid_return": 0, "no_price_data": 0}
-
-    spy_id = _get_spy_company_id(db)
     spy_start_price: Optional[float] = None
     spy_portfolio_value = starting_capital  # SPY benchmark compounded per-cohort
     first_entry_date: Optional[date] = None
@@ -166,13 +257,13 @@ def run_backtest_sync(
         exit_date = entry_date + timedelta(days=hold_days)
 
         for (_cid, _ddate), t in positions_in_cohort:
-            entry_price = _closest_close_on_or_after(db, t.company_id, entry_date)
+            entry_price = price_cache.get_close_on_or_after(t.company_id, entry_date)
             if entry_price is None:
-                has_any = db.query(Price.id).filter(Price.company_id == t.company_id).first()
+                has_any = price_cache.has_any_prices(t.company_id)
                 skip_reasons["no_price_data" if not has_any else "no_entry_price"] += 1
                 continue
 
-            exit_price = _closest_close_on_or_after(db, t.company_id, exit_date)
+            exit_price = price_cache.get_close_on_or_after(t.company_id, exit_date)
             if exit_price is None:
                 skip_reasons["no_exit_price"] += 1
                 continue
@@ -230,7 +321,12 @@ def run_backtest_sync(
 
         # SPY benchmark: compound SPY return over the same hold period
         # with the same concurrency model — apples-to-apples alpha
-        spy_cohort_return = _spy_return_over_period(db, entry_date, exit_date)
+        spy_cohort_return = None
+        if spy_id:
+            _spy_entry = price_cache.get_close_on_or_after(spy_id, entry_date)
+            _spy_exit = price_cache.get_close_on_or_after(spy_id, exit_date)
+            if _spy_entry and _spy_exit and _spy_entry > 0:
+                spy_cohort_return = (_spy_exit / _spy_entry) - 1.0
         if spy_cohort_return is not None:
             spy_active_exits = [ed for ed in spy_active_exits if ed > entry_date]
             spy_active_exits.append(exit_date)
@@ -242,14 +338,14 @@ def run_backtest_sync(
         if first_entry_date is None:
             first_entry_date = entry_date
             if spy_id:
-                spy_start_price = _closest_close_on_or_after(db, spy_id, entry_date)
+                spy_start_price = price_cache.get_close_on_or_after(spy_id, entry_date)
         last_exit_date = exit_date
 
         # Build equity curve point (one per cohort)
         # Equity curve still uses buy-and-hold SPY for visual comparison
         spy_value_now = starting_capital
         if spy_id and spy_start_price and spy_start_price > 0:
-            spy_now = _closest_close_on_or_after(db, spy_id, exit_date)
+            spy_now = price_cache.get_close_on_or_after(spy_id, exit_date)
             if spy_now:
                 spy_value_now = starting_capital * (spy_now / spy_start_price)
 
@@ -416,11 +512,49 @@ def backtest_all_politicians_sync(
 
     candidate_rows = query.all()
 
+    # ── Pre-build shared price cache for all candidates ────────────────
+    all_candidate_ids = [row[0] for row in candidate_rows]
+    if all_candidate_ids:
+        company_id_rows = (
+            db.query(PoliticianTrade.company_id)
+            .filter(
+                PoliticianTrade.politician_id.in_(all_candidate_ids),
+                PoliticianTrade.transaction_type.ilike("%purchase%"),
+                PoliticianTrade.company_id.isnot(None),
+            )
+            .distinct()
+            .all()
+        )
+        all_company_ids = {row[0] for row in company_id_rows}
+    else:
+        all_company_ids = set()
+
+    spy_id = _get_spy_company_id(db)
+    if spy_id:
+        all_company_ids.add(spy_id)
+
+    price_cache = PriceCache()
+    if all_company_ids:
+        price_cache.bulk_load(
+            db, all_company_ids,
+            min_date=date(since_year, 1, 1) if since_year else None,
+        )
+    logger.info(
+        "Price cache loaded: %d companies, %d total price points",
+        len(all_company_ids),
+        sum(len(v) for v in price_cache._data.values()),
+    )
+
     results = []
     for row in candidate_rows:
         pid = row[0]
         try:
-            bt = run_backtest_sync(db, pid, delay_days, hold_days, since_year=since_year)
+            bt = run_backtest_sync(
+                db, pid, delay_days, hold_days,
+                since_year=since_year,
+                price_cache=price_cache,
+                spy_id=spy_id,
+            )
             if "error" in bt:
                 continue
             summary = bt["summary"]
