@@ -712,6 +712,23 @@ function tickerReducer(state: TickerState, action: TickerAction): TickerState {
 // Ticker format: 1-10 chars, alphanumeric + dot + hyphen (e.g. AAPL, BRK.B, BF-B)
 const TICKER_RE = /^[A-Z0-9.\-]{1,10}$/;
 
+const STOCK_TABS = [
+  { key: "all", label: "All" },
+  { key: "valuation", label: "Valuation" },
+  { key: "financials", label: "Financials" },
+  { key: "ownership", label: "Ownership" },
+  { key: "options", label: "Options" },
+  { key: "context", label: "News & Context" },
+  { key: "leadership", label: "Leadership" },
+];
+
+const ETF_TABS = [
+  { key: "all", label: "All" },
+  { key: "overview", label: "Overview & Risk" },
+  { key: "options", label: "Options" },
+  { key: "context", label: "News" },
+];
+
 function TickerView() {
   const { ticker: urlTicker } = useParams<{ ticker: string }>();
   const navigate = useNavigate();
@@ -744,6 +761,7 @@ function TickerView() {
   const [showCreateProjectModal, setShowCreateProjectModal] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [warningExpanded, setWarningExpanded] = useState(false);
+  const [activeSection, setActiveSection] = useState("all");
 
   // Check if we came from a project (for return button)
   const returnProjectId = sessionStorage.getItem("hf_return_project");
@@ -809,6 +827,7 @@ function TickerView() {
   useEffect(() => {
     if (ticker) {
       loadTicker(ticker);
+      setActiveSection("all");
       // Scroll to top when loading new ticker
       window.scrollTo(0, 0);
     }
@@ -978,6 +997,10 @@ function TickerView() {
   const responsiveGrid = isMobile
     ? { ...styles.gridTwoCol, gridTemplateColumns: "1fr" }
     : styles.gridTwoCol;
+
+  // Tab-based section filtering
+  const tickerTabs = isETF ? ETF_TABS : STOCK_TABS;
+  const showSection = (s: string) => activeSection === "all" || activeSection === s;
 
   // ── Loading State ─────────────────────────────────────────────────────────
   if (loading) {
@@ -1219,41 +1242,71 @@ function TickerView() {
         </Suspense>
       )}
 
+      {/* ── Section Tabs ──────────────────────────────────────── */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
+        {tickerTabs.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setActiveSection(activeSection === t.key ? "all" : t.key)}
+            style={{
+              padding: "6px 14px",
+              fontSize: 13,
+              cursor: "pointer",
+              background: activeSection === t.key ? "#3b82f6" : "#2d2d2d",
+              color: "#fff",
+              border: "none",
+              borderRadius: 6,
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
       {/* ==================== */}
       {/* STOCK-ONLY SECTIONS */}
       {/* ==================== */}
       {isStock && (
         <>
-          {/* ML Prediction */}
-          <Suspense fallback={<CardSkeleton />}>
-            <div style={{ marginBottom: 20 }}>
-              <PredictionCard key={`pred-${ticker}`} ticker={ticker} initialData={predictionData} />
-            </div>
-          </Suspense>
+          {/* ML Prediction — Valuation tab */}
+          {showSection("valuation") && (
+            <Suspense fallback={<CardSkeleton />}>
+              <div style={{ marginBottom: 20 }}>
+                <PredictionCard key={`pred-${ticker}`} ticker={ticker} initialData={predictionData} />
+              </div>
+            </Suspense>
+          )}
 
-          {/* DCF + Risk (side by side) */}
-          <Suspense fallback={<div style={responsiveGrid}><CardSkeleton /><CardSkeleton /></div>}>
-            <div style={responsiveGrid}>
-              <DCFCard
-                key={`dcf-${ticker}`}
-                ticker={ticker}
-                onStateChange={handleDCFStateChange}
-                initialData={valuationData}
-              />
-              <RiskCard key={`risk-${ticker}`} ticker={ticker} initialData={riskData} />
-            </div>
-          </Suspense>
+          {/* DCF + Risk (side by side) — Valuation tab */}
+          {showSection("valuation") && (
+            <Suspense fallback={<div style={responsiveGrid}><CardSkeleton /><CardSkeleton /></div>}>
+              <div style={responsiveGrid}>
+                <DCFCard
+                  key={`dcf-${ticker}`}
+                  ticker={ticker}
+                  onStateChange={handleDCFStateChange}
+                  initialData={valuationData}
+                />
+                <RiskCard key={`risk-${ticker}`} ticker={ticker} initialData={riskData} />
+              </div>
+            </Suspense>
+          )}
 
-          {/* Fundamentals + Institutional Flow */}
-          <Suspense fallback={<div style={responsiveGrid}><CardSkeleton height={160} /><CardSkeleton height={160} /></div>}>
-            <div style={responsiveGrid}>
-              <FundamentalsCard data={fundamentals} />
-              <InstitutionalFlowCard key={`inst-${ticker}`} ticker={ticker} initialData={institutionalFlow} />
-            </div>
-          </Suspense>
+          {/* Fundamentals + Institutional Flow — split across Valuation / Ownership tabs */}
+          {/* On "All": side-by-side. On specific tab: only the relevant card, full-width. */}
+          {(showSection("valuation") || showSection("ownership")) && (
+            <Suspense fallback={<div style={responsiveGrid}><CardSkeleton height={160} /><CardSkeleton height={160} /></div>}>
+              <div style={activeSection === "all" ? responsiveGrid : { marginBottom: 16 }}>
+                {showSection("valuation") && <FundamentalsCard data={fundamentals} />}
+                {showSection("ownership") && (
+                  <InstitutionalFlowCard key={`inst-${ticker}`} ticker={ticker} initialData={institutionalFlow} />
+                )}
+              </div>
+            </Suspense>
+          )}
 
-          {/* Comps Table */}
-          {comps && ticker && (
+          {/* Comps Table — Valuation tab */}
+          {showSection("valuation") && comps && ticker && (
             <Suspense fallback={<CardSkeleton height={200} />}>
               <div style={{ marginBottom: 16 }}>
                 <CompsTable
@@ -1277,41 +1330,50 @@ function TickerView() {
             </Suspense>
           )}
 
-          <div style={{ ...styles.cardContainer, padding: 20 }}>
-            <BroaderMarketContext
-              ticker={ticker}
-              sector={sector ?? undefined}
-              showMacro={true}
-              showSectors={true}
-              showRateImpact={true}
-              initialMacroData={macroIndicators}
-              initialSectorsData={sectorsData}
-              initialRateImpactData={rateImpact}
-            />
-          </div>
-
-          {/* Insider + Politicians */}
-          <Suspense fallback={<div style={responsiveGrid}><CardSkeleton height={160} /><CardSkeleton height={160} /></div>}>
-            <div style={responsiveGrid}>
-              <InsiderTradingCard key={`insider-${ticker}`} ticker={ticker} initialData={insiderSummary} />
-              <PoliticianTradesCard key={`pol-${ticker}`} ticker={ticker} initialData={politicianTrades} />
+          {/* Broader Market Context — News & Context tab */}
+          {showSection("context") && (
+            <div style={{ ...styles.cardContainer, padding: 20 }}>
+              <BroaderMarketContext
+                ticker={ticker}
+                sector={sector ?? undefined}
+                showMacro={true}
+                showSectors={true}
+                showRateImpact={true}
+                initialMacroData={macroIndicators}
+                initialSectorsData={sectorsData}
+                initialRateImpactData={rateImpact}
+              />
             </div>
-          </Suspense>
+          )}
 
-          {/* Leadership */}
-          {leadership.length > 0 && <LeadershipTable data={leadership} />}
+          {/* Insider + Politicians — Ownership tab */}
+          {showSection("ownership") && (
+            <Suspense fallback={<div style={responsiveGrid}><CardSkeleton height={160} /><CardSkeleton height={160} /></div>}>
+              <div style={responsiveGrid}>
+                <InsiderTradingCard key={`insider-${ticker}`} ticker={ticker} initialData={insiderSummary} />
+                <PoliticianTradesCard key={`pol-${ticker}`} ticker={ticker} initialData={politicianTrades} />
+              </div>
+            </Suspense>
+          )}
 
-          {/* Earnings */}
-          <div style={{ marginBottom: 20 }}>
-            <EarningsCard key={`earnings-${ticker}`} ticker={ticker} initialData={earningsData} />
-          </div>
+          {/* Leadership — Leadership tab */}
+          {showSection("leadership") && leadership.length > 0 && <LeadershipTable data={leadership} />}
 
-          {/* Earnings Press Release AI Analysis */}
-          <Suspense fallback={<CardSkeleton />}>
+          {/* Earnings — Financials tab */}
+          {showSection("financials") && (
             <div style={{ marginBottom: 20 }}>
-              <EarningsAnalysisCard ticker={ticker} isAuthenticated={isAuthenticated} />
+              <EarningsCard key={`earnings-${ticker}`} ticker={ticker} initialData={earningsData} />
             </div>
-          </Suspense>
+          )}
+
+          {/* Earnings Press Release AI Analysis — Financials tab */}
+          {showSection("financials") && (
+            <Suspense fallback={<CardSkeleton />}>
+              <div style={{ marginBottom: 20 }}>
+                <EarningsAnalysisCard ticker={ticker} isAuthenticated={isAuthenticated} />
+              </div>
+            </Suspense>
+          )}
         </>
       )}
 
@@ -1320,17 +1382,21 @@ function TickerView() {
       {/* ==================== */}
       {isETF && (
         <>
-          {/* ETF Fundamentals Card */}
-          <div style={{ marginBottom: 20 }}>
-            <ETFFundamentalsCard data={fundamentals} />
-          </div>
-
-          {/* Risk Card - Works for ETFs too */}
-          <Suspense fallback={<CardSkeleton />}>
+          {/* ETF Fundamentals Card — Overview & Risk tab */}
+          {showSection("overview") && (
             <div style={{ marginBottom: 20 }}>
-              <RiskCard key={`risk-${ticker}`} ticker={ticker} initialData={riskData} />
+              <ETFFundamentalsCard data={fundamentals} />
             </div>
-          </Suspense>
+          )}
+
+          {/* Risk Card — Overview & Risk tab */}
+          {showSection("overview") && (
+            <Suspense fallback={<CardSkeleton />}>
+              <div style={{ marginBottom: 20 }}>
+                <RiskCard key={`risk-${ticker}`} ticker={ticker} initialData={riskData} />
+              </div>
+            </Suspense>
+          )}
         </>
       )}
 
@@ -1338,30 +1404,36 @@ function TickerView() {
       {/* SHARED SECTIONS */}
       {/* ==================== */}
 
-      {/* News - Works for both */}
-      <NewsCard ticker={ticker} initialData={newsData} />
+      {/* News — News & Context tab */}
+      {showSection("context") && (
+        <NewsCard ticker={ticker} initialData={newsData} />
+      )}
 
-      {/* Options - Works for both (most ETFs have options) */}
-      <Suspense fallback={<CardSkeleton />}>
-        <div style={{ marginBottom: 20 }}>
-          <OptionsFlowCard key={`options-${ticker}`} ticker={ticker} initialData={optionsOverview} />
-        </div>
-      </Suspense>
+      {/* Options — Options tab */}
+      {showSection("options") && (
+        <Suspense fallback={<CardSkeleton />}>
+          <div style={{ marginBottom: 20 }}>
+            <OptionsFlowCard key={`options-${ticker}`} ticker={ticker} initialData={optionsOverview} />
+          </div>
+        </Suspense>
+      )}
 
-      {/* Option Decay Simulator - Works for both (lazy loaded) */}
-      <Suspense fallback={<CardSkeleton />}>
-        <div style={{ marginBottom: 20 }}>
-          <OptionDecaySimulator
-            key={`decay-${ticker}`}
-            ticker={ticker}
-            initialOptionsData={optionsOverview}
-            initialIVContext={ivContext}
-          />
-        </div>
-      </Suspense>
+      {/* Option Decay Simulator — Options tab */}
+      {showSection("options") && (
+        <Suspense fallback={<CardSkeleton />}>
+          <div style={{ marginBottom: 20 }}>
+            <OptionDecaySimulator
+              key={`decay-${ticker}`}
+              ticker={ticker}
+              initialOptionsData={optionsOverview}
+              initialIVContext={ivContext}
+            />
+          </div>
+        </Suspense>
+      )}
 
-      {/* Financial Statements - Stock only */}
-      {isStock && financials && (
+      {/* Financial Statements — Financials tab (stock only) */}
+      {showSection("financials") && isStock && financials && (
         <Suspense fallback={<CardSkeleton height={240} />}>
           <div style={{ marginTop: 16 }}>
             <FinancialStatements

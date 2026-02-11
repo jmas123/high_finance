@@ -281,7 +281,7 @@ export function CongressLeaderboard() {
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <span style={{ color: "#666", fontSize: 12 }}>#{i + 1}</span>
-                      <span style={{ fontWeight: 600, fontSize: 14 }}>{e.politician_name}</span>
+                      <span style={{ fontWeight: 600, fontSize: 14, color: "#3b82f6" }}>{e.politician_name}</span>
                       <span
                         style={{
                           display: "inline-block",
@@ -431,8 +431,14 @@ export function CongressLeaderboard() {
                     <td style={{ ...tdBase, paddingLeft: 16, color: "#666", fontSize: 12 }}>
                       {i + 1}
                     </td>
-                    <td style={{ ...tdBase, fontWeight: 600, fontFamily: "system-ui" }}>
-                      {e.politician_name}
+                    <td style={{ ...tdBase, fontFamily: "system-ui" }}>
+                      <span
+                        style={{ fontWeight: 600, color: "#3b82f6" }}
+                        onMouseEnter={isMobile ? undefined : (ev) => { ev.currentTarget.style.textDecoration = "underline"; }}
+                        onMouseLeave={isMobile ? undefined : (ev) => { ev.currentTarget.style.textDecoration = "none"; }}
+                      >
+                        {e.politician_name}
+                      </span>
                       {(() => {
                         const months = historyMonths(e.first_trade_date, e.last_trade_date);
                         if (months != null && months < SHORT_HISTORY_MONTHS) {
@@ -528,7 +534,7 @@ export function CongressLeaderboard() {
           Backtested using disclosure dates + {delayDays}-day delay. Capital is split among
           concurrent positions (overlapping hold periods). Only Buy/Purchase trades with
           matched price data are included. Past performance does not guarantee future results.
-          Click a row for the full equity curve.
+          Tap a name to see their full equity curve and trade history.
           <br />
           <span style={{ color: "#f59e0b" }}>Yellow badges</span> indicate less than 2 years
           of trading history — results may reflect market conditions rather than skill.
