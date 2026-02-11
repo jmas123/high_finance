@@ -15,7 +15,7 @@ const HOLD_OPTIONS = [30, 60, 90];
 const CHAMBER_OPTIONS = ["", "Senate", "House"];
 const PARTY_OPTIONS = ["", "Democrat", "Republican"];
 const currentYear = new Date().getFullYear();
-const YEAR_OPTIONS = [0, ...Array.from({ length: currentYear - 2019 }, (_, i) => 2020 + i)];
+const YEAR_OPTIONS = Array.from({ length: currentYear - 2019 }, (_, i) => 2020 + i);
 
 /** Null-safe toFixed helper */
 function safeFixed(val: number | null | undefined, digits: number): string {
@@ -63,7 +63,7 @@ export function CongressLeaderboard() {
   const [holdDays, setHoldDays] = useState(30);
   const [chamber, setChamber] = useState("");
   const [party, setParty] = useState("");
-  const [sinceYear, setSinceYear] = useState(0); // 0 = All Time
+  const [sinceYear, setSinceYear] = useState(2020);
 
   const [data, setData] = useState<LeaderboardResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -82,7 +82,7 @@ export function CongressLeaderboard() {
     setError(null);
 
     api.politicianLeaderboard(delayDays, holdDays, {
-      sinceYear: sinceYear || undefined,
+      sinceYear,
     })
       .then((res) => {
         if (!controller.signal.aborted) setData(res);
@@ -238,10 +238,10 @@ export function CongressLeaderboard() {
             {YEAR_OPTIONS.map((y) => (
               <button
                 key={y}
-                onClick={() => setSinceYear(sinceYear === y ? 0 : y)}
+                onClick={() => setSinceYear(y)}
                 style={pillStyle(sinceYear === y)}
               >
-                {y === 0 ? "All" : y}
+                {y}
               </button>
             ))}
           </div>

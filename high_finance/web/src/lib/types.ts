@@ -1617,6 +1617,7 @@ export type BacktestSummary = {
   last_trade_date: string | null;
   grade: string | null;
   skip_reasons?: {
+    no_price_data: number;
     no_entry_price: number;
     no_exit_price: number;
     invalid_return: number;

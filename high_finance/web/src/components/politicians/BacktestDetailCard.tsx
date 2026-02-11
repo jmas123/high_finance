@@ -9,7 +9,7 @@ import { CONGRESS_TIPS } from "../../lib/tooltips";
 const DELAY_OPTIONS = [0, 1, 3, 7, 14];
 const HOLD_OPTIONS = [30, 60, 90];
 const currentYear = new Date().getFullYear();
-const YEAR_OPTIONS = [0, ...Array.from({ length: currentYear - 2019 }, (_, i) => 2020 + i)];
+const YEAR_OPTIONS = Array.from({ length: currentYear - 2019 }, (_, i) => 2020 + i);
 
 /** Null-safe toFixed helper */
 function safeFixed(val: number | null | undefined, digits: number): string {
@@ -249,7 +249,7 @@ export function BacktestDetailCard() {
 
   const [delayDays, setDelayDays] = useState(3);
   const [holdDays, setHoldDays] = useState(30);
-  const [sinceYear, setSinceYear] = useState(0);
+  const [sinceYear, setSinceYear] = useState(2020);
   const [data, setData] = useState<BacktestResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -265,7 +265,7 @@ export function BacktestDetailCard() {
     setLoading(true);
     setError(null);
 
-    api.politicianBacktest(pid, delayDays, holdDays, sinceYear || undefined)
+    api.politicianBacktest(pid, delayDays, holdDays, sinceYear)
       .then((res) => {
         if (!controller.signal.aborted) setData(res);
       })
@@ -412,10 +412,10 @@ export function BacktestDetailCard() {
                 {YEAR_OPTIONS.map((y) => (
                   <button
                     key={y}
-                    onClick={() => setSinceYear(sinceYear === y ? 0 : y)}
+                    onClick={() => setSinceYear(y)}
                     style={pillStyle(sinceYear === y)}
                   >
-                    {y === 0 ? "All" : y}
+                    {y}
                   </button>
                 ))}
               </div>
@@ -484,6 +484,9 @@ export function BacktestDetailCard() {
             }}
           >
             <span style={{ display: "inline-flex", alignItems: "center" }}>{s.num_trades} raw trades → {s.num_positions ?? "?"} positions → {s.num_cohorts ?? "?"} cohorts → {s.num_trades_priced} priced<InfoTip text={CONGRESS_TIPS.data_quality} /></span>
+            {s.skip_reasons && s.skip_reasons.no_price_data > 0 && (
+              <> · {s.skip_reasons.no_price_data} delisted (no price data)</>
+            )}
             {s.skip_reasons && s.skip_reasons.no_entry_price > 0 && (
               <> · {s.skip_reasons.no_entry_price} missing entry price</>
             )}

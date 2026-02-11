@@ -1,6 +1,6 @@
 import asyncio
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -37,13 +37,14 @@ async def leaderboard(
     delay_days: int = 3,
     hold_days: int = 30,
     min_trades: int = 3,
-    since_year: Optional[int] = None,
+    since_year: int = 2020,
 ):
     """Congress trading leaderboard — backtests all politicians with enough trades.
 
     Chamber/party filtering is done client-side to reduce cache key space.
+    Hard floor at 2020: pre-2020 data is unreliable (delisted tickers, disclosure inconsistencies).
     """
-    cache_key = f"hf:backtest:leaderboard:{delay_days}:{hold_days}:{min_trades}:{since_year or ''}"
+    cache_key = f"hf:backtest:leaderboard:{delay_days}:{hold_days}:{min_trades}:{since_year}"
 
     async def compute():
         def _run():
@@ -72,10 +73,10 @@ async def backtest(
     politician_id: int,
     delay_days: int = 3,
     hold_days: int = 30,
-    since_year: Optional[int] = None,
+    since_year: int = 2020,
 ):
     """Full backtest for a single politician — equity curve + per-trade details."""
-    cache_key = f"hf:backtest:{politician_id}:{delay_days}:{hold_days}:{since_year or ''}"
+    cache_key = f"hf:backtest:{politician_id}:{delay_days}:{hold_days}:{since_year}"
 
     async def compute():
         def _run():

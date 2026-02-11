@@ -30,6 +30,7 @@ from sqlalchemy.orm import Session
 from high_finance.db.models.company import Company
 from high_finance.db.models.politician import Politician
 from high_finance.db.models.politician_trade import PoliticianTrade
+from high_finance.db.models.price import Price
 from high_finance.services.politician_performance import (
     _closest_close_on_or_after,
     calculate_politician_grade,
@@ -77,7 +78,7 @@ def run_backtest_sync(
     delay_days: int = 3,
     hold_days: int = 30,
     starting_capital: float = 10_000.0,
-    since_year: Optional[int] = None,
+    since_year: int = 2020,
 ) -> dict:
     """
     Backtest a single politician's Buy trades with cohort-based compounding.
@@ -141,7 +142,7 @@ def run_backtest_sync(
     equity_curve: list[dict] = []
     cohort_returns_list: list[float] = []  # one per cohort (for win rate / Sharpe)
     all_position_returns: list[float] = []  # flat list of every position return
-    skip_reasons = {"no_entry_price": 0, "no_exit_price": 0, "invalid_return": 0}
+    skip_reasons = {"no_entry_price": 0, "no_exit_price": 0, "invalid_return": 0, "no_price_data": 0}
 
     spy_id = _get_spy_company_id(db)
     spy_start_price: Optional[float] = None
@@ -167,7 +168,8 @@ def run_backtest_sync(
         for (_cid, _ddate), t in positions_in_cohort:
             entry_price = _closest_close_on_or_after(db, t.company_id, entry_date)
             if entry_price is None:
-                skip_reasons["no_entry_price"] += 1
+                has_any = db.query(Price.id).filter(Price.company_id == t.company_id).first()
+                skip_reasons["no_price_data" if not has_any else "no_entry_price"] += 1
                 continue
 
             exit_price = _closest_close_on_or_after(db, t.company_id, exit_date)
@@ -376,7 +378,7 @@ def backtest_all_politicians_sync(
     min_trades: int = 3,
     chamber: Optional[str] = None,
     party: Optional[str] = None,
-    since_year: Optional[int] = None,
+    since_year: int = 2020,
 ) -> list[dict]:
     """
     Run backtests for all politicians with sufficient trades.
