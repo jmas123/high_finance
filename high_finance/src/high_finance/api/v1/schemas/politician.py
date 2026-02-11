@@ -148,6 +148,7 @@ class LeaderboardEntryOut(BaseModel):
     num_trades_priced: int
     num_cohorts: int = 0
     total_return_pct: float
+    avg_return_per_trade_pct: Optional[float] = None
     annualized_return_pct: Optional[float] = None
     win_rate: float
     max_drawdown_pct: float
