@@ -126,8 +126,8 @@ def get_companies_with_trades(db: Session, min_buy_trades: int = 2) -> list[tupl
 def _enrich_company(db: Session, company_id: int, stock: yf.Ticker) -> None:
     """Backfill sector/industry/name on Company stubs using yfinance info."""
     company = db.query(Company).filter(Company.id == company_id).first()
-    if not company or (company.sector and company.industry):
-        return  # already has data
+    if not company or (company.sector and company.industry and company.market_cap is not None):
+        return  # already fully enriched
 
     try:
         info = stock.info or {}
@@ -135,6 +135,7 @@ def _enrich_company(db: Session, company_id: int, stock: yf.Ticker) -> None:
         industry = info.get("industry")
         sic = info.get("sic")
         long_name = info.get("longName") or info.get("shortName")
+        market_cap_val = info.get("marketCap")
 
         changed = False
         if sector and not company.sector:
@@ -148,6 +149,9 @@ def _enrich_company(db: Session, company_id: int, stock: yf.Ticker) -> None:
             changed = True
         if long_name and company.name == company.ticker:
             company.name = long_name
+            changed = True
+        if market_cap_val and not company.market_cap:
+            company.market_cap = float(market_cap_val)
             changed = True
 
         if changed:

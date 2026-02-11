@@ -15,6 +15,7 @@ from sqlalchemy import text
 
 from high_finance.db.session import SessionLocal
 from high_finance.db.models.screener import ScreenerUniverse, ScreenerCache
+from high_finance.db.models.company import Company
 from high_finance.workers.tasks.base import tracked_job
 
 
@@ -110,6 +111,10 @@ def fetch_ticker_data(ticker: str) -> Optional[dict]:
             "dividend_yield": dividend_yield,
             "price_vs_200ma": price_vs_200ma,
             "price_vs_52w_high": price_vs_52w_high,
+            # Extra fields for Company table enrichment (popped before cache upsert)
+            "_yf_sector": info.get("sector"),
+            "_yf_industry": info.get("industry"),
+            "_yf_name": info.get("longName") or info.get("shortName"),
         }
 
     except Exception as e:
@@ -214,6 +219,33 @@ def aggregate_congress_activity(db: Session, ticker: str, days: int = 90) -> dic
     }
 
 
+def _ensure_company_record(
+    db: Session, ticker: str, name: str | None,
+    sector: str | None, industry: str | None,
+    market_cap: float | None,
+) -> None:
+    """Create or update Company record so ticker is available for peer selection."""
+    company = db.query(Company).filter(Company.ticker == ticker).first()
+    if not company:
+        company = Company(
+            ticker=ticker,
+            name=name or ticker,
+            sector=sector,
+            industry=industry,
+            market_cap=market_cap,
+        )
+        db.add(company)
+    else:
+        if sector and not company.sector:
+            company.sector = sector
+        if industry and not company.industry:
+            company.industry = industry
+        if market_cap and not company.market_cap:
+            company.market_cap = market_cap
+        if name and company.name == company.ticker:
+            company.name = name
+
+
 def refresh_screener_cache_logic(
     db: Session,
     batch_size: int = 50,
@@ -255,6 +287,11 @@ def refresh_screener_cache_logic(
             skipped += 1
             continue
 
+        # Pop company fields before building cache_data (prevents setattr errors on ScreenerCache)
+        yf_sector = data.pop("_yf_sector", None)
+        yf_industry = data.pop("_yf_industry", None)
+        yf_name = data.pop("_yf_name", None)
+
         # Aggregate insider/congress activity
         insider = aggregate_insider_activity_yf(ticker)
         congress = aggregate_congress_activity(db, ticker)
@@ -266,6 +303,17 @@ def refresh_screener_cache_logic(
             **congress,
             "cached_at": datetime.utcnow(),
         }
+
+        # Ensure Company record exists for peer selection (zero extra yfinance calls)
+        try:
+            _ensure_company_record(
+                db, ticker, yf_name or entry.company_name,
+                yf_sector, yf_industry,
+                float(data["market_cap"]) if data.get("market_cap") else None,
+            )
+        except Exception as e:
+            print(f"Error ensuring company record for {ticker}: {e}")
+            db.rollback()
 
         # Upsert into cache
         try:
