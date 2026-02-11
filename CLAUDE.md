@@ -415,6 +415,78 @@ When creating new files, follow these patterns:
 | React Router hooks error | `useNavigate` / `useParams` must be inside `<BrowserRouter>`. Wrap app in `main.tsx` |
 | Cross-route state lost | Each route component has isolated state. Use sessionStorage or context for shared state |
 
+## Production Environment (Railway)
+
+### Architecture
+- **API**: FastAPI on Railway (gunicorn, multiple workers)
+- **Worker**: Single container running RQ worker + rq-scheduler (cost optimization)
+- **DB**: Railway Postgres
+- **Redis**: Railway Redis (shared by RQ queue + async response cache)
+- **Frontend**: Vercel (`VITE_API_URL` must point to Railway API URL)
+
+### Auto-Seed System (`seeds/runner.py`)
+Fresh deploys auto-populate via two phases:
+
+| Phase | Where | What | Duration |
+|-------|-------|------|----------|
+| Fast (sync) | API lifespan hook | screener_universe + private_companies | ~12s |
+| Slow (RQ) | Worker startup | backfill_congress_trades → committees, prices, screener_cache | ~30min |
+
+**Redis flags** (`seed:v1:fast_complete`, `seed:v1:slow_enqueued`) prevent re-runs. 30-day TTL.
+**Admin re-trigger**: `POST /api/v1/admin/seed/trigger` clears flags and re-runs everything.
+
+### Admin API (Job Management)
+```bash
+# Check all jobs
+curl -H "Authorization: Bearer $ADMIN_API_KEY" https://highfinance-production.up.railway.app/api/v1/admin/jobs
+
+# Trigger a specific job
+curl -X POST -H "Authorization: Bearer $ADMIN_API_KEY" https://highfinance-production.up.railway.app/api/v1/admin/jobs/{job_name}/trigger
+
+# Check job history
+curl -H "Authorization: Bearer $ADMIN_API_KEY" "https://highfinance-production.up.railway.app/api/v1/admin/jobs/{job_name}/history?limit=5"
+
+# Force re-seed
+curl -X POST -H "Authorization: Bearer $ADMIN_API_KEY" https://highfinance-production.up.railway.app/api/v1/admin/seed/trigger
+```
+
+### Production Data Dependencies (Critical Order)
+
+```
+1. screener_universe (S&P 500 tickers)     ← needed for screener
+2. private_companies (hardcoded data)       ← needed for private companies page
+3. backfill_congress_trades (Quiver bulk)   ← needs QUIVER_API_KEY
+4. Company stubs created from ticker_raw    ← refresh_prices does this automatically
+5. refresh_prices (yfinance, 2yr history)   ← needs Company records to exist first
+6. Leaderboard works                        ← needs prices + trades linked via company_id
+```
+
+**Key insight**: The bulk backfill creates trades with `company_id = NULL` because the `companies` table is empty on a fresh DB. The `refresh_prices` job auto-creates Company stubs from `ticker_raw` and backlinks trades. Without this step, the leaderboard only shows ~6 politicians.
+
+### Production Debugging Gotchas
+
+| Issue | Root Cause | Fix |
+|-------|-----------|-----|
+| Leaderboard shows few politicians on prod | `company_id = NULL` on trades → prices job skips them | `refresh_prices` now creates Company stubs from `ticker_raw` |
+| Chamber/State empty on prod politicians | Quiver bulk endpoint field names differ from live endpoint | `_ensure_politician` reads from both field name variants |
+| Seed jobs "enqueued" but never ran | First deploy: seed RQ job enqueued before worker was listening | Trigger manually via admin endpoint; subsequent deploys are fine |
+| `refresh_prices` returns 0 new prices | All Company stubs already existed or no unmatched tickers | Check `get_companies_with_trades` query; verify `politician_trades.ticker_raw` has data |
+| Multiple gunicorn workers racing on startup | All workers call `run_fast_seeds()` simultaneously | Redis SETNX lock ensures only one runs; others get `reason: another_worker` |
+| zsh `curl` with `?` params fails | zsh interprets `?` as glob | Wrap URL in double quotes: `curl "https://...?limit=5"` |
+
+### Required Environment Variables (Railway)
+
+| Variable | Required For | Notes |
+|----------|-------------|-------|
+| `DATABASE_URL` | Everything | Railway auto-sets for Postgres |
+| `REDIS_URL` | RQ + caching | Railway auto-sets for Redis |
+| `SECRET_KEY` | JWT auth | Must be 32+ chars in production |
+| `QUIVER_API_KEY` | Congress trades | Without it, politician data won't seed |
+| `ADMIN_API_KEY` | Admin dashboard | For job management endpoints |
+| `ALLOWED_ORIGINS` | CORS | Must include Vercel domain, no localhost |
+| `DEBUG` | Security | Must be `False` in production |
+| `VITE_API_URL` | Frontend (Vercel) | Must point to Railway API URL |
+
 ## Pre-Commit Checklist
 
 Before committing changes, verify:
