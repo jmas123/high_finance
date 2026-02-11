@@ -3,7 +3,7 @@ from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 from alembic import context
 from high_finance.db.base import Base
-from high_finance.db.models import company, price, investor, holding, person, screener
+import high_finance.db.models  # noqa: F401 — imports all models so autogenerate sees them
 import os
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -41,6 +41,10 @@ def run_migrations_online():
         configuration,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        connect_args={
+            "connect_timeout": 10,                       # TCP connect timeout (seconds)
+            "options": "-c lock_timeout=10000",           # DDL lock timeout 10s (milliseconds)
+        },
     )
     with connectable.connect() as connection:
         context.configure(
