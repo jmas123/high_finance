@@ -80,12 +80,15 @@ async def lifespan(app: FastAPI):
     import concurrent.futures
     try:
         from high_finance.seeds.runner import run_fast_seeds
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            future = pool.submit(run_fast_seeds)
+        pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        future = pool.submit(run_fast_seeds)
+        try:
             result = future.result(timeout=30)
-        logger.info(f"Fast seed result: {result}")
-    except concurrent.futures.TimeoutError:
-        logger.warning("Fast seeds timed out after 30s — API starting without seed data")
+            logger.info(f"Fast seed result: {result}")
+        except concurrent.futures.TimeoutError:
+            logger.warning("Fast seeds timed out after 30s — API starting without seed data")
+        finally:
+            pool.shutdown(wait=False, cancel_futures=True)
     except Exception:
         logger.exception("Fast seeds failed — API will start without seed data")
 
