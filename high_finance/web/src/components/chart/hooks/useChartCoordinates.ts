@@ -93,20 +93,14 @@ export function useChartCoordinates(
    */
   const pixelToCoords = useCallback(
     (x: number, y: number): DrawingPoint | null => {
-      console.log("[Coords] pixelToCoords called with:", { x, y });
-      console.log("[Coords] chart:", chart ? "exists" : "null", "series:", series ? "exists" : "null");
-
       if (!chart || !series) {
-        console.log("[Coords] Chart or series is null, returning null");
         return null;
       }
 
       const time = chart.timeScale().coordinateToTime(x);
       const price = series.coordinateToPrice(y);
-      console.log("[Coords] Converted:", { time, price });
 
       if (time === null || price === null) {
-        console.log("[Coords] Time or price is null, returning null");
         return null;
       }
 

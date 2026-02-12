@@ -1,14 +1,17 @@
 from typing import Dict, Optional, List
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 
 from high_finance.services.prices import get_price_history
+from high_finance.core.rate_limit import limiter
 
 router = APIRouter()
 
 
 @router.get("/returns")
+@limiter.limit("30/minute")
 async def get_returns(
+    request: Request,
     tickers: str = Query(..., description="Comma-separated tickers, e.g. AAPL,MSFT"),
     days: int = Query(30, ge=1, le=365),
 ) -> Dict[str, Optional[float]]:
@@ -64,7 +67,9 @@ async def get_returns(
 
 
 @router.get("/{ticker}")
+@limiter.limit("30/minute")
 async def read_prices(
+    request: Request,
     ticker: str,
     period: str = Query(
         default="1y",

@@ -37,7 +37,7 @@ CMD ["gunicorn", "main:app", \
      "--bind", "0.0.0.0:8000", \
      "--workers", "4", \
      "--worker-class", "uvicorn.workers.UvicornWorker", \
-     "--timeout", "60", \
+     "--timeout", "120", \
      "--graceful-timeout", "30", \
      "--keep-alive", "5", \
      "--log-level", "info", \

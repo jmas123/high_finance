@@ -1,19 +1,21 @@
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
 from high_finance.services.institutional_flow import (
     get_institutional_holders,
     get_mutual_fund_holders,
     get_institutional_flow,
 )
+from high_finance.core.rate_limit import limiter
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
 @router.get("/{ticker}")
-async def read_institutional_holders(ticker: str):
+@limiter.limit("30/minute")
+async def read_institutional_holders(request: Request, ticker: str):
     """Get institutional holders for a ticker."""
     try:
         return await get_institutional_holders(ticker.upper())
@@ -23,7 +25,8 @@ async def read_institutional_holders(ticker: str):
 
 
 @router.get("/{ticker}/mutual-funds")
-async def read_mutual_fund_holders(ticker: str):
+@limiter.limit("30/minute")
+async def read_mutual_fund_holders(request: Request, ticker: str):
     """Get mutual fund holders for a ticker."""
     try:
         return await get_mutual_fund_holders(ticker.upper())
@@ -33,7 +36,8 @@ async def read_mutual_fund_holders(ticker: str):
 
 
 @router.get("/{ticker}/flow")
-async def read_institutional_flow(ticker: str):
+@limiter.limit("30/minute")
+async def read_institutional_flow(request: Request, ticker: str):
     """Get comprehensive institutional flow data (smart money analysis)."""
     try:
         return await get_institutional_flow(ticker.upper())
