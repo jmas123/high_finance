@@ -33,9 +33,9 @@ function gradeColor(grade: string | null): string {
 
 function partyColor(party: string | null): string {
   if (!party) return "#666";
-  const p = party.toLowerCase();
-  if (p.includes("democrat")) return "#3b82f6";
-  if (p.includes("republican")) return "#ef4444";
+  const first = party[0]?.toUpperCase();
+  if (first === "D") return "#3b82f6";
+  if (first === "R") return "#ef4444";
   return "#888";
 }
 
@@ -148,8 +148,8 @@ export function CongressLeaderboard() {
 
   // Client-side filtering for chamber/party (avoids separate cache keys per combo)
   const filtered = useMemo(() => data?.entries.filter((e) => {
-    if (chamber && !(e.chamber ?? "").toLowerCase().includes(chamber.toLowerCase())) return false;
-    if (party && !(e.party ?? "").toLowerCase().includes(party.toLowerCase())) return false;
+    if (chamber && (e.chamber ?? "")[0]?.toUpperCase() !== chamber[0]?.toUpperCase()) return false;
+    if (party && (e.party ?? "")[0]?.toUpperCase() !== party[0]?.toUpperCase()) return false;
     return true;
   }) ?? [], [data, chamber, party]);
 

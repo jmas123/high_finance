@@ -31,6 +31,7 @@ export function IndicatorToolbar({
   updateParams,
   updateStyle,
 }: IndicatorToolbarProps) {
+  const [collapsed, setCollapsed] = useState(true);
   const [expandedIndicator, setExpandedIndicator] = useState<IndicatorType | null>(null);
 
   const handleToggle = useCallback(
@@ -54,62 +55,68 @@ export function IndicatorToolbar({
 
   return (
     <div style={styles.container}>
-      <div style={styles.header}>
+      <div
+        style={{ ...styles.header, cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}
+        onClick={() => setCollapsed(!collapsed)}
+      >
         <span style={styles.headerLabel}>Indicators</span>
+        <span style={{ fontSize: 10, color: "#666" }}>{collapsed ? "▼" : "▲"}</span>
       </div>
 
-      <div style={styles.indicatorList}>
-        {INDICATOR_INFO.map((info) => {
-          const enabled = isEnabled(info.type);
-          const config = getConfig(info.type);
+      {!collapsed && (
+        <div style={styles.indicatorList}>
+          {INDICATOR_INFO.map((info) => {
+            const enabled = isEnabled(info.type);
+            const config = getConfig(info.type);
 
-          return (
-            <div key={info.type} style={styles.indicatorItem}>
-              <div style={styles.indicatorRow}>
-                <button
-                  style={{
-                    ...styles.indicatorButton,
-                    ...(enabled ? styles.indicatorButtonActive : {}),
-                  }}
-                  onClick={() => handleToggle(info.type)}
-                  title={info.description}
-                >
-                  <span
-                    style={{
-                      ...styles.indicatorDot,
-                      backgroundColor: enabled
-                        ? config?.style.color ?? "#3b82f6"
-                        : "#444",
-                    }}
-                  />
-                  <span style={styles.indicatorLabel}>{info.shortLabel}</span>
-                </button>
-
-                {enabled && info.type !== "volume" && (
+            return (
+              <div key={info.type} style={styles.indicatorItem}>
+                <div style={styles.indicatorRow}>
                   <button
-                    style={styles.settingsButton}
-                    onClick={(e) => handleSettingsClick(info.type, e)}
-                    title="Settings"
+                    style={{
+                      ...styles.indicatorButton,
+                      ...(enabled ? styles.indicatorButtonActive : {}),
+                    }}
+                    onClick={() => handleToggle(info.type)}
+                    title={info.description}
                   >
-                    ⚙
+                    <span
+                      style={{
+                        ...styles.indicatorDot,
+                        backgroundColor: enabled
+                          ? config?.style.color ?? "#3b82f6"
+                          : "#444",
+                      }}
+                    />
+                    <span style={styles.indicatorLabel}>{info.shortLabel}</span>
                   </button>
+
+                  {enabled && info.type !== "volume" && (
+                    <button
+                      style={styles.settingsButton}
+                      onClick={(e) => handleSettingsClick(info.type, e)}
+                      title="Settings"
+                    >
+                      ⚙
+                    </button>
+                  )}
+                </div>
+
+                {/* Expanded Settings Panel */}
+                {expandedIndicator === info.type && config && (
+                  <IndicatorSettings
+                    type={info.type}
+                    config={config}
+                    onParamsChange={(params) => updateParams(info.type, params)}
+                    onStyleChange={(style) => updateStyle(info.type, style)}
+                    onClose={() => setExpandedIndicator(null)}
+                  />
                 )}
               </div>
-
-              {/* Expanded Settings Panel */}
-              {expandedIndicator === info.type && config && (
-                <IndicatorSettings
-                  type={info.type}
-                  config={config}
-                  onParamsChange={(params) => updateParams(info.type, params)}
-                  onStyleChange={(style) => updateStyle(info.type, style)}
-                  onClose={() => setExpandedIndicator(null)}
-                />
-              )}
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

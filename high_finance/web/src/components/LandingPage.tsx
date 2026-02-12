@@ -36,11 +36,11 @@ const FEATURES = [
     title: "Options Analysis",
     desc: "Options flow, implied volatility context, and a visual decay simulator for any optionable stock.",
   },
-  {
-    emoji: "🤖",
-    title: "ML Predictions",
-    desc: "Machine learning models score each stock on 5-day directional probability with feature breakdowns.",
-  },
+  // {
+  //   emoji: "🤖",
+  //   title: "ML Predictions",
+  //   desc: "Machine learning models score each stock on 5-day directional probability with feature breakdowns.",
+  // },
   {
     emoji: "📁",
     title: "Research Projects",
@@ -121,7 +121,7 @@ export function LandingPage({ onOpenAuth }: LandingPageProps) {
           margin: "0 auto 32px",
           lineHeight: 1.6,
         }}>
-          Fundamentals, DCF valuation, risk simulation, congressional trades, and ML predictions
+          Fundamentals, DCF valuation, risk simulation, and congressional trades
           — all in one place.
         </p>
         <div style={{
