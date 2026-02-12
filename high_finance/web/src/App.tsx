@@ -31,9 +31,6 @@ const NotificationsCard = lazy(() =>
 const CompsTable = lazy(() =>
   import("./components/CompsTableCard").then(m => ({ default: m.CompsTable }))
 );
-const PredictionCard = lazy(() =>
-  import("./components/PredictionCard").then(m => ({ default: m.PredictionCard }))
-);
 const FinancialStatements = lazy(() =>
   import("./components/FinancialStatements").then(m => ({ default: m.FinancialStatements }))
 );
@@ -892,7 +889,7 @@ function TickerView() {
 
   // ── Retry failed sections ───────────────────────────────────────────────
   const SECTION_LABELS: Record<string, string> = {
-    risk: "Risk Analysis", valuation: "Valuation (DCF)", prediction: "ML Prediction",
+    risk: "Risk Analysis", valuation: "Valuation (DCF)",
     earnings: "Earnings", news: "News", financials: "Financial Statements",
     institutional_flow: "Institutional Flow", insider_trades: "Insider Trades",
     insider_summary: "Insider Summary", options_overview: "Options Overview",
@@ -911,7 +908,6 @@ function TickerView() {
     const retryMap: Record<string, { call: () => Promise<unknown>; field: keyof TickerState }> = {
       risk:               { call: () => api.risk(ticker),               field: "riskData" },
       valuation:          { call: () => api.valuation(ticker),          field: "valuationData" },
-      prediction:         { call: () => api.prediction(ticker),         field: "predictionData" },
       earnings:           { call: () => api.earnings(ticker),           field: "earningsData" },
       news:               { call: () => api.news(ticker),               field: "newsData" },
       financials:         { call: () => api.financials(ticker),         field: "financials" },
@@ -1259,15 +1255,6 @@ function TickerView() {
       {/* ==================== */}
       {isStock && (
         <>
-          {/* ML Prediction — Valuation tab */}
-          {showSection("valuation") && (
-            <Suspense fallback={<CardSkeleton />}>
-              <div style={{ marginBottom: 20 }}>
-                <PredictionCard key={`pred-${ticker}`} ticker={ticker} initialData={predictionData} />
-              </div>
-            </Suspense>
-          )}
-
           {/* DCF + Risk (side by side) — Valuation tab */}
           {showSection("valuation") && (
             <Suspense fallback={<div style={responsiveGrid}><CardSkeleton /><CardSkeleton /></div>}>
