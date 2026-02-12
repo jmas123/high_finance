@@ -131,7 +131,6 @@ export function useDrawingState(): UseDrawingStateResult {
         const firstPoint = pendingDrawing.points[0];
         // Reject if time values are identical (backend requires different times for trendlines, etc.)
         if (firstPoint.time === point.time) {
-          console.log("[Drawing] Rejected point: same time as first point");
           return null;
         }
       }

@@ -33,7 +33,8 @@ class CompsExportRequest(BaseModel):
 
 
 @router.get("/{ticker}")
-async def read_company(ticker: str, db: Session = Depends(get_db)):
+@limiter.limit("30/minute")
+async def read_company(request: Request, ticker: str, db: Session = Depends(get_db)):
     company = await get_company_fundamentals(ticker, db)
     if not company:
         raise HTTPException(status_code=404, detail="Company not found")
@@ -41,7 +42,9 @@ async def read_company(ticker: str, db: Session = Depends(get_db)):
 
 
 @router.get("/{ticker}/comps", response_model=ComparableAnalysis)
+@limiter.limit("30/minute")
 async def read_company_comps(
+    request: Request,
     ticker: str,
     peer_group_id: Optional[int] = Query(None, description="ID of saved peer group to use"),
     peers: Optional[str] = Query(None, description="Comma-separated list of peer tickers (ad-hoc)"),

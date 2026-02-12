@@ -1,15 +1,17 @@
 import logging
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 from sqlalchemy.orm import Session
 from high_finance.db.session import get_db
 from high_finance.services import edgar
+from high_finance.core.rate_limit import limiter
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 @router.get("/{ticker}", response_model=list)
-async def get_ownership(ticker: str, db: Session = Depends(get_db)):
+@limiter.limit("30/minute")
+async def get_ownership(request: Request, ticker: str, db: Session = Depends(get_db)):
     try:
         ownership_data = await edgar.get_ownership_data(ticker, db)
         if not ownership_data:
