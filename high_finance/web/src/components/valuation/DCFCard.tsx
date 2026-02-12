@@ -602,16 +602,16 @@ export function DCFCard({ ticker, onStateChange, initialData }: DCFCardProps) {
             onClick={handleAISuggest}
             disabled={aiLoading}
             style={{
-              fontSize: 11,
+              fontSize: 12,
               color: aiLoading ? "#555" : "#f59e0b",
-              background: aiLoading ? "transparent" : "rgba(245, 158, 11, 0.08)",
-              border: `1px solid ${aiLoading ? "#333" : "rgba(245, 158, 11, 0.3)"}`,
+              background: aiLoading ? "transparent" : "rgba(245, 158, 11, 0.15)",
+              border: `1px solid ${aiLoading ? "#333" : "rgba(245, 158, 11, 0.5)"}`,
               borderRadius: 6,
               padding: "5px 12px",
               cursor: aiLoading ? "not-allowed" : "pointer",
             }}
           >
-            {aiLoading ? "Analyzing..." : "AI Suggest"}
+            {aiLoading ? "Analyzing..." : "AI Valuation"}
           </button>
         </div>
       )}

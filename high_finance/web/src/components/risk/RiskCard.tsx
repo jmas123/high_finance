@@ -193,9 +193,9 @@ export function RiskCard({ ticker, initialData }: RiskCardProps) {
           <button
             onClick={() => { setShowAI(!showAI); if (!showAI) setShowControls(false); }}
             style={{
-              background: showAI ? "#8b5cf6" : "#0a0a0a",
+              background: showAI ? "#8b5cf6" : "rgba(139, 92, 246, 0.12)",
               color: "#fff",
-              border: "1px solid #333",
+              border: showAI ? "1px solid #333" : "1px solid rgba(139, 92, 246, 0.4)",
               borderRadius: 8,
               padding: "8px 14px",
               fontSize: 12,
@@ -205,7 +205,7 @@ export function RiskCard({ ticker, initialData }: RiskCardProps) {
               gap: 6,
             }}
           >
-            <span>AI</span>
+            <span> AI Scenarios </span>
           </button>
 
           <button
