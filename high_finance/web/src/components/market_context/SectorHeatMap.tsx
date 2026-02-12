@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   TrendingUp,
   TrendingDown,
@@ -68,6 +69,7 @@ const SectorHeatmapCard: React.FC<SectorHeatmapCardProps> = ({
   initialData,
 }) => {
   const isMobile = useIsMobile();
+  const navigate = useNavigate();
   const [data, setData] = useState<SectorResponse | null>(initialData ?? null);
   const [loading, setLoading] = useState(!initialData);
   const [error, setError] = useState<string | null>(null);
@@ -415,21 +417,29 @@ const SectorHeatmapCard: React.FC<SectorHeatmapCardProps> = ({
               <div style={{ fontSize: 11, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.05em" }}>Top movers</div>
               <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 6 }}>
                 {activeSector.top_movers.map((m) => (
-                  <div key={m.symbol} style={{
-                    padding: "4px 10px",
-                    borderRadius: 6,
-                    border: `1px solid ${C.borderSubtle}`,
-                    background: "rgba(255,255,255,0.02)",
-                    fontSize: 12,
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                  }}>
+                  <button
+                    key={m.symbol}
+                    onClick={() => { setActiveSector(null); navigate(`/quote/${m.symbol.toUpperCase()}`); }}
+                    style={{
+                      padding: "4px 10px",
+                      borderRadius: 6,
+                      border: `1px solid ${C.borderSubtle}`,
+                      background: "rgba(255,255,255,0.02)",
+                      fontSize: 12,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      cursor: "pointer",
+                      transition: "background 0.15s, border-color 0.15s",
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.08)"; e.currentTarget.style.borderColor = "#555"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.02)"; e.currentTarget.style.borderColor = C.borderSubtle; }}
+                  >
                     <span style={{ color: C.text, fontWeight: 500 }}>{m.symbol}</span>
                     <span style={{ color: m.change >= 0 ? C.green : C.red }}>
                       {m.change >= 0 ? "+" : ""}{m.change.toFixed(2)}%
                     </span>
-                  </div>
+                  </button>
                 ))}
               </div>
             </div>

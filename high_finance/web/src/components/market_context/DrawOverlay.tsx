@@ -25,7 +25,7 @@ export function DrawerOverlay({
   return (
     <div
       style={{
-        position: "absolute",
+        position: "fixed",
         inset: 0,
         zIndex: 40,
         background: "rgba(0,0,0,0.55)",
