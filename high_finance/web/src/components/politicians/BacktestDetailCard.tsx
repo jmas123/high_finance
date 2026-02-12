@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../../lib/api";
 import type { BacktestResponse, EquityCurvePoint, BacktestTradeResult } from "../../lib/types";
 import { thBase, tdBase, right } from "../../lib/types";
@@ -245,11 +245,21 @@ function StatBox({
 export function BacktestDetailCard() {
   const { politicianId } = useParams<{ politicianId: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const pid = politicianId ? parseInt(politicianId, 10) : null;
 
-  const [delayDays, setDelayDays] = useState(3);
-  const [holdDays, setHoldDays] = useState(30);
-  const [sinceYear, setSinceYear] = useState(2020);
+  const [delayDays, setDelayDays] = useState(() => {
+    const v = Number(searchParams.get("delay"));
+    return DELAY_OPTIONS.includes(v) ? v : 3;
+  });
+  const [holdDays, setHoldDays] = useState(() => {
+    const v = Number(searchParams.get("hold"));
+    return HOLD_OPTIONS.includes(v) ? v : 30;
+  });
+  const [sinceYear, setSinceYear] = useState(() => {
+    const v = Number(searchParams.get("year"));
+    return YEAR_OPTIONS.includes(v) ? v : 2020;
+  });
   const [data, setData] = useState<BacktestResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

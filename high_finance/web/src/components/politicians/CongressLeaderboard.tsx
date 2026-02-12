@@ -174,6 +174,16 @@ export function CongressLeaderboard() {
     fontWeight: active ? 600 : 400,
   });
 
+  /** Build detail URL forwarding current backtest filters as query params */
+  const detailUrl = (politicianId: number) => {
+    const params = new URLSearchParams();
+    if (delayDays !== 3) params.set("delay", String(delayDays));
+    if (holdDays !== 30) params.set("hold", String(holdDays));
+    if (sinceYear !== 2020) params.set("year", String(sinceYear));
+    const qs = params.toString();
+    return `/congress/${politicianId}${qs ? `?${qs}` : ""}`;
+  };
+
   const SortArrow = ({ col }: { col: SortKey }) => {
     if (sortKey !== col) return null;
     return <span style={{ marginLeft: 4 }}>{sortAsc ? "▲" : "▼"}</span>;
@@ -314,7 +324,7 @@ export function CongressLeaderboard() {
               {sorted.map((e, i) => (
                 <MobileCardRow
                   key={e.politician_id}
-                  onClick={() => navigate(`/congress/${e.politician_id}`)}
+                  onClick={() => navigate(detailUrl(e.politician_id))}
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -453,7 +463,7 @@ export function CongressLeaderboard() {
                 {sorted.map((e, i) => (
                   <tr
                     key={e.politician_id}
-                    onClick={() => navigate(`/congress/${e.politician_id}`)}
+                    onClick={() => navigate(detailUrl(e.politician_id))}
                     style={{
                       cursor: "pointer",
                       borderBottom: "1px solid #222",
