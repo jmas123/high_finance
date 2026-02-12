@@ -970,6 +970,107 @@ valuationAISuggest: (ticker: string) =>
   },
 
   // ═══════════════════════════════════════════════════════════════════════════════
+  // AI RESEARCH ASSISTANT API
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Check if the AI assistant is available (has API key configured).
+   */
+  assistantStatus: () =>
+    getJSON<{ available: boolean }>(`${BASE}/assistant/status`),
+
+  /**
+   * Send a query to the AI assistant via SSE streaming.
+   * Matches the generateMemo pattern: fetch + ReadableStream + SSE parsing.
+   * Returns an AbortController for cancellation.
+   */
+  assistantQuery: (
+    query: string,
+    currentTicker: string | null,
+    conversationHistory: Array<{ role: string; content: string }>,
+    onChunk: (text: string) => void,
+    onDone: () => void,
+    onError: (error: string) => void,
+  ): AbortController => {
+    const controller = new AbortController();
+
+    (async () => {
+      try {
+        const res = await fetch(`${BASE}/assistant/query`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...getAuthHeaders(),
+          },
+          body: JSON.stringify({
+            query,
+            current_ticker: currentTicker,
+            conversation_history: conversationHistory,
+          }),
+          signal: controller.signal,
+        });
+
+        if (!res.ok) {
+          handleResponseError(res);
+          const body = await res.json().catch(() => ({ detail: "Assistant query failed" }));
+          onError(body.detail || body.message || `Error ${res.status}`);
+          return;
+        }
+
+        const reader = res.body?.getReader();
+        if (!reader) {
+          onError("No response stream");
+          return;
+        }
+
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+
+          const events = buffer.split("\n\n");
+          buffer = events.pop() || "";
+
+          for (const event of events) {
+            for (const line of event.split("\n")) {
+              if (!line.startsWith("data: ")) continue;
+              const payload = line.slice(6);
+
+              if (payload === "[DONE]") {
+                onDone();
+                return;
+              }
+              if (payload.startsWith("[ERROR]")) {
+                onError(payload.slice(8));
+                return;
+              }
+              try {
+                onChunk(JSON.parse(payload));
+              } catch {
+                onChunk(payload);
+              }
+            }
+          }
+        }
+
+        onDone();
+      } catch (e) {
+        if (e instanceof Error && e.name !== "AbortError") {
+          onError(e.message || "Connection lost");
+        } else if (!(e instanceof Error)) {
+          onError("Connection lost");
+        }
+      }
+    })();
+
+    return controller;
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════════
   // CONGRESS BACKTEST API
   // ═══════════════════════════════════════════════════════════════════════════════
 
