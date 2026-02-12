@@ -164,11 +164,6 @@ export interface TickerBundleResponse {
   news: NewsBundle | null;
   prediction: PredictionResponse | null;
 
-  // Market context (shared across all tickers)
-  macro_indicators: MacroResponse | null;
-  sectors: SectorResponse | null;
-  rate_impact: RateImpactResponse | null;
-
   // Error tracking for partial failures
   errors: Record<string, string>;
 }

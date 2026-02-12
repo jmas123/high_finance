@@ -34,8 +34,6 @@ from high_finance.services.options_decay import get_iv_context
 from high_finance.services.earnings import get_earnings_calendar
 from high_finance.services.news import get_news_bundle
 from high_finance.services.ml_predictor import train_and_predict
-from high_finance.services.market import market_service
-from high_finance.api.v1.routes.market import _macro_summary
 
 
 class TickerBundleResponse(BaseModel):
@@ -60,11 +58,6 @@ class TickerBundleResponse(BaseModel):
     earnings: Optional[dict] = None
     news: Optional[dict] = None
     prediction: Optional[dict] = None
-
-    # Market context (shared across all tickers)
-    macro_indicators: Optional[dict] = None
-    sectors: Optional[dict] = None
-    rate_impact: Optional[dict] = None
 
     # Error tracking for partial failures
     errors: dict = {}
@@ -257,7 +250,7 @@ async def get_ticker_bundle(
 
     async def fetch_news():
         try:
-            return await get_news_bundle(db, ticker, limit=20)
+            return await get_news_bundle(ticker, limit=20)
         except Exception:
             logger.exception("Bundle: news failed for %s", ticker)
             errors["news"] = "Failed to load"
@@ -273,57 +266,6 @@ async def get_ticker_bundle(
         except Exception:
             logger.exception("Bundle: prediction failed for %s", ticker)
             errors["prediction"] = "Failed to load"
-            return None
-
-    async def fetch_macro_indicators():
-        try:
-            indicators = await market_service.get_macro_indicators()
-            payload = [ind.model_dump(mode="json") for ind in indicators]
-            return {"indicators": payload, "summary": _macro_summary(payload)}
-        except Exception:
-            logger.exception("Bundle: macro_indicators failed for %s", ticker)
-            errors["macro_indicators"] = "Failed to load"
-            return None
-
-    async def fetch_sectors():
-        try:
-            sectors = await market_service.get_sector_performance()
-            sorted_sectors = sorted(sectors, key=lambda x: x.performance_1d, reverse=True)
-            return {
-                "sectors": [s.model_dump(mode="json") for s in sorted_sectors],
-                "market_leader": sorted_sectors[0].sector if sorted_sectors else None,
-                "market_laggard": sorted_sectors[-1].sector if sorted_sectors else None,
-                "breadth": {
-                    "positive": sum(1 for s in sectors if s.performance_1d > 0),
-                    "negative": sum(1 for s in sectors if s.performance_1d < 0),
-                    "unchanged": sum(1 for s in sectors if s.performance_1d == 0),
-                },
-            }
-        except Exception:
-            logger.exception("Bundle: sectors failed for %s", ticker)
-            errors["sectors"] = "Failed to load"
-            return None
-
-    async def fetch_rate_impact():
-        try:
-            analyses = await market_service.get_rate_impact_analysis(None)
-            return {
-                "analyses": [a.model_dump(mode="json") for a in analyses],
-                "by_sensitivity": {
-                    "high": [a.sector for a in analyses if a.sensitivity == "high"],
-                    "medium": [a.sector for a in analyses if a.sensitivity == "medium"],
-                    "low": [a.sector for a in analyses if a.sensitivity == "low"],
-                },
-                "rate_beneficiaries": [
-                    a.sector for a in analyses if a.impact_direction == "positive"
-                ],
-                "rate_sensitive": [
-                    a.sector for a in analyses if a.impact_direction == "negative"
-                ],
-            }
-        except Exception:
-            logger.exception("Bundle: rate_impact failed for %s", ticker)
-            errors["rate_impact"] = "Failed to load"
             return None
 
     # ═══════════════════════════════════════════════════════════════════════════
@@ -358,9 +300,6 @@ async def get_ticker_bundle(
         with_timeout(fetch_earnings(), FAST, "earnings"),            # 12
         with_timeout(fetch_news(), FAST, "news"),                    # 13
         with_timeout(fetch_prediction(), SLOW, "prediction"),        # 14 (ML training)
-        with_timeout(fetch_macro_indicators(), FAST, "macro"),       # 15
-        with_timeout(fetch_sectors(), SLOW, "sectors"),              # 16 (11 sector ETF calls)
-        with_timeout(fetch_rate_impact(), FAST, "rate_impact"),      # 17
         return_exceptions=True,
     )
 
@@ -369,7 +308,7 @@ async def get_ticker_bundle(
         comps_full, prices, leadership, financials,
         risk, valuation, institutional_flow, insider_trades, insider_summary,
         politician_trades, options_overview, iv_context, earnings, news,
-        prediction, macro_indicators, sectors, rate_impact
+        prediction,
     ) = results
 
     # Handle any exceptions that weren't caught by per-task try/except
@@ -395,9 +334,6 @@ async def get_ticker_bundle(
     earnings = safe_result(earnings, "earnings")
     news = safe_result(news, "news")
     prediction = safe_result(prediction, "prediction")
-    macro_indicators = safe_result(macro_indicators, "macro_indicators")
-    sectors = safe_result(sectors, "sectors")
-    rate_impact = safe_result(rate_impact, "rate_impact")
 
     # Split the deduped comps_full result:
     # - fetch_peers=True returns {"target": {...}, "peers": [...], ...}
@@ -444,8 +380,5 @@ async def get_ticker_bundle(
         earnings=earnings,
         news=news,
         prediction=prediction,
-        macro_indicators=macro_indicators,
-        sectors=sectors,
-        rate_impact=rate_impact,
         errors=errors,
     )

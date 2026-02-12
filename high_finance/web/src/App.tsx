@@ -50,7 +50,7 @@ import type {
   CompsResponse, FinancialStatementsResponse, RiskBundle, ValuationBundle, NewsBundle,
   IVContext, PoliticianTradeWithContext, Company, Fundamentals, PriceEntry, LeadershipMember,
   InstitutionalFlow, InsiderTrade, InsiderSummary, OptionsOverview, EarningsData,
-  PredictionResponse, MacroResponse, SectorResponse, RateImpactResponse,
+  PredictionResponse,
 } from "./lib/types";
 import type { TickerBundleResponse } from "./lib/api";
 import { LeadershipTable } from "./components/LeadershipTable";
@@ -603,9 +603,6 @@ type TickerState = {
   earningsData: EarningsData | null;
   newsData: NewsBundle | null;
   predictionData: PredictionResponse | null;
-  macroIndicators: MacroResponse | null;
-  sectorsData: SectorResponse | null;
-  rateImpact: RateImpactResponse | null;
   loading: boolean;
   error: string | null;
   dataWarnings: string[];
@@ -640,9 +637,6 @@ const initialTickerState: TickerState = {
   earningsData: null,
   newsData: null,
   predictionData: null,
-  macroIndicators: null,
-  sectorsData: null,
-  rateImpact: null,
   loading: false,
   error: null,
   dataWarnings: [],
@@ -673,9 +667,6 @@ function tickerReducer(state: TickerState, action: TickerAction): TickerState {
         earningsData: b.earnings,
         newsData: b.news,
         predictionData: b.prediction,
-        macroIndicators: b.macro_indicators,
-        sectorsData: b.sectors,
-        rateImpact: b.rate_impact,
         loading: false,
         error: null,
         dataWarnings: Object.keys(b.errors).length > 0
@@ -753,7 +744,7 @@ function TickerView() {
     company, fundamentals, prices, leadership, financials, comps,
     riskData, valuationData, institutionalFlow, insiderSummary,
     politicianTrades, optionsOverview, ivContext, earningsData, newsData,
-    predictionData, macroIndicators, sectorsData, rateImpact, loading, error, dataWarnings,
+    predictionData, loading, error, dataWarnings,
   } = state;
 
   const [showAddPosition, setShowAddPosition] = useState(false);
@@ -1339,9 +1330,6 @@ function TickerView() {
                 showMacro={true}
                 showSectors={true}
                 showRateImpact={true}
-                initialMacroData={macroIndicators}
-                initialSectorsData={sectorsData}
-                initialRateImpactData={rateImpact}
               />
             </div>
           )}

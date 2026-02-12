@@ -378,7 +378,7 @@ class MarketService:
             )
             return [s.model_dump(mode="json") for s in raw]
 
-        cached = await get_or_compute(cache_key, 300, _compute)
+        cached = await get_or_compute(cache_key, 900, _compute)
         return [SectorPerformance(**s) for s in cached]
 
     def _build_sectors(self) -> list[SectorPerformance]:
