@@ -9,6 +9,8 @@ adds 150ms sleep; the opportunistic single-fetch in fundamentals.py is fine).
 """
 
 import logging
+import threading
+
 import requests
 
 logger = logging.getLogger(__name__)
@@ -20,37 +22,44 @@ SEC_HEADERS = {
 
 # In-memory cache: ticker (uppercase) → CIK (int)
 _ticker_to_cik: dict[str, int] | None = None
+_ticker_map_lock = threading.Lock()
 
 
 def _load_ticker_map() -> dict[str, int]:
     """Load the SEC company_tickers.json and build a ticker→CIK lookup.
 
     The JSON structure is: {"0": {"cik_str": "...", "ticker": "...", "title": "..."}, ...}
+    Uses double-checked locking to prevent thundering herd on cold start.
     """
     global _ticker_to_cik
     if _ticker_to_cik is not None:
         return _ticker_to_cik
 
-    url = "https://www.sec.gov/files/company_tickers.json"
-    try:
-        resp = requests.get(url, headers=SEC_HEADERS, timeout=15)
-        resp.raise_for_status()
-        data = resp.json()
-    except Exception as e:
-        logger.warning("Failed to load SEC ticker map: %s", e)
-        _ticker_to_cik = {}
+    with _ticker_map_lock:
+        # Double-check after acquiring lock
+        if _ticker_to_cik is not None:
+            return _ticker_to_cik
+
+        url = "https://www.sec.gov/files/company_tickers.json"
+        try:
+            resp = requests.get(url, headers=SEC_HEADERS, timeout=15)
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as e:
+            logger.warning("Failed to load SEC ticker map: %s", e)
+            _ticker_to_cik = {}
+            return _ticker_to_cik
+
+        mapping: dict[str, int] = {}
+        for entry in data.values():
+            ticker = entry.get("ticker", "").upper()
+            cik = entry.get("cik_str")
+            if ticker and cik:
+                mapping[ticker] = int(cik)
+
+        _ticker_to_cik = mapping
+        logger.info("Loaded SEC ticker map: %d entries", len(mapping))
         return _ticker_to_cik
-
-    mapping: dict[str, int] = {}
-    for entry in data.values():
-        ticker = entry.get("ticker", "").upper()
-        cik = entry.get("cik_str")
-        if ticker and cik:
-            mapping[ticker] = int(cik)
-
-    _ticker_to_cik = mapping
-    logger.info("Loaded SEC ticker map: %d entries", len(mapping))
-    return _ticker_to_cik
 
 
 def fetch_sic_code(ticker: str) -> str | None:

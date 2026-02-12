@@ -313,10 +313,11 @@ async def get_peer_tickers(db: Session, project_id: int) -> List[str]:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 async def save_dcf_snapshot(db: Session, project_id: int, **kwargs) -> ProjectDCFSnapshot:
-    # Auto-increment version
+    # Auto-increment version (with_for_update prevents concurrent duplicate versions)
     max_v = (
         db.query(sqla_func.max(ProjectDCFSnapshot.version))
         .filter(ProjectDCFSnapshot.project_id == project_id)
+        .with_for_update()
         .scalar()
     ) or 0
 

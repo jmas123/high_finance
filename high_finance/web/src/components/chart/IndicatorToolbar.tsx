@@ -352,8 +352,8 @@ function MACDSettings({
 const styles: Record<string, React.CSSProperties> = {
   container: {
     position: "absolute",
-    right: 8,
-    top: 50,
+    left: 8,
+    top: 8,
     background: "#1a1a1a",
     border: "1px solid #333",
     borderRadius: 8,

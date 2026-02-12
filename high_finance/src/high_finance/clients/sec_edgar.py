@@ -6,7 +6,7 @@ class SECClient:
     BASE_URL = "https://www.sec.gov/edgar"
 
     def __init__(self):
-        self.client = AsyncClient()
+        self.client = AsyncClient(timeout=30.0)
 
     async def fetch_company_filings(self, cik: str) -> List[Dict[str, Any]]:
         url = f"{self.BASE_URL}/cgi-bin/browse-edgar?action=getcompany&cik={cik}&output=atom"

@@ -24,6 +24,7 @@ Peer Groups:
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
@@ -91,7 +92,14 @@ async def add_to_watchlist(
         name=data.name,
     )
     db.add(item)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"{ticker} is already in your watchlist",
+        )
     db.refresh(item)
     return item
 
@@ -149,7 +157,7 @@ async def add_or_update_position(
     """
     ticker = data.ticker.upper()
 
-    existing = db.query(PortfolioPosition).filter(
+    existing = db.query(PortfolioPosition).with_for_update().filter(
         PortfolioPosition.user_id == user.id,
         PortfolioPosition.ticker == ticker,
     ).first()
@@ -174,7 +182,30 @@ async def add_or_update_position(
             avg_cost=data.avg_cost,
         )
         db.add(position)
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            # Race condition: another request already inserted this ticker.
+            # Re-read and average in instead.
+            existing = db.query(PortfolioPosition).filter(
+                PortfolioPosition.user_id == user.id,
+                PortfolioPosition.ticker == ticker,
+            ).first()
+            if existing:
+                old_total = existing.shares * existing.avg_cost
+                new_total = data.shares * data.avg_cost
+                existing.shares += data.shares
+                existing.avg_cost = (old_total + new_total) / existing.shares
+                if data.name:
+                    existing.name = data.name
+                db.commit()
+                db.refresh(existing)
+                return existing
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Unexpected error adding portfolio position",
+            )
         db.refresh(position)
         return position
 
@@ -338,7 +369,14 @@ async def create_peer_group(
         is_default=data.is_default,
     )
     db.add(group)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"A peer group named '{data.name}' already exists",
+        )
     db.refresh(group)
     return group
 
@@ -403,7 +441,14 @@ async def update_peer_group(
             ).update({"is_default": False})
         group.is_default = data.is_default
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"A peer group named '{data.name}' already exists or default conflict",
+        )
     db.refresh(group)
     return group
 

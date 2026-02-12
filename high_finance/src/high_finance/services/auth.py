@@ -12,6 +12,8 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+from sqlalchemy import case, func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from high_finance.core.security import get_password_hash, verify_password
@@ -35,7 +37,7 @@ async def get_user_by_id(db: Session, user_id: str) -> Optional[User]:
     return db.query(User).filter(User.id == user_id).first()
 
 
-async def create_user(db: Session, email: str, password: str) -> User:
+async def create_user(db: Session, email: str, password: str) -> Optional[User]:
     """
     Create a new user with hashed password.
 
@@ -45,12 +47,16 @@ async def create_user(db: Session, email: str, password: str) -> User:
         password: Plain text password (will be hashed)
 
     Returns:
-        The created User object
+        The created User object, or None if email already exists (race condition).
     """
     password_hash = get_password_hash(password)
     user = User(email=email, password_hash=password_hash)
     db.add(user)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        return None
     db.refresh(user)
     return user
 
@@ -63,10 +69,22 @@ def _is_account_locked(user: User) -> bool:
 
 
 def _record_failed_attempt(db: Session, user: User) -> None:
-    """Increment failed login counter; lock account after MAX_FAILED_ATTEMPTS."""
-    user.failed_login_attempts = (user.failed_login_attempts or 0) + 1
-    if user.failed_login_attempts >= MAX_FAILED_ATTEMPTS:
-        user.locked_until = datetime.now(timezone.utc) + LOCKOUT_DURATION
+    """Increment failed login counter atomically; lock account after MAX_FAILED_ATTEMPTS."""
+    lock_time = datetime.now(timezone.utc) + LOCKOUT_DURATION
+
+    # Atomic SQL increment prevents concurrent logins from losing counts
+    db.query(User).filter(User.id == user.id).update(
+        {
+            User.failed_login_attempts: (
+                func.coalesce(User.failed_login_attempts, 0) + 1
+            ),
+            User.locked_until: case(
+                (func.coalesce(User.failed_login_attempts, 0) + 1 >= MAX_FAILED_ATTEMPTS, lock_time),
+                else_=User.locked_until,
+            ),
+        },
+        synchronize_session="fetch",
+    )
     db.commit()
 
 

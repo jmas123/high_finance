@@ -143,7 +143,7 @@ export function LandingPage({ onOpenAuth }: LandingPageProps) {
               cursor: "pointer",
             }}
           >
-            Try It
+            Continue as Guest
           </button>
           <button
             onClick={onOpenAuth}
@@ -296,7 +296,7 @@ export function LandingPage({ onOpenAuth }: LandingPageProps) {
               cursor: "pointer",
             }}
           >
-            Try it
+            Continue as Guest
           </button>
           <button
             onClick={onOpenAuth}

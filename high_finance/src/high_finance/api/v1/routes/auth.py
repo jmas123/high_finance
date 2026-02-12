@@ -50,8 +50,13 @@ async def register(request: Request, data: UserRegister, db: Session = Depends(g
             detail="Registration failed. Please try again or contact support.",
         )
 
-    # Create user
+    # Create user (may return None on race condition with duplicate email)
     user = await auth_svc.create_user(db, data.email, data.password)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Registration failed. Please try again or contact support.",
+        )
 
     # Generate token
     access_token = create_access_token(user.id)
