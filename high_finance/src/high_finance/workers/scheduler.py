@@ -22,9 +22,13 @@ import os
 import sys
 
 from redis import Redis
+from rq import Retry
 from rq_scheduler import Scheduler
 
 from high_finance.core.config import settings
+
+# Default retry: 3 attempts with escalating backoff (60s, 120s, 300s)
+DEFAULT_RETRY = Retry(max=3, interval=[60, 120, 300])
 
 # Configure logging
 logging.basicConfig(
@@ -57,6 +61,7 @@ def register_jobs(scheduler: Scheduler) -> None:
         id="congress_trades_scheduled",
         timeout=3600,  # 1 hour
         kwargs={"symbol": None, "limit": 500},
+        retry=DEFAULT_RETRY,
     )
     logger.info("Registered: congress_trades_scheduled (every 4 hours)")
 
@@ -69,6 +74,7 @@ def register_jobs(scheduler: Scheduler) -> None:
         func="high_finance.workers.tasks.refresh_screener_cache.refresh_screener_cache_market_job",
         id="screener_cache_open",
         timeout=1800,  # 30 minutes
+        retry=DEFAULT_RETRY,
     )
     logger.info("Registered: screener_cache_open (9:30 AM weekdays)")
 
@@ -77,6 +83,7 @@ def register_jobs(scheduler: Scheduler) -> None:
         func="high_finance.workers.tasks.refresh_screener_cache.refresh_screener_cache_market_job",
         id="screener_cache_intraday",
         timeout=1800,
+        retry=DEFAULT_RETRY,
     )
     logger.info("Registered: screener_cache_intraday (every 15 min 10 AM-4 PM)")
 
@@ -140,6 +147,7 @@ def register_jobs(scheduler: Scheduler) -> None:
         func="high_finance.workers.tasks.refresh_prices.refresh_prices_job",
         id="price_history_scheduled",
         timeout=3600,
+        retry=DEFAULT_RETRY,
     )
     logger.info("Registered: price_history_scheduled (daily 5 PM weekdays)")
 

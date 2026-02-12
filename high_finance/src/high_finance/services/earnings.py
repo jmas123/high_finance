@@ -1,9 +1,12 @@
 import asyncio
+import logging
 
 import yfinance as yf
 from datetime import timedelta
 from typing import List, Dict, Any, Optional, Tuple
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 from high_finance.core.cache import get_or_compute, fundamentals_ttl
 from high_finance.services.yf_cache import get_yf_info
@@ -138,8 +141,8 @@ def _fetch_earnings_calendar_sync(ticker: str, info: dict) -> Dict[str, Any]:
                         "surprise_pct": _round_or_none(surprise_pct, 2),
                     }
                 )
-    except Exception as e:
-        print(f"Error getting earnings calendar for {ticker}: {e}")
+    except Exception:
+        logger.exception("Error getting earnings calendar for %s", ticker)
 
     try:
         result["estimates"] = {
@@ -149,8 +152,8 @@ def _fetch_earnings_calendar_sync(ticker: str, info: dict) -> Dict[str, Any]:
             "earnings_growth": info.get("earningsGrowth"),
             "revenue_growth": info.get("revenueGrowth"),
         }
-    except Exception as e:
-        print(f"Error getting estimates for {ticker}: {e}")
+    except Exception:
+        logger.exception("Error getting estimates for %s", ticker)
 
     return result
 
@@ -160,7 +163,10 @@ async def get_earnings_calendar(ticker: str) -> Dict[str, Any]:
 
     async def _compute():
         info = await get_yf_info(ticker)
-        return await asyncio.to_thread(_fetch_earnings_calendar_sync, ticker, info)
+        return await asyncio.wait_for(
+            asyncio.to_thread(_fetch_earnings_calendar_sync, ticker, info),
+            timeout=15,
+        )
 
     return await get_or_compute(cache_key, fundamentals_ttl(), _compute)
 
@@ -213,13 +219,16 @@ def _fetch_earnings_history_with_moves_sync(ticker: str) -> List[Dict[str, Any]]
 
         return out
 
-    except Exception as e:
-        print(f"Error getting earnings history for {ticker}: {e}")
+    except Exception:
+        logger.exception("Error getting earnings history for %s", ticker)
         return []
 
 
 async def get_earnings_history_with_moves(ticker: str) -> List[Dict[str, Any]]:
-    return await asyncio.to_thread(_fetch_earnings_history_with_moves_sync, ticker)
+    return await asyncio.wait_for(
+        asyncio.to_thread(_fetch_earnings_history_with_moves_sync, ticker),
+        timeout=15,
+    )
 
 
 def _fetch_upcoming_earnings_sync(tickers: List[str], days_ahead: int = 14) -> List[Dict[str, Any]]:
@@ -260,8 +269,8 @@ def _fetch_upcoming_earnings_sync(tickers: List[str], days_ahead: int = 14) -> L
                     "days_until": (next_dt_naive.date() - now_naive.date()).days,
                 }
             )
-        except Exception as e:
-            print(f"Error getting upcoming earnings for {ticker}: {e}")
+        except Exception:
+            logger.exception("Error getting upcoming earnings for %s", ticker)
             continue
 
     results.sort(key=lambda x: x["date"])
@@ -269,4 +278,7 @@ def _fetch_upcoming_earnings_sync(tickers: List[str], days_ahead: int = 14) -> L
 
 
 async def get_upcoming_earnings(tickers: List[str], days_ahead: int = 14) -> List[Dict[str, Any]]:
-    return await asyncio.to_thread(_fetch_upcoming_earnings_sync, tickers, days_ahead)
+    return await asyncio.wait_for(
+        asyncio.to_thread(_fetch_upcoming_earnings_sync, tickers, days_ahead),
+        timeout=30,
+    )

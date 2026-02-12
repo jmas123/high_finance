@@ -1,15 +1,10 @@
 import asyncio
-import json
 import logging
-import time
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import yfinance as yf
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
-from sqlalchemy.orm import Session
 
-from high_finance.db.models.news_cache import NewsCache
 from high_finance.core.cache import get_or_compute, news_ttl
 
 logger = logging.getLogger(__name__)
@@ -57,50 +52,23 @@ def _fetch_yfinance_news_sync(ticker: str, limit: int) -> List[Dict[str, Any]]:
     return out
 
 
-async def _fetch_news(ticker: str, limit: int) -> List[Dict[str, Any]]:
-    return await asyncio.to_thread(_fetch_yfinance_news_sync, ticker, limit)
+async def get_news_bundle(ticker: str, limit: int = 20) -> Dict[str, Any]:
+    """Get news bundle with sentiment, cached via Redis SETNX lock."""
+    cache_key = f"hf:news:{ticker}"
 
+    async def _compute():
+        headlines = await asyncio.wait_for(
+            asyncio.to_thread(_fetch_yfinance_news_sync, ticker, limit),
+            timeout=15,
+        )
+        comps = [h["sentiment"]["compound"] for h in headlines if h.get("sentiment")]
+        avg = round(sum(comps) / len(comps), 3) if comps else None
+        return {
+            "ticker": ticker,
+            "avg_headline_sentiment": avg,
+            "headlines": headlines,
+            "filings": [],
+            "x_posts": [],
+        }
 
-def _get_cached(db: Session, ticker: str, ttl_seconds: int) -> Optional[Dict[str, Any]]:
-    row = db.get(NewsCache, ticker)
-    if not row:
-        return None
-    age = int(time.time()) - int(row.as_of_epoch)
-    if age > ttl_seconds:
-        return None
-    return json.loads(row.payload_json)
-
-
-def _set_cached(db: Session, ticker: str, payload: Dict[str, Any]) -> None:
-    row = db.get(NewsCache, ticker)
-    if row is None:
-        row = NewsCache(ticker=ticker, as_of_epoch=int(time.time()), payload_json=json.dumps(payload))
-        db.add(row)
-    else:
-        row.as_of_epoch = int(time.time())
-        row.payload_json = json.dumps(payload)
-
-
-async def get_news_bundle(
-    db: Session, ticker: str, limit: int = 20, ttl_seconds: int = 900
-) -> Dict[str, Any]:
-    cached = _get_cached(db, ticker, ttl_seconds)
-    if cached:
-        return cached
-
-    headlines = await _fetch_news(ticker, limit=limit)
-
-    comps = [h["sentiment"]["compound"] for h in headlines if h.get("sentiment")]
-    avg = round(sum(comps) / len(comps), 3) if comps else None
-
-    payload = {
-        "ticker": ticker,
-        "avg_headline_sentiment": avg,
-        "headlines": headlines,
-        "filings": [],   # wire in Step 6
-        "x_posts": [],   # phase 2
-    }
-
-    _set_cached(db, ticker, payload)
-    db.commit()
-    return payload
+    return await get_or_compute(cache_key, news_ttl(), _compute)

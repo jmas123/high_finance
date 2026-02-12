@@ -1,9 +1,12 @@
 import asyncio
+import logging
 
 import yfinance as yf
 from typing import Dict, Any, List
 from datetime import datetime
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 from high_finance.core.cache import get_or_compute, options_ttl
 from high_finance.services.yf_cache import get_yf_info
@@ -81,10 +84,8 @@ def _fetch_options_overview_sync(ticker: str, info: dict) -> Dict[str, Any]:
         # Calculate IV percentile (simplified - compare current IV to recent)
         result["iv_percentile"] = calculate_iv_percentile(stock)
         
-    except Exception as e:
-        print(f"Error getting options overview: {e}")
-        import traceback
-        traceback.print_exc()
+    except Exception:
+        logger.exception("Error getting options overview for %s", ticker)
     
     return result
 
@@ -95,7 +96,10 @@ async def get_options_overview(ticker: str) -> Dict[str, Any]:
 
     async def _compute():
         info = await get_yf_info(ticker)
-        return await asyncio.to_thread(_fetch_options_overview_sync, ticker, info)
+        return await asyncio.wait_for(
+            asyncio.to_thread(_fetch_options_overview_sync, ticker, info),
+            timeout=15,
+        )
 
     return await get_or_compute(cache_key, options_ttl(), _compute)
 
@@ -137,8 +141,8 @@ def calculate_max_pain(calls: pd.DataFrame, puts: pd.DataFrame, current_price: f
                 max_pain_strike = strike
         
         return max_pain_strike
-    except Exception as e:
-        print(f"Error calculating max pain: {e}")
+    except Exception:
+        logger.exception("Error calculating max pain")
         return None
 
 
@@ -200,8 +204,8 @@ def find_unusual_activity(calls: pd.DataFrame, puts: pd.DataFrame, current_price
         
         return unusual[:10]  # Top 10 unusual
     
-    except Exception as e:
-        print(f"Error finding unusual activity: {e}")
+    except Exception:
+        logger.exception("Error finding unusual activity")
         return []
 
 
@@ -264,8 +268,8 @@ def analyze_expiry(calls: pd.DataFrame, puts: pd.DataFrame, expiry: str, current
             "strike_volume": strike_volume,
         }
     
-    except Exception as e:
-        print(f"Error analyzing expiry: {e}")
+    except Exception:
+        logger.exception("Error analyzing expiry")
         return None
 
 
@@ -295,8 +299,8 @@ def calculate_iv_percentile(stock) -> int:
         
         return int(percentile)
     
-    except Exception as e:
-        print(f"Error calculating IV percentile: {e}")
+    except Exception:
+        logger.exception("Error calculating IV percentile")
         return None
 
 
@@ -327,11 +331,14 @@ def _fetch_options_chain_sync(ticker: str, expiry: str) -> Dict[str, Any]:
             "puts": puts,
         }
 
-    except Exception as e:
-        print(f"Error getting options chain: {e}")
+    except Exception:
+        logger.exception("Error getting options chain for %s %s", ticker, expiry)
         return {"ticker": ticker, "expiry": expiry, "calls": [], "puts": []}
 
 
 async def get_options_chain(ticker: str, expiry: str) -> Dict[str, Any]:
     """Get full options chain for a specific expiration."""
-    return await asyncio.to_thread(_fetch_options_chain_sync, ticker, expiry)
+    return await asyncio.wait_for(
+        asyncio.to_thread(_fetch_options_chain_sync, ticker, expiry),
+        timeout=15,
+    )

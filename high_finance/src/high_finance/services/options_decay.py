@@ -3,10 +3,13 @@ ENHANCED OPTION DECAY SIMULATOR WITH SMART IV
 """
 
 import asyncio
+import logging
 import math
 from scipy.stats import norm
 from typing import Dict, Any, List, Optional
 import yfinance as yf
+
+logger = logging.getLogger(__name__)
 import pandas as pd
 from datetime import datetime
 
@@ -295,8 +298,8 @@ def _fetch_iv_context_sync(ticker: str, info: dict) -> Dict[str, Any]:
             else:
                 result["suggested_iv"] = 0.30  # Ultimate fallback
                 
-    except Exception as e:
-        print(f"Error getting IV context: {e}")
+    except Exception:
+        logger.exception("Error getting IV context for %s", ticker)
     
     return result
 
@@ -307,7 +310,10 @@ async def get_iv_context(ticker: str) -> Dict[str, Any]:
 
     async def _compute():
         info = await get_yf_info(ticker)
-        return await asyncio.to_thread(_fetch_iv_context_sync, ticker, info)
+        return await asyncio.wait_for(
+            asyncio.to_thread(_fetch_iv_context_sync, ticker, info),
+            timeout=15,
+        )
 
     return await get_or_compute(cache_key, options_ttl(), _compute)
 
@@ -380,8 +386,9 @@ async def get_contract_iv(
     ticker: str, expiry: str, strike: float, option_type: str = 'call'
 ) -> Dict[str, Any]:
     """Get the implied volatility for a specific contract."""
-    return await asyncio.to_thread(
-        _fetch_contract_iv_sync, ticker, expiry, strike, option_type
+    return await asyncio.wait_for(
+        asyncio.to_thread(_fetch_contract_iv_sync, ticker, expiry, strike, option_type),
+        timeout=15,
     )
 
 
@@ -612,8 +619,9 @@ async def get_decay_simulation_for_contract(
 ) -> Dict[str, Any]:
     """Get decay simulation for a specific contract from the options chain."""
     info = await get_yf_info(ticker)
-    params = await asyncio.to_thread(
-        _fetch_contract_for_decay_sync, ticker, expiry, strike, option_type, info
+    params = await asyncio.wait_for(
+        asyncio.to_thread(_fetch_contract_for_decay_sync, ticker, expiry, strike, option_type, info),
+        timeout=15,
     )
 
     return await simulate_option_decay(

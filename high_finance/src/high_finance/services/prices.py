@@ -77,8 +77,9 @@ async def get_price_history(
     cache_key = f"hf:prices:{ticker}:{period}:{start}:{end}"
 
     async def _compute():
-        return await asyncio.to_thread(
-            _fetch_price_history_sync, ticker, period, start, end
+        return await asyncio.wait_for(
+            asyncio.to_thread(_fetch_price_history_sync, ticker, period, start, end),
+            timeout=15,
         )
 
     return await get_or_compute(cache_key, price_ttl(), _compute)

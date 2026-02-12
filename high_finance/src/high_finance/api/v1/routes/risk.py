@@ -7,7 +7,8 @@ Provides Monte Carlo simulations with probability-based outputs.
 import json
 import logging
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from high_finance.core.rate_limit import limiter
 from high_finance.core.security import get_current_user, User
 from high_finance.db.session import get_db
 from high_finance.db.models.memo import InvestmentMemo
@@ -20,7 +21,9 @@ router = APIRouter()
 
 
 @router.get("/{ticker}")
+@limiter.limit("10/minute")
 async def read_risk(
+    request: Request,
     ticker: str,
     period: str = Query(
         default="1y",

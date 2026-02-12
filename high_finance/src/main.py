@@ -93,12 +93,18 @@ async def lifespan(app: FastAPI):
         logger.exception("Fast seeds failed — API will start without seed data")
 
     yield
-    # Shutdown: clean up Redis connection
+    # Shutdown: clean up connections
     try:
         await close_redis()
         logger.info("Redis connection closed")
     except Exception:
         logger.warning("Failed to close Redis connection during shutdown", exc_info=True)
+    try:
+        from high_finance.services.search import close_search_client
+        await close_search_client()
+        logger.info("Search HTTP client closed")
+    except Exception:
+        logger.warning("Failed to close search HTTP client during shutdown", exc_info=True)
 
 
 app = FastAPI(
@@ -191,4 +197,33 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy"}
+    checks = {}
+
+    # Check Redis
+    try:
+        from high_finance.core.cache import get_redis
+        r = await get_redis()
+        await r.ping()
+        checks["redis"] = "ok"
+    except Exception:
+        checks["redis"] = "down"
+
+    # Check Database
+    try:
+        from high_finance.db.session import SessionLocal
+        from sqlalchemy import text
+        db = SessionLocal()
+        try:
+            db.execute(text("SELECT 1"))
+            checks["db"] = "ok"
+        finally:
+            db.close()
+    except Exception:
+        checks["db"] = "down"
+
+    all_ok = all(v == "ok" for v in checks.values())
+    status_code = 200 if all_ok else 503
+    return JSONResponse(
+        {"status": "healthy" if all_ok else "degraded", **checks},
+        status_code=status_code,
+    )

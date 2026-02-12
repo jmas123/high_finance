@@ -308,7 +308,7 @@ export function BacktestDetailCard() {
     <div>
       {/* Back link */}
       <button
-        onClick={() => navigate("/congress")}
+        onClick={() => navigate(-1)}
         style={{
           background: "none",
           border: "none",
@@ -379,7 +379,7 @@ export function BacktestDetailCard() {
           </div>
 
           {/* Controls */}
-          <div style={{ display: "flex", gap: 16, marginBottom: 16, alignItems: "center" }}>
+          <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 16, alignItems: "center" }}>
             <div>
               <div style={{ fontSize: 10, color: "#666", marginBottom: 4, textTransform: "uppercase" }}>
                 Copy Delay
@@ -574,7 +574,7 @@ export function BacktestDetailCard() {
                   </div>
                   <div style={{ fontSize: 14, fontWeight: 600 }}>
                     {s.best_trade.ticker}{" "}
-                    <span style={{ color: "#22c55e" }}>+{s.best_trade.return_pct.toFixed(1)}%</span>
+                    <span style={{ color: "#22c55e" }}>{s.best_trade.return_pct > 0 ? "+" : ""}{s.best_trade.return_pct.toFixed(1)}%</span>
                   </div>
                   <div style={{ fontSize: 11, color: "#888" }}>
                     {s.best_trade.entry_date} → {s.best_trade.exit_date}
@@ -595,7 +595,7 @@ export function BacktestDetailCard() {
                   </div>
                   <div style={{ fontSize: 14, fontWeight: 600 }}>
                     {s.worst_trade.ticker}{" "}
-                    <span style={{ color: "#ef4444" }}>{s.worst_trade.return_pct.toFixed(1)}%</span>
+                    <span style={{ color: "#ef4444" }}>{s.worst_trade.return_pct > 0 ? "+" : ""}{s.worst_trade.return_pct.toFixed(1)}%</span>
                   </div>
                   <div style={{ fontSize: 11, color: "#888" }}>
                     {s.worst_trade.entry_date} → {s.worst_trade.exit_date}

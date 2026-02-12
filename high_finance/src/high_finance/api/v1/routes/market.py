@@ -3,17 +3,23 @@ Market Context API Routes
 Provides endpoints for macro indicators, sector performance, and rate impact analysis.
 """
 
-from fastapi import APIRouter, Query, HTTPException
+import logging
+
+from fastapi import APIRouter, Query, HTTPException, Request
 from typing import Optional
 
+from high_finance.core.rate_limit import limiter
 from high_finance.services.market import market_service, MarketBreadth
+
+logger = logging.getLogger(__name__)
 
 
 router = APIRouter()
 
 
 @router.get("/macro-indicators")
-async def get_macro_indicators():
+@limiter.limit("10/minute")
+async def get_macro_indicators(request: Request):
     """
     Get key macro economic indicators including Fed rates, Treasury yields,
     inflation metrics, and volatility indices.
@@ -24,7 +30,8 @@ async def get_macro_indicators():
 
 
 @router.get("/sectors")
-async def get_sector_performance():
+@limiter.limit("10/minute")
+async def get_sector_performance(request: Request):
     """
     Get performance data for all S&P 500 sectors including
     daily, weekly, monthly, and YTD returns.
@@ -47,13 +54,16 @@ async def get_sector_performance():
                 "unchanged": sum(1 for s in sectors if s.performance_1d == 0),
             },
         }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Sector performance fetch failed")
+        raise HTTPException(status_code=500, detail="Unable to load sector data")
 
 
 @router.get("/rate-impact")
+@limiter.limit("10/minute")
 async def get_rate_impact(
-    sector: Optional[str] = Query(None, description="Filter by specific sector")
+    request: Request,
+    sector: Optional[str] = Query(None, description="Filter by specific sector"),
 ):
     """
     Get analysis of how Fed rate changes impact different market sectors.
@@ -81,12 +91,14 @@ async def get_rate_impact(
                 a.sector for a in analyses if a.impact_direction == "negative"
             ],
         }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Rate impact analysis failed")
+        raise HTTPException(status_code=500, detail="Unable to load rate impact data")
 
 
 @router.get("/rate-impact/{ticker}")
-async def get_stock_rate_impact(ticker: str):
+@limiter.limit("10/minute")
+async def get_stock_rate_impact(request: Request, ticker: str):
     """
     Get rate sensitivity analysis for a specific stock.
     """
@@ -100,12 +112,14 @@ async def get_stock_rate_impact(ticker: str):
         return analysis.model_dump()
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Stock rate impact failed for %s", ticker)
+        raise HTTPException(status_code=500, detail="Unable to load rate sensitivity data")
 
 
 @router.get("/breadth")
-async def get_market_breadth():
+@limiter.limit("10/minute")
+async def get_market_breadth(request: Request):
     """
     Get market breadth indicators including advance/decline,
     new highs/lows, and technical indicators.
@@ -132,12 +146,14 @@ async def get_market_breadth():
                 breadth.advancing / max(breadth.declining, 1), 2
             ),
         }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Market breadth fetch failed")
+        raise HTTPException(status_code=500, detail="Unable to load market breadth data")
 
 
 @router.get("/context/{ticker}")
-async def get_market_context_for_stock(ticker: str):
+@limiter.limit("10/minute")
+async def get_market_context_for_stock(request: Request, ticker: str):
     """
     Get comprehensive market context relevant to a specific stock,
     including sector performance and rate sensitivity.
@@ -179,8 +195,9 @@ async def get_market_context_for_stock(ticker: str):
                 ticker, stock_sector, rate_analysis, sector_data, breadth
             ),
         }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Market context fetch failed for %s", ticker)
+        raise HTTPException(status_code=500, detail="Unable to load market context")
 
 
 def _generate_contextual_insight(

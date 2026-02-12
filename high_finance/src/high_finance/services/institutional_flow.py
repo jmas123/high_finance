@@ -77,7 +77,10 @@ async def get_institutional_holders(ticker: str) -> List[Dict[str, Any]]:
     """Get current institutional holders."""
     info = await get_yf_info(ticker)
     shares_outstanding = info.get('sharesOutstanding', None)
-    return await asyncio.to_thread(_fetch_institutional_holders_sync, ticker, shares_outstanding)
+    return await asyncio.wait_for(
+        asyncio.to_thread(_fetch_institutional_holders_sync, ticker, shares_outstanding),
+        timeout=15,
+    )
 
 
 def _fetch_mutual_fund_holders_sync(ticker: str, shares_outstanding) -> List[Dict[str, Any]]:
@@ -89,7 +92,10 @@ async def get_mutual_fund_holders(ticker: str) -> List[Dict[str, Any]]:
     """Get mutual fund holders."""
     info = await get_yf_info(ticker)
     shares_outstanding = info.get('sharesOutstanding', None)
-    return await asyncio.to_thread(_fetch_mutual_fund_holders_sync, ticker, shares_outstanding)
+    return await asyncio.wait_for(
+        asyncio.to_thread(_fetch_mutual_fund_holders_sync, ticker, shares_outstanding),
+        timeout=15,
+    )
 
 
 async def get_institutional_flow(ticker: str) -> Dict[str, Any]:
@@ -102,7 +108,10 @@ async def get_institutional_flow(ticker: str) -> Dict[str, Any]:
     async def _compute():
         # Pre-fetch info from shared cache (avoids duplicate .info HTTP call)
         info = await get_yf_info(ticker)
-        raw = await asyncio.to_thread(_fetch_institutional_flow_sync, ticker, info)
+        raw = await asyncio.wait_for(
+            asyncio.to_thread(_fetch_institutional_flow_sync, ticker, info),
+            timeout=15,
+        )
         institutional = raw["institutional"]
         mutual_funds = raw["mutual_funds"]
         info_summary = raw["info"]

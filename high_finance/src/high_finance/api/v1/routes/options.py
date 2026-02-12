@@ -1,7 +1,8 @@
 import logging
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 
+from high_finance.core.rate_limit import limiter
 from high_finance.services.options_flow import get_options_overview, get_options_chain
 from high_finance.services.options_decay import simulate_option_decay, get_decay_simulation_for_contract, get_iv_context, get_contract_iv
 
@@ -11,7 +12,8 @@ router = APIRouter()
 
 
 @router.get("/{ticker}")
-async def read_options_overview(ticker: str):
+@limiter.limit("10/minute")
+async def read_options_overview(request: Request, ticker: str):
     """Get options overview with unusual activity detection."""
     data = await get_options_overview(ticker.upper())
     return data

@@ -8,9 +8,12 @@ Provides meaningful Monte Carlo outputs:
 - Optional earnings volatility shock injection
 """
 
+import logging
 import math
 import numpy as np
 from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 
 from high_finance.services.prices import get_price_history
 from high_finance.services.earnings import get_earnings_history_with_moves
@@ -214,8 +217,8 @@ async def _get_earnings_volatility_params(ticker: str) -> Optional[Dict[str, Any
             # Estimate vol multiplier: avg daily vol is ~1-2%, earnings moves are typically 3-8%
             "implied_vol_multiplier": float(avg_move / 0.015) if avg_move > 0 else 3.0,
         }
-    except Exception as e:
-        print(f"Error getting earnings volatility for {ticker}: {e}")
+    except Exception:
+        logger.exception("Error getting earnings volatility for %s", ticker)
         return None
 
 

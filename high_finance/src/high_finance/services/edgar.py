@@ -1,7 +1,12 @@
+import asyncio
+import logging
 from typing import Any, Dict, List
+
 import httpx
 import yfinance as yf
 from fastapi import HTTPException
+
+logger = logging.getLogger(__name__)
 
 SEC_EDGAR_BASE_URL = "https://www.sec.gov/edgar"
 
@@ -21,27 +26,28 @@ async def get_company_filings(cik: str) -> Any:
     data = await fetch_company_filings(cik)
     return parse_filings_data(data)
 
-async def get_ownership_data(ticker: str, db) -> List[Dict[str, Any]]:
-    """Get institutional ownership data for a ticker."""
+
+def _get_ownership_data_sync(ticker: str) -> List[Dict[str, Any]]:
+    """Blocking yfinance call — runs in thread pool."""
     stock = yf.Ticker(ticker)
-    
+
     holders = stock.institutional_holders
-    
+
     if holders is None or holders.empty:
         return []
-    
+
     # Get shares outstanding to calculate percentage
     shares_outstanding = stock.info.get("sharesOutstanding", None)
-    
+
     result = []
     for _, row in holders.iterrows():
         shares = int(row.get("Shares", 0)) if row.get("Shares") else 0
-        
+
         # Calculate percent if we have shares outstanding
         percent_out = None
         if shares_outstanding and shares:
             percent_out = shares / shares_outstanding
-        
+
         result.append({
             "holder": row.get("Holder"),
             "shares": shares,
@@ -49,5 +55,13 @@ async def get_ownership_data(ticker: str, db) -> List[Dict[str, Any]]:
             "percent_out": percent_out,
             "value": int(row.get("Value", 0)) if row.get("Value") else None,
         })
-    
+
     return result
+
+
+async def get_ownership_data(ticker: str, db) -> List[Dict[str, Any]]:
+    """Get institutional ownership data for a ticker."""
+    return await asyncio.wait_for(
+        asyncio.to_thread(_get_ownership_data_sync, ticker),
+        timeout=15,
+    )

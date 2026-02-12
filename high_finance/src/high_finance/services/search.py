@@ -16,6 +16,11 @@ _client = httpx.AsyncClient(
 _SEARCH_URL = "https://query1.finance.yahoo.com/v1/finance/search"
 
 
+async def close_search_client() -> None:
+    """Close the module-level httpx client (call on shutdown)."""
+    await _client.aclose()
+
+
 async def search_tickers(query: str) -> List[Dict[str, Any]]:
     """Search for tickers by company name or symbol."""
     if not query or len(query) > 100:

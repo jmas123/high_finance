@@ -8,9 +8,12 @@ Gathers events from multiple sources for the calendar popup:
 """
 
 import asyncio
+import logging
 from datetime import date, datetime, timedelta
 from typing import List, Optional, Dict, Any
 import yfinance as yf
+
+logger = logging.getLogger(__name__)
 import pandas as pd
 from sqlalchemy.orm import Session
 from sqlalchemy import select, and_
@@ -70,7 +73,10 @@ async def _get_earnings_dates_cached(ticker: str) -> List[dict]:
     cache_key = f"hf:earnings_dates:{ticker}"
 
     async def _compute():
-        return await asyncio.to_thread(_fetch_earnings_dates_sync, ticker)
+        return await asyncio.wait_for(
+            asyncio.to_thread(_fetch_earnings_dates_sync, ticker),
+            timeout=15,
+        )
 
     return await get_or_compute(cache_key, trades_ttl(), _compute)
 
@@ -120,8 +126,8 @@ async def get_earnings_events(
                     description=f"EPS estimate: ${eps_estimate:.2f}" if eps_estimate else None,
                     metadata={"eps_estimate": eps_estimate} if eps_estimate else None,
                 ))
-        except Exception as e:
-            print(f"Error fetching earnings for {ticker}: {e}")
+        except Exception:
+            logger.exception("Error fetching earnings for %s", ticker)
             continue
 
     return events
@@ -169,8 +175,8 @@ async def get_dividend_events(
                 description=f"${dividend_rate:.2f}/share" if dividend_rate else None,
                 metadata={"dividend_rate": dividend_rate} if dividend_rate else None,
             ))
-        except Exception as e:
-            print(f"Error fetching dividend for {ticker}: {e}")
+        except Exception:
+            logger.exception("Error fetching dividend for %s", ticker)
             continue
 
     return events
@@ -226,8 +232,8 @@ async def get_catalyst_events(
                     "project_id": cat.project_id,
                 },
             ))
-    except Exception as e:
-        print(f"Error fetching catalysts: {e}")
+    except Exception:
+        logger.exception("Error fetching catalysts")
 
     return events
 

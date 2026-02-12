@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect, useRef, useMemo } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../../lib/api";
 import type { LeaderboardEntry, LeaderboardResponse } from "../../lib/types";
 import { thBase, tdBase, right } from "../../lib/types";
@@ -54,24 +54,62 @@ function historyMonths(first: string | null | undefined, last: string | null | u
 }
 
 const SHORT_HISTORY_MONTHS = 24;
+const VALID_SORT_KEYS = new Set<string>([
+  "politician_name", "num_trades_priced", "win_rate", "total_return_pct",
+  "avg_return_per_trade_pct", "annualized_return_pct", "alpha_pct",
+  "max_drawdown_pct", "grade",
+]);
 
 export function CongressLeaderboard() {
   const isMobile = useIsMobile();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
-  const [delayDays, setDelayDays] = useState(3);
-  const [holdDays, setHoldDays] = useState(30);
-  const [chamber, setChamber] = useState("");
-  const [party, setParty] = useState("");
-  const [sinceYear, setSinceYear] = useState(2020);
+  // Initialize state from URL params — preserves filters across navigation
+  const [delayDays, setDelayDays] = useState(() => {
+    const v = Number(searchParams.get("delay"));
+    return DELAY_OPTIONS.includes(v) ? v : 3;
+  });
+  const [holdDays, setHoldDays] = useState(() => {
+    const v = Number(searchParams.get("hold"));
+    return HOLD_OPTIONS.includes(v) ? v : 30;
+  });
+  const [chamber, setChamber] = useState(() => {
+    const v = searchParams.get("chamber") ?? "";
+    return CHAMBER_OPTIONS.includes(v) ? v : "";
+  });
+  const [party, setParty] = useState(() => {
+    const v = searchParams.get("party") ?? "";
+    return PARTY_OPTIONS.includes(v) ? v : "";
+  });
+  const [sinceYear, setSinceYear] = useState(() => {
+    const v = Number(searchParams.get("year"));
+    return YEAR_OPTIONS.includes(v) ? v : 2020;
+  });
 
   const [data, setData] = useState<LeaderboardResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [sortKey, setSortKey] = useState<SortKey>("total_return_pct");
-  const [sortAsc, setSortAsc] = useState(false);
+  const [sortKey, setSortKey] = useState<SortKey>(() => {
+    const v = searchParams.get("sort");
+    return v && VALID_SORT_KEYS.has(v) ? (v as SortKey) : "total_return_pct";
+  });
+  const [sortAsc, setSortAsc] = useState(() => searchParams.get("asc") === "1");
   const abortRef = useRef<AbortController | null>(null);
+
+  // Sync state → URL (replace so we don't pollute history)
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (delayDays !== 3) params.set("delay", String(delayDays));
+    if (holdDays !== 30) params.set("hold", String(holdDays));
+    if (chamber) params.set("chamber", chamber);
+    if (party) params.set("party", party);
+    if (sinceYear !== 2020) params.set("year", String(sinceYear));
+    if (sortKey !== "total_return_pct") params.set("sort", sortKey);
+    if (sortAsc) params.set("asc", "1");
+    setSearchParams(params, { replace: true });
+  }, [delayDays, holdDays, chamber, party, sinceYear, sortKey, sortAsc, setSearchParams]);
 
   useEffect(() => {
     abortRef.current?.abort();
@@ -109,13 +147,13 @@ export function CongressLeaderboard() {
   };
 
   // Client-side filtering for chamber/party (avoids separate cache keys per combo)
-  const filtered = data?.entries.filter((e) => {
+  const filtered = useMemo(() => data?.entries.filter((e) => {
     if (chamber && !(e.chamber ?? "").toLowerCase().includes(chamber.toLowerCase())) return false;
     if (party && !(e.party ?? "").toLowerCase().includes(party.toLowerCase())) return false;
     return true;
-  }) ?? [];
+  }) ?? [], [data, chamber, party]);
 
-  const sorted = [...filtered].sort((a, b) => {
+  const sorted = useMemo(() => [...filtered].sort((a, b) => {
     const av = a[sortKey];
     const bv = b[sortKey];
     if (av == null && bv == null) return 0;
@@ -123,7 +161,7 @@ export function CongressLeaderboard() {
     if (bv == null) return -1;
     const cmp = av < bv ? -1 : av > bv ? 1 : 0;
     return sortAsc ? cmp : -cmp;
-  });
+  }), [filtered, sortKey, sortAsc]);
 
   const pillStyle = (active: boolean): React.CSSProperties => ({
     padding: "5px 12px",
@@ -166,7 +204,7 @@ export function CongressLeaderboard() {
             {DELAY_OPTIONS.map((d) => (
               <button
                 key={d}
-                onClick={() => setDelayDays(delayDays === d ? 3 : d)}
+                onClick={() => setDelayDays(d)}
                 style={pillStyle(delayDays === d)}
               >
                 {d}d
@@ -184,7 +222,7 @@ export function CongressLeaderboard() {
             {HOLD_OPTIONS.map((h) => (
               <button
                 key={h}
-                onClick={() => setHoldDays(holdDays === h ? 30 : h)}
+                onClick={() => setHoldDays(h)}
                 style={pillStyle(holdDays === h)}
               >
                 {h}d
