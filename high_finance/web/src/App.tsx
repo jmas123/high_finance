@@ -741,7 +741,7 @@ function TickerView() {
     company, fundamentals, prices, leadership, financials, comps,
     riskData, valuationData, institutionalFlow, insiderSummary,
     politicianTrades, optionsOverview, ivContext, earningsData, newsData,
-    predictionData, loading, error, dataWarnings,
+  /*prediction data*/ loading, error, dataWarnings,
   } = state;
 
   const [showAddPosition, setShowAddPosition] = useState(false);
