@@ -249,7 +249,6 @@ def run_backtest_sync(
     all_position_returns: list[float] = []  # flat list of every position return
     skip_reasons = {"no_entry_price": 0, "no_exit_price": 0, "invalid_return": 0, "no_price_data": 0}
     spy_start_price: Optional[float] = None
-    spy_portfolio_value = starting_capital  # SPY benchmark compounded per-cohort
     first_entry_date: Optional[date] = None
     last_exit_date: Optional[date] = None
     num_positions_priced = 0
@@ -258,8 +257,6 @@ def run_backtest_sync(
     # overlap in time. Without this, we'd compound serially what happens
     # concurrently — inflating returns by N× (where N ≈ average concurrency).
     active_cohort_exits: list[date] = []
-    spy_active_exits: list[date] = []  # Mirror for SPY benchmark concurrency
-
     for disc_date in sorted_cohort_dates:
         positions_in_cohort = cohorts[disc_date]
         position_returns: list[float] = []  # decimal returns for this cohort
@@ -331,21 +328,6 @@ def run_backtest_sync(
         allocation_fraction = 1.0 / num_concurrent
         portfolio_value *= (1 + cohort_return * allocation_fraction)
 
-        # SPY benchmark: compound SPY return over the same hold period
-        # with the same concurrency model — apples-to-apples alpha
-        spy_cohort_return = None
-        if spy_id:
-            _spy_entry = price_cache.get_close_on_or_after(spy_id, entry_date)
-            _spy_exit = price_cache.get_close_on_or_after(spy_id, exit_date)
-            if _spy_entry and _spy_exit and _spy_entry > 0:
-                spy_cohort_return = (_spy_exit / _spy_entry) - 1.0
-        if spy_cohort_return is not None:
-            spy_active_exits = [ed for ed in spy_active_exits if ed > entry_date]
-            spy_active_exits.append(exit_date)
-            spy_concurrent = len(spy_active_exits)
-            spy_allocation = 1.0 / spy_concurrent
-            spy_portfolio_value *= (1 + spy_cohort_return * spy_allocation)
-
         # Track dates
         if first_entry_date is None:
             first_entry_date = entry_date
@@ -354,7 +336,7 @@ def run_backtest_sync(
         last_exit_date = exit_date
 
         # Build equity curve point (one per cohort)
-        # Equity curve still uses buy-and-hold SPY for visual comparison
+        # SPY uses buy-and-hold from first entry date (also used for alpha)
         spy_value_now = starting_capital
         if spy_id and spy_start_price and spy_start_price > 0:
             spy_now = price_cache.get_close_on_or_after(spy_id, exit_date)
@@ -407,9 +389,10 @@ def run_backtest_sync(
             sharpe = (mean_r / std_r) * math.sqrt(cohorts_per_year)
             sharpe = round(sharpe, 2)
 
-    # SPY return — computed per-cohort with same concurrency model for fair alpha
+    # SPY return — buy-and-hold from equity curve (matches the chart line)
+    spy_bh_final = equity_curve[-1]["spy_value"] if equity_curve else starting_capital
     spy_total_return_pct = round(
-        ((spy_portfolio_value / starting_capital) - 1) * 100, 2
+        ((spy_bh_final / starting_capital) - 1) * 100, 2
     ) if starting_capital > 0 else 0.0
 
     spy_annualized = None
