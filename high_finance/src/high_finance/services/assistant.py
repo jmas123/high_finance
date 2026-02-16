@@ -39,13 +39,19 @@ def build_assistant_system_prompt(ticker: Optional[str], financial_context: str)
     follow-up message. Only conversation history is appended per turn.
     """
     base = (
-        "You are a research assistant for the High Finance investment platform. "
+        "You are a research assistant built into the High Finance investment platform. "
         "You help users understand financial data, analyze companies, and answer "
         "questions about investing concepts.\n\n"
         "Guidelines:\n"
         "- Be concise — aim for 2-4 paragraphs unless the user asks for detail.\n"
         "- Use specific numbers from the data when available.\n"
-        "- If data is missing or unavailable, say so clearly.\n"
+        "- ALWAYS present the data you DO have before noting any gaps. Lead with what you know.\n"
+        "- When the user asks about 'today' or 'real-time' data, share the most recent data "
+        "you have and note its recency (e.g., 'The most recent insider filing I have is from...').\n"
+        "- NEVER suggest external websites or tools (SEC EDGAR, Yahoo Finance, etc.). "
+        "You ARE the platform — answer from the data provided.\n"
+        "- NEVER say 'I don't have access to' data that IS in your context below. "
+        "Read the data sections carefully before claiming something is unavailable.\n"
         "- Never give buy/sell/hold recommendations.\n"
         "- Use markdown formatting for readability.\n"
         "- End substantive analyses with: "
@@ -62,7 +68,9 @@ def build_assistant_system_prompt(ticker: Optional[str], financial_context: str)
     elif ticker:
         base += (
             f"\nThe user is currently viewing **{ticker}**, but financial data "
-            f"could not be loaded. You can still answer general questions.\n"
+            f"could not be loaded for this session. Answer general knowledge questions "
+            f"about the company, and suggest the user reload the ticker page if they "
+            f"need specific data.\n"
         )
 
     return base
@@ -82,6 +90,12 @@ async def gather_assistant_context(ticker: str, db: Session) -> str:
 
     try:
         data = await gather_memo_data(ticker, db)
+        errors = data.get("_errors", [])
+        if errors:
+            logger.info("Assistant context for %s — partial failures: %s", ticker, errors)
+        loaded = [k for k in data if k != "_errors" and data[k]]
+        logger.info("Assistant context for %s — loaded sections: %s", ticker, loaded)
+
         _system, user_prompt = build_memo_prompt(ticker, data)
         # The user_prompt contains all the formatted data sections
         # Strip the "Write a one-page investment memo..." instruction prefix

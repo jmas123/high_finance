@@ -64,7 +64,7 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile.worker
-    command: rq worker default --url ${REDIS_URL}
+    command: bash -c "python -m high_finance.workers.seed_on_startup && rq worker default --url ${REDIS_URL}"
     env_file:
       - .env
     environment:
