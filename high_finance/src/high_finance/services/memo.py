@@ -78,13 +78,13 @@ async def gather_memo_data(ticker: str, db: Session) -> Dict[str, Any]:
             local_db.close()
 
     await asyncio.gather(
-        fetch("fundamentals", get_company_fundamentals(ticker, db, fetch_peers=False)),
+        fetch("fundamentals", get_company_fundamentals(ticker, db, fetch_peers=True)),
         fetch("financials", get_financial_statements(ticker)),
         fetch("valuation", get_valuation_bundle(ticker)),
         fetch("risk", get_risk_bundle(ticker, period="1y", horizon_days=60, n_sims=500)),
         fetch("institutional", get_institutional_flow(ticker)),
         fetch("insider", get_insider_summary(ticker)),
-        fetch("news", get_news_bundle(db, ticker, limit=10)),
+        fetch("news", get_news_bundle(ticker, limit=10)),
         fetch("options", get_options_overview(ticker)),
         asyncio.to_thread(fetch_politician_trades) if False else fetch_politician_trades(),
         return_exceptions=True,
@@ -166,6 +166,40 @@ def build_memo_prompt(ticker: str, data: Dict[str, Any]) -> tuple[str, str]:
             f"- 52W Range: {_fmt_num(target.get('fifty_two_week_low'), '$')} – "
             f"{_fmt_num(target.get('fifty_two_week_high'), '$')}"
         )
+
+        # ── Peer Comparison (only if peers were fetched) ──────────────────
+        peers = f.get("peers", [])
+        stats = f.get("statistics", {})
+        implied = f.get("implied_prices", {})
+        if peers:
+            lines = [f"## Peer Comparison ({len(peers)} peers)"]
+            for p in peers[:6]:
+                name = p.get("name") or p.get("ticker", "?")
+                lines.append(
+                    f"  - {name}: P/E {_fmt_ratio(p.get('pe_ratio'))} | "
+                    f"Fwd P/E {_fmt_ratio(p.get('forward_pe'))} | "
+                    f"EV/EBITDA {_fmt_ratio(p.get('ev_to_ebitda'))} | "
+                    f"Margin {_fmt_pct(p.get('profit_margin'), 100)}"
+                )
+            # Peer median stats
+            pe_stats = stats.get("pe_ratio", {})
+            eveb_stats = stats.get("ev_to_ebitda", {})
+            if pe_stats.get("median") or eveb_stats.get("median"):
+                lines.append(
+                    f"- Peer Median: P/E {_fmt_ratio(pe_stats.get('median'))} | "
+                    f"EV/EBITDA {_fmt_ratio(eveb_stats.get('median'))}"
+                )
+            # Implied prices from peer multiples
+            imp_parts = []
+            for metric, label in [("pe_ratio", "P/E"), ("forward_pe", "Fwd P/E"),
+                                  ("ev_to_ebitda", "EV/EBITDA")]:
+                val = implied.get(metric)
+                if val:
+                    imp_parts.append(f"{label}: {_fmt_num(val, '$')}")
+            if imp_parts:
+                lines.append(f"- Implied Price (peer multiples): {' | '.join(imp_parts)}")
+            sections.append("\n".join(lines))
+
     # ── Financial Snapshot ───────────────────────────────────────────────
     fin = data.get("financials")
     if fin and isinstance(fin, dict):

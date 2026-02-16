@@ -98,6 +98,10 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { TickerPageSkeleton, CardSkeleton, ChartSkeleton } from "./components/Skeleton";
 import { LandingPage } from "./components/LandingPage";
 
+// ── AI Research Assistant ──────────────────────────────────────────────────
+import { useAssistant } from "./hooks/useAssistant";
+import { AssistantOverlay } from "./components/AssistantOverlay";
+
 // ── Private Companies ─────────────────────────────────────────────────────
 import { PrivateCompanyList } from "./components/private/PrivateCompanyList";
 import { PrivateCompanyProfileView } from "./components/private/PrivateCompanyProfile";
@@ -256,6 +260,35 @@ export default function App() {
   const isMobile = useIsMobile();
   const isLargeScreen = useIsLargeScreen();
 
+  // ── AI Research Assistant ─────────────────────────────────────────────────
+  const assistant = useAssistant();
+
+  // Cmd+K / Ctrl+K keyboard shortcut to toggle assistant
+  useEffect(() => {
+    if (!assistant.isAvailable) return;
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        // Close auth modal if open, then toggle assistant
+        if (showAuthModal) setShowAuthModal(false);
+        assistant.toggle();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [assistant.isAvailable, assistant.toggle, showAuthModal]);
+
+  // Close assistant when auth modal opens
+  useEffect(() => {
+    if (showAuthModal && assistant.isOpen) {
+      assistant.close();
+    }
+  }, [showAuthModal, assistant.isOpen, assistant.close]);
+
+  // Derive current ticker from URL
+  const tickerMatch = location.pathname.match(/^\/quote\/([A-Z0-9.\-]+)/i);
+  const currentTicker = tickerMatch ? tickerMatch[1].toUpperCase() : null;
+
   // Determine active tab from current route
   const getActiveTab = () => {
     if (location.pathname.startsWith("/quote/")) return "ticker";
@@ -383,6 +416,48 @@ export default function App() {
 
       {/* Auth Modal */}
       <AuthModal isOpen={showAuthModal} onClose={() => { setShowAuthModal(false); clearSessionExpired(); }} />
+
+      {/* AI Research Assistant Overlay */}
+      {assistant.isAvailable && (
+        <AssistantOverlay
+          isOpen={assistant.isOpen}
+          onClose={assistant.close}
+          messages={assistant.messages}
+          isStreaming={assistant.isStreaming}
+          error={assistant.error}
+          currentTicker={currentTicker}
+          onSend={(query) => assistant.sendQuery(query, currentTicker)}
+          onClear={assistant.clearMessages}
+        />
+      )}
+
+      {/* Cmd+K Floating Button (when assistant available + overlay closed) */}
+      {assistant.isAvailable && !assistant.isOpen && (
+        <button
+          onClick={assistant.open}
+          style={{
+            position: "fixed",
+            bottom: isMobile ? 72 : 24,
+            right: 24,
+            width: 48,
+            height: 48,
+            borderRadius: 24,
+            background: "#10b981",
+            border: "none",
+            color: "#fff",
+            fontSize: 20,
+            cursor: "pointer",
+            boxShadow: "0 4px 16px rgba(16,185,129,0.4)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 900,
+          }}
+          title={`Research Assistant (${/Mac|iPhone|iPad/.test(navigator.userAgent) ? "\u2318" : "Ctrl"}+K)`}
+        >
+          {"\uD83E\uDD16"}
+        </button>
+      )}
     </div>
   );
 }
