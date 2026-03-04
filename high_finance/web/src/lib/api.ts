@@ -41,6 +41,10 @@ import type {
   AISuggestion,
   AIRiskAssessment,
   EarningsAnalysisResponse,
+  ForwardReturnsResponse,
+  EventStatsResponse,
+  EventSummaryResponse,
+  SignalRankingResponse,
 } from "./types";
 import type {
   CalendarEventsRequest,
@@ -984,6 +988,21 @@ valuationAISuggest: (ticker: string) =>
    * Matches the generateMemo pattern: fetch + ReadableStream + SSE parsing.
    * Returns an AbortController for cancellation.
    */
+  /**
+   * Log a session event (fire-and-forget, never blocks UI).
+   */
+  sessionEvent: (sessionId: string, eventType: string, eventData: Record<string, unknown> = {}) => {
+    fetch(`${BASE}/session/event`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        session_id: sessionId,
+        event_type: eventType,
+        event_data: eventData,
+      }),
+    }).catch(() => {}); // fire-and-forget
+  },
+
   assistantQuery: (
     query: string,
     currentTicker: string | null,
@@ -991,6 +1010,7 @@ valuationAISuggest: (ticker: string) =>
     onChunk: (text: string) => void,
     onDone: () => void,
     onError: (error: string) => void,
+    sessionId?: string,
   ): AbortController => {
     const controller = new AbortController();
 
@@ -1006,6 +1026,7 @@ valuationAISuggest: (ticker: string) =>
             query,
             current_ticker: currentTicker,
             conversation_history: conversationHistory,
+            session_id: sessionId || null,
           }),
           signal: controller.signal,
         });
@@ -1095,6 +1116,62 @@ valuationAISuggest: (ticker: string) =>
     q.set("hold_days", String(holdDays));
     if (sinceYear != null) q.set("since_year", String(sinceYear));
     return getJSON<BacktestResponse>(`${BASE}/politicians/${politicianId}/backtest?${q.toString()}`);
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // FORWARD RETURNS API
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  forwardReturns: (params: {
+    ticker?: string;
+    direction?: string;
+    actor_name?: string;
+    date_from?: string;
+    date_to?: string;
+    has_returns?: boolean;
+    sort_by?: string;
+    sort_dir?: string;
+    page?: number;
+    page_size?: number;
+  } = {}) => {
+    const q = new URLSearchParams();
+    if (params.ticker) q.set("ticker", params.ticker);
+    if (params.direction) q.set("direction", params.direction);
+    if (params.actor_name) q.set("actor_name", params.actor_name);
+    if (params.date_from) q.set("date_from", params.date_from);
+    if (params.date_to) q.set("date_to", params.date_to);
+    if (params.has_returns != null) q.set("has_returns", String(params.has_returns));
+    if (params.sort_by) q.set("sort_by", params.sort_by);
+    if (params.sort_dir) q.set("sort_dir", params.sort_dir);
+    if (params.page != null) q.set("page", String(params.page));
+    if (params.page_size != null) q.set("page_size", String(params.page_size));
+    const qs = q.toString();
+    return getJSON<ForwardReturnsResponse>(`${BASE}/events/forward-returns${qs ? `?${qs}` : ""}`);
+  },
+
+  eventStats: (params: { ticker?: string } = {}) => {
+    const q = new URLSearchParams();
+    if (params.ticker) q.set("ticker", params.ticker);
+    const qs = q.toString();
+    return getJSON<EventStatsResponse>(`${BASE}/events/stats${qs ? `?${qs}` : ""}`);
+  },
+
+  eventSummary: (params?: { window?: number; direction?: string; actor_id?: number; ticker?: string }) => {
+    const q = new URLSearchParams();
+    if (params?.window != null) q.set("window", String(params.window));
+    if (params?.direction) q.set("direction", params.direction);
+    if (params?.actor_id != null) q.set("actor_id", String(params.actor_id));
+    if (params?.ticker) q.set("ticker", params.ticker);
+    const qs = q.toString();
+    return getJSON<EventSummaryResponse>(`${BASE}/events/summary${qs ? `?${qs}` : ""}`);
+  },
+
+  signalRanking: (params?: { window?: number; since?: string }) => {
+    const q = new URLSearchParams();
+    if (params?.window != null) q.set("window", String(params.window));
+    if (params?.since) q.set("since", params.since);
+    const qs = q.toString();
+    return getJSON<SignalRankingResponse>(`${BASE}/signals/ranked${qs ? `?${qs}` : ""}`);
   },
 };
 

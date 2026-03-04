@@ -49,6 +49,7 @@ from high_finance.services.job_tracker import cleanup_old_executions_job
 from high_finance.workers.tasks.backfill_congress_trades import backfill_congress_trades_job
 from high_finance.workers.tasks.prewarm_leaderboard import prewarm_leaderboard_job
 from high_finance.workers.tasks.enrich_politician_state import enrich_politician_state_job
+from high_finance.workers.tasks.compute_forward_returns import compute_forward_returns_job
 
 router = APIRouter()
 
@@ -122,6 +123,12 @@ JOBS = {
         "description": "Fill in politician state from congress-legislators dataset",
         "timeout": 300,
         "schedule": "Manual / after backfill",
+    },
+    "forward_returns": {
+        "func": compute_forward_returns_job,
+        "description": "Sync events and compute forward returns at multiple horizons",
+        "timeout": 3600,
+        "schedule": "Daily 5:30 PM weekdays",
     },
 }
 

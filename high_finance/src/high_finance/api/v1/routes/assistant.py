@@ -35,6 +35,7 @@ class AssistantQueryRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=2000)
     current_ticker: Optional[str] = None
     conversation_history: List[ConversationMessage] = Field(default_factory=list)
+    session_id: Optional[str] = None
 
 
 # ── GET /status – Check if assistant is available ─────────────────────────────
@@ -73,6 +74,15 @@ async def assistant_query(
         if not re.match(r"^[A-Z0-9.\-]{1,10}$", ticker):
             ticker = None
 
+    # Fetch session context if session_id provided
+    session_context = None
+    if body.session_id:
+        try:
+            from high_finance.services.session_tracker import get_session_context
+            session_context = await get_session_context(body.session_id)
+        except Exception:
+            logger.debug("Failed to fetch session context", exc_info=True)
+
     accumulator: list[str] = []
 
     async def sse_generator():
@@ -84,6 +94,7 @@ async def assistant_query(
                 conversation_history=history,
                 db=db,
                 accumulator=accumulator,
+                session_context=session_context,
             ):
                 yield f"data: {json.dumps(chunk)}\n\n"
         except Exception as e:

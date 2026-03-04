@@ -26,3 +26,5 @@ from .peer_group import PeerGroup
 from .chart_drawing import ChartDrawing
 from .private_company import PrivateCompany, PrivateCompanyInvestor
 from .memo import InvestmentMemo
+from .event import Event
+from .forward_return import ForwardReturn

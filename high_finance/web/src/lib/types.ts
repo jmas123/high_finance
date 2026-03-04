@@ -1693,3 +1693,120 @@ export type AIRiskAssessment = {
   input_tokens: number;
   output_tokens: number;
 };
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// FORWARD RETURNS TYPES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export type ForwardReturnEvent = {
+  event_id: number;
+  event_type: string;
+  ticker: string;
+  event_date: string;
+  event_date_type: string;
+  direction: string;
+  actor_type: string;
+  actor_id: number;
+  actor_name: string;
+  amount_min: number | null;
+  amount_max: number | null;
+  anchor_price: number | null;
+  spy_anchor_price: number | null;
+  ret_7d: number | null;
+  ret_30d: number | null;
+  ret_60d: number | null;
+  ret_90d: number | null;
+  ret_180d: number | null;
+  spy_ret_7d: number | null;
+  spy_ret_30d: number | null;
+  spy_ret_60d: number | null;
+  spy_ret_90d: number | null;
+  spy_ret_180d: number | null;
+  is_complete: number | null;
+  skip_reason: string | null;
+  meta: Record<string, unknown> | null;
+};
+
+export type ForwardReturnsResponse = {
+  total: number;
+  page: number;
+  page_size: number;
+  events: ForwardReturnEvent[];
+};
+
+export type EventStatsResponse = {
+  total_events: number;
+  events_with_returns: number;
+  avg_ret_30d: number | null;
+  median_ret_30d: number | null;
+  win_rate_30d: number | null;
+  avg_alpha_30d: number | null;
+  computed_at: string;
+};
+
+export type DirectionStats = {
+  trades: number;
+  win_rate: number | null;
+  avg_return: number | null;
+  avg_alpha: number | null;
+};
+
+export type PoliticianRank = {
+  actor_id: number;
+  name: string;
+  trade_count: number;
+  win_rate: number | null;
+  avg_alpha: number | null;
+};
+
+export type DistributionStats = {
+  median_return: number | null;
+  p25_return: number | null;
+  p75_return: number | null;
+  worst_return: number | null;
+  best_return: number | null;
+  total_with_data: number;
+};
+
+export type RegimeStats = {
+  trades: number;
+  win_rate: number | null;
+  avg_alpha: number | null;
+};
+
+export type EventSummaryResponse = {
+  buys: DirectionStats;
+  sells: DirectionStats;
+  top_politicians: PoliticianRank[];
+  distribution: DistributionStats;
+  regime_stats: { low_vol: RegimeStats; high_vol: RegimeStats } | null;
+  window: number;
+  min_trades_filter: number;
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SIGNAL RANKING TYPES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export type SignalResult = {
+  signal_id: string;
+  label: string;
+  description: string;
+  trades: number;
+  avg_alpha: number;
+  std_alpha: number;
+  win_rate: number;
+  score: number;
+  p_value: number;
+  adjusted_p: number;
+  significance: "significant" | "marginal" | "not_significant";
+  coverage_pct: number | null;
+  low_sample: boolean;
+};
+
+export type SignalRankingResponse = {
+  signals: SignalResult[];
+  window: number;
+  since_date: string;
+  total_signals_evaluated: number;
+};

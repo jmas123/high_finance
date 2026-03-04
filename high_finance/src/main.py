@@ -23,7 +23,8 @@ from high_finance.api.v1.routes import (
     prices, financials, predictions, search, politicians,
     insider, institutional, earnings, options, news, risk, valuation, notifications, market,
     project, screener, auth, user_data, export, admin, calendar, chart_drawing, portfolio_performance,
-    private_companies, ticker_bundle, memo, ai_history, earnings_analysis, assistant
+    private_companies, ticker_bundle, memo, ai_history, earnings_analysis, assistant, events, session,
+    signals,
 )
 
 # Configure logging
@@ -172,6 +173,9 @@ app.include_router(memo.router, prefix="/api/v1/memo", tags=["memo"])
 app.include_router(ai_history.router, prefix="/api/v1/ai-history", tags=["ai-history"])
 app.include_router(earnings_analysis.router, prefix="/api/v1/earnings-analysis", tags=["earnings-analysis"])
 app.include_router(assistant.router, prefix="/api/v1/assistant", tags=["assistant"])
+app.include_router(events.router, prefix="/api/v1/events", tags=["events"])
+app.include_router(session.router, prefix="/api/v1/session", tags=["session"])
+app.include_router(signals.router, prefix="/api/v1/signals", tags=["signals"])
 
 
 @app.exception_handler(Exception)

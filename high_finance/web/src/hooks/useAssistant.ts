@@ -15,7 +15,7 @@ interface UseAssistantReturn {
   isStreaming: boolean;
   error: string | null;
   isAvailable: boolean | null; // null = still checking
-  sendQuery: (query: string, currentTicker: string | null) => void;
+  sendQuery: (query: string, currentTicker: string | null, sessionId?: string) => void;
   clearMessages: () => void;
 }
 
@@ -58,7 +58,7 @@ export function useAssistant(): UseAssistantReturn {
   }, []);
 
   const sendQuery = useCallback(
-    (query: string, currentTicker: string | null) => {
+    (query: string, currentTicker: string | null, sessionId?: string) => {
       if (!query.trim() || isStreaming) return;
 
       // Cancel any in-flight request
@@ -111,6 +111,7 @@ export function useAssistant(): UseAssistantReturn {
             return prev;
           });
         },
+        sessionId,
       );
     },
     [isStreaming, messages],

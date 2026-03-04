@@ -81,6 +81,12 @@ const AIHistoryView = lazy(() =>
 const CongressLeaderboard = lazy(() =>
   import("./components/politicians/CongressLeaderboard").then(m => ({ default: m.CongressLeaderboard }))
 );
+const ForwardReturnsCard = lazy(() =>
+  import("./components/returns/ForwardReturnsCard").then(m => ({ default: m.ForwardReturnsCard }))
+);
+const SignalRankingCard = lazy(() =>
+  import("./components/returns/SignalRankingCard").then(m => ({ default: m.SignalRankingCard }))
+);
 const BacktestDetailCard = lazy(() =>
   import("./components/politicians/BacktestDetailCard").then(m => ({ default: m.BacktestDetailCard }))
 );
@@ -101,6 +107,7 @@ import { LandingPage } from "./components/LandingPage";
 // ── AI Research Assistant ──────────────────────────────────────────────────
 import { useAssistant } from "./hooks/useAssistant";
 import { AssistantOverlay } from "./components/AssistantOverlay";
+import { useSessionTracker } from "./hooks/useSessionTracker";
 
 // ── Private Companies ─────────────────────────────────────────────────────
 import { PrivateCompanyList } from "./components/private/PrivateCompanyList";
@@ -262,6 +269,17 @@ export default function App() {
 
   // ── AI Research Assistant ─────────────────────────────────────────────────
   const assistant = useAssistant();
+  const sessionTracker = useSessionTracker();
+
+  // Listen for section changes from TickerView
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<string>).detail;
+      if (detail) sessionTracker.setCurrentSection(detail);
+    };
+    window.addEventListener("hf:section-change", handler);
+    return () => window.removeEventListener("hf:section-change", handler);
+  }, [sessionTracker.setCurrentSection]);
 
   // Cmd+K / Ctrl+K keyboard shortcut to toggle assistant
   useEffect(() => {
@@ -296,6 +314,7 @@ export default function App() {
     if (location.pathname.startsWith("/projects")) return "projects";
     if (location.pathname === "/signals") return "signals";
     if (location.pathname.startsWith("/congress")) return "congress";
+    if (location.pathname === "/returns") return "returns";
     if (location.pathname.startsWith("/private")) return "private";
     if (location.pathname === "/ai-history") return "ai-history";
     if (location.pathname === "/onboarding") return "onboarding";
@@ -376,6 +395,9 @@ export default function App() {
             <Link to="/congress" style={getNavLinkStyle(activeTab === "congress")}>
               Congress<InfoTip text={NAV_TIPS.congress} />
             </Link>
+            <Link to="/returns" style={getNavLinkStyle(activeTab === "returns")}>
+              Returns
+            </Link>
             <Link to="/private" style={getNavLinkStyle(activeTab === "private")}>
               Private Companies
             </Link>
@@ -400,6 +422,7 @@ export default function App() {
               <Route path="/signals" element={<SignalsView />} />
               <Route path="/congress" element={<CongressView />} />
               <Route path="/congress/:politicianId" element={<CongressDetailView />} />
+              <Route path="/returns" element={<ReturnsView />} />
               <Route path="/ai-history" element={<AIHistoryView />} />
               <Route path="/private" element={<PrivateCompanyList />} />
               <Route path="/private/:slug" element={<PrivateCompanyProfileView />} />
@@ -426,8 +449,33 @@ export default function App() {
           isStreaming={assistant.isStreaming}
           error={assistant.error}
           currentTicker={currentTicker}
-          onSend={(query) => assistant.sendQuery(query, currentTicker)}
+          currentSection={sessionTracker.currentSection}
+          onSend={(query) => assistant.sendQuery(query, currentTicker, sessionTracker.sessionId)}
           onClear={assistant.clearMessages}
+          onRunDCF={() => {
+            assistant.close();
+            document.getElementById("dcf-card")?.scrollIntoView({ behavior: "smooth" });
+          }}
+          onRunMemo={() => {
+            assistant.close();
+            // Dispatch custom event that TickerView listens for
+            window.dispatchEvent(new CustomEvent("hf:open-memo"));
+          }}
+          onRunRisk={() => {
+            assistant.close();
+            document.getElementById("risk-card")?.scrollIntoView({ behavior: "smooth" });
+          }}
+          onOpenScreener={(filters) => {
+            // Write filters to sessionStorage for ScreenerCard to consume
+            sessionStorage.setItem("hf_screener_prefill", JSON.stringify(filters));
+            assistant.close();
+            if (location.pathname === "/screener") {
+              // Already on screener — dispatch event to trigger filter update
+              window.dispatchEvent(new CustomEvent("hf:screener-prefill"));
+            } else {
+              navigate("/screener");
+            }
+          }}
         />
       )}
 
@@ -549,6 +597,18 @@ function CongressDetailView() {
   return (
     <Suspense fallback={<CardSkeleton />}>
       <BacktestDetailCard />
+    </Suspense>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// RETURNS VIEW (/returns)
+// ══════════════════════════════════════════════════════════════════════════════
+function ReturnsView() {
+  return (
+    <Suspense fallback={<CardSkeleton />}>
+      <SignalRankingCard />
+      <ForwardReturnsCard />
     </Suspense>
   );
 }
@@ -824,7 +884,20 @@ function TickerView() {
   const [showCreateProjectModal, setShowCreateProjectModal] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [warningExpanded, setWarningExpanded] = useState(false);
-  const [activeSection, setActiveSection] = useState("all");
+  const [activeSection, setActiveSectionRaw] = useState("all");
+
+  // Broadcast activeSection changes so App-level session tracker can pick them up
+  const setActiveSection = useCallback((section: string) => {
+    setActiveSectionRaw(section);
+    window.dispatchEvent(new CustomEvent("hf:section-change", { detail: section }));
+  }, []);
+
+  // Listen for "open memo" events from the assistant overlay
+  useEffect(() => {
+    const handler = () => setShowMemoModal(true);
+    window.addEventListener("hf:open-memo", handler);
+    return () => window.removeEventListener("hf:open-memo", handler);
+  }, []);
 
   // Check if we came from a project (for return button)
   const returnProjectId = sessionStorage.getItem("hf_return_project");
@@ -1334,13 +1407,17 @@ function TickerView() {
           {showSection("valuation") && (
             <Suspense fallback={<div style={responsiveGrid}><CardSkeleton /><CardSkeleton /></div>}>
               <div style={responsiveGrid}>
-                <DCFCard
-                  key={`dcf-${ticker}`}
-                  ticker={ticker}
-                  onStateChange={handleDCFStateChange}
-                  initialData={valuationData}
-                />
-                <RiskCard key={`risk-${ticker}`} ticker={ticker} initialData={riskData} />
+                <div id="dcf-card">
+                  <DCFCard
+                    key={`dcf-${ticker}`}
+                    ticker={ticker}
+                    onStateChange={handleDCFStateChange}
+                    initialData={valuationData}
+                  />
+                </div>
+                <div id="risk-card">
+                  <RiskCard key={`risk-${ticker}`} ticker={ticker} initialData={riskData} />
+                </div>
               </div>
             </Suspense>
           )}
