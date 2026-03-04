@@ -84,7 +84,7 @@ async def gather_memo_data(ticker: str, db: Session) -> Dict[str, Any]:
         fetch("risk", get_risk_bundle(ticker, period="1y", horizon_days=60, n_sims=500)),
         fetch("institutional", get_institutional_flow(ticker)),
         fetch("insider", get_insider_summary(ticker)),
-        fetch("news", get_news_bundle(db, ticker, limit=10)),
+        fetch("news", get_news_bundle(ticker, limit=10)),
         fetch("options", get_options_overview(ticker)),
         asyncio.to_thread(fetch_politician_trades) if False else fetch_politician_trades(),
         return_exceptions=True,
