@@ -16,7 +16,18 @@ const DEFAULT_FILTERS: ScreenerFilters = {
   limit: 50,
 };
 
+const PREFILL_KEY = "hf_screener_prefill";
+
 function loadFilters(): ScreenerFilters {
+  // Check for assistant-initiated prefill first (one-time consume)
+  try {
+    const prefill = sessionStorage.getItem(PREFILL_KEY);
+    if (prefill) {
+      sessionStorage.removeItem(PREFILL_KEY);
+      const parsed = JSON.parse(prefill);
+      return { ...DEFAULT_FILTERS, ...parsed };
+    }
+  } catch {}
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) return JSON.parse(saved);
@@ -53,6 +64,22 @@ export function ScreenerCard({ onSelectTicker }: Props) {
   // Load sector counts on mount
   useEffect(() => {
     api.screenerSectors().then(setSectorCounts).catch(console.error);
+  }, []);
+
+  // Listen for assistant screener-prefill events (when already on /screener)
+  useEffect(() => {
+    const handler = () => {
+      try {
+        const prefill = sessionStorage.getItem(PREFILL_KEY);
+        if (prefill) {
+          sessionStorage.removeItem(PREFILL_KEY);
+          const parsed = JSON.parse(prefill);
+          setFilters({ ...DEFAULT_FILTERS, ...parsed });
+        }
+      } catch {}
+    };
+    window.addEventListener("hf:screener-prefill", handler);
+    return () => window.removeEventListener("hf:screener-prefill", handler);
   }, []);
 
   // Persist filters to localStorage whenever they change

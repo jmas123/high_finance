@@ -144,6 +144,17 @@ def register_jobs(scheduler: Scheduler) -> None:
     logger.info("Registered: price_history_scheduled (daily 5 PM weekdays)")
 
     # ==========================================================================
+    # Forward Returns - Daily 5:30 PM EST weekdays (after refresh_prices at 5 PM)
+    # ==========================================================================
+    scheduler.cron(
+        "30 17 * * 1-5",  # 5:30 PM weekdays
+        func="high_finance.workers.tasks.compute_forward_returns.compute_forward_returns_job",
+        id="forward_returns_scheduled",
+        timeout=3600,
+    )
+    logger.info("Registered: forward_returns_scheduled (daily 5:30 PM weekdays)")
+
+    # ==========================================================================
     # Leaderboard Prewarm - Daily 6 PM EST weekdays (1hr after refresh_prices)
     # ==========================================================================
     scheduler.cron(

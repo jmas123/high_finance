@@ -81,6 +81,12 @@ const AIHistoryView = lazy(() =>
 const CongressLeaderboard = lazy(() =>
   import("./components/politicians/CongressLeaderboard").then(m => ({ default: m.CongressLeaderboard }))
 );
+// const ForwardReturnsCard = lazy(() =>
+//   import("./components/returns/ForwardReturnsCard").then(m => ({ default: m.ForwardReturnsCard }))
+// );
+// const SignalRankingCard = lazy(() =>
+//   import("./components/returns/SignalRankingCard").then(m => ({ default: m.SignalRankingCard }))
+// );
 const BacktestDetailCard = lazy(() =>
   import("./components/politicians/BacktestDetailCard").then(m => ({ default: m.BacktestDetailCard }))
 );
@@ -97,6 +103,11 @@ import { CalendarPopupButton } from "./components/calendar";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { TickerPageSkeleton, CardSkeleton, ChartSkeleton } from "./components/Skeleton";
 import { LandingPage } from "./components/LandingPage";
+
+// ── AI Research Assistant ──────────────────────────────────────────────────
+import { useAssistant } from "./hooks/useAssistant";
+import { AssistantOverlay } from "./components/AssistantOverlay";
+import { useSessionTracker } from "./hooks/useSessionTracker";
 
 // ── Private Companies ─────────────────────────────────────────────────────
 import { PrivateCompanyList } from "./components/private/PrivateCompanyList";
@@ -226,6 +237,9 @@ const getNavLinkStyle = (isActive: boolean) => ({
   textDecoration: "none",
 });
 
+
+
+
 // ── DCF state shape for snapshot wiring ──────────────────────────────────────
 type DCFState = {
   growth: number;
@@ -244,6 +258,7 @@ type DCFState = {
 export default function App() {
   const { user, isAuthenticated, isLoading: authLoading, logout, sessionExpired, clearSessionExpired } = useAuth();
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [congressPageContext, setCongressPageContext] = useState<string>("");
 
   // Auto-open auth modal when session expires
   useEffect(() => {
@@ -256,6 +271,54 @@ export default function App() {
   const isMobile = useIsMobile();
   const isLargeScreen = useIsLargeScreen();
 
+  // Clear congress context when navigating away from /signals
+  useEffect(() => {
+    if (!location.pathname.startsWith("/signals")) {
+      setCongressPageContext("");
+    }
+  }, [location.pathname]);
+
+  // ── AI Research Assistant ─────────────────────────────────────────────────
+  const assistant = useAssistant();
+  const sessionTracker = useSessionTracker();
+
+
+  // Listen for section changes from TickerView
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<string>).detail;
+      if (detail) sessionTracker.setCurrentSection(detail);
+    };
+    window.addEventListener("hf:section-change", handler);
+    return () => window.removeEventListener("hf:section-change", handler);
+  }, [sessionTracker.setCurrentSection]);
+
+  // Cmd+K / Ctrl+K keyboard shortcut to toggle assistant
+  useEffect(() => {
+    if (!assistant.isAvailable) return;
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        // Close auth modal if open, then toggle assistant
+        if (showAuthModal) setShowAuthModal(false);
+        assistant.toggle();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [assistant.isAvailable, assistant.toggle, showAuthModal]);
+
+  // Close assistant when auth modal opens
+  useEffect(() => {
+    if (showAuthModal && assistant.isOpen) {
+      assistant.close();
+    }
+  }, [showAuthModal, assistant.isOpen, assistant.close]);
+
+  // Derive current ticker from URL
+  const tickerMatch = location.pathname.match(/^\/quote\/([A-Z0-9.\-]+)/i);
+  const currentTicker = tickerMatch ? tickerMatch[1].toUpperCase() : null;
+
   // Determine active tab from current route
   const getActiveTab = () => {
     if (location.pathname.startsWith("/quote/")) return "ticker";
@@ -263,6 +326,7 @@ export default function App() {
     if (location.pathname.startsWith("/projects")) return "projects";
     if (location.pathname === "/signals") return "signals";
     if (location.pathname.startsWith("/congress")) return "congress";
+    if (location.pathname === "/returns") return "returns";
     if (location.pathname.startsWith("/private")) return "private";
     if (location.pathname === "/ai-history") return "ai-history";
     if (location.pathname === "/onboarding") return "onboarding";
@@ -343,6 +407,7 @@ export default function App() {
             <Link to="/congress" style={getNavLinkStyle(activeTab === "congress")}>
               Congress<InfoTip text={NAV_TIPS.congress} />
             </Link>
+           
             <Link to="/private" style={getNavLinkStyle(activeTab === "private")}>
               Private Companies
             </Link>
@@ -364,9 +429,10 @@ export default function App() {
               <Route path="/screener" element={<ScreenerView />} />
               <Route path="/projects" element={<ProjectsListView />} />
               <Route path="/projects/:projectId" element={<ProjectView />} />
-              <Route path="/signals" element={<SignalsView />} />
+              <Route path="/signals" element={<SignalsView onPageContextChange={setCongressPageContext} />} />
               <Route path="/congress" element={<CongressView />} />
               <Route path="/congress/:politicianId" element={<CongressDetailView />} />
+              {/* <Route path="/returns" element={<ReturnsView />} /> */}
               <Route path="/ai-history" element={<AIHistoryView />} />
               <Route path="/private" element={<PrivateCompanyList />} />
               <Route path="/private/:slug" element={<PrivateCompanyProfileView />} />
@@ -383,6 +449,75 @@ export default function App() {
 
       {/* Auth Modal */}
       <AuthModal isOpen={showAuthModal} onClose={() => { setShowAuthModal(false); clearSessionExpired(); }} />
+
+      {/* AI Research Assistant Overlay (auth-gated) */}
+      {assistant.isAvailable && isAuthenticated && (
+        <AssistantOverlay
+          isOpen={assistant.isOpen}
+          onClose={assistant.close}
+          messages={assistant.messages}
+          isStreaming={assistant.isStreaming}
+          error={assistant.error}
+          currentTicker={currentTicker}
+          currentSection={sessionTracker.currentSection}
+          onSend={(query, pageContext) => 
+            assistant.sendQuery(query, currentTicker, sessionTracker.sessionId, congressPageContext || pageContext)
+          }  
+        onClear={assistant.clearMessages}
+          onRunDCF={() => {
+            assistant.close();
+            document.getElementById("dcf-card")?.scrollIntoView({ behavior: "smooth" });
+          }}
+          onRunMemo={() => {
+            assistant.close();
+            // Dispatch custom event that TickerView listens for
+            window.dispatchEvent(new CustomEvent("hf:open-memo"));
+          }}
+          onRunRisk={() => {
+            assistant.close();
+            document.getElementById("risk-card")?.scrollIntoView({ behavior: "smooth" });
+          }}
+          onOpenScreener={(filters) => {
+            // Write filters to sessionStorage for ScreenerCard to consume
+            sessionStorage.setItem("hf_screener_prefill", JSON.stringify(filters));
+            assistant.close();
+            if (location.pathname === "/screener") {
+              // Already on screener — dispatch event to trigger filter update
+              window.dispatchEvent(new CustomEvent("hf:screener-prefill"));
+            } else {
+              navigate("/screener");
+            }
+          }}
+        />
+      )}
+
+      {/* Cmd+K Floating Button (when assistant available + overlay closed + signed in) */}
+      {assistant.isAvailable && isAuthenticated && !assistant.isOpen && (
+        <button
+          onClick={assistant.open}
+          style={{
+            position: "fixed",
+            bottom: isMobile ? 72 : 24,
+            right: 24,
+            width: 48,
+            height: 48,
+            borderRadius: 24,
+            background: "#10b981",
+            border: "none",
+            color: "#fff",
+            fontSize: 20,
+            cursor: "pointer",
+            boxShadow: "0 4px 16px rgba(16,185,129,0.4)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 900,
+          }}
+          title={`Research Assistant (${/Mac|iPhone|iPad/.test(navigator.userAgent) ? "\u2318" : "Ctrl"}+K)`}
+        >
+          {"\uD83E\uDD16"}
+        </button>
+      )}
     </div>
   );
 }
@@ -446,11 +581,12 @@ function ScreenerView() {
 // ══════════════════════════════════════════════════════════════════════════════
 // SIGNALS VIEW (/signals) - formerly "Notifications"
 // ══════════════════════════════════════════════════════════════════════════════
-function SignalsView() {
+// Update SignalsView to accept the prop
+function SignalsView({ onPageContextChange }: { onPageContextChange: (ctx: string) => void }) {
   return (
     <Suspense fallback={<CardSkeleton />}>
       <div style={{ marginBottom: 20 }}>
-        <NotificationsCard />
+        <NotificationsCard onPageContextChange={onPageContextChange} />
       </div>
     </Suspense>
   );
@@ -477,6 +613,11 @@ function CongressDetailView() {
     </Suspense>
   );
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// RETURNS VIEW (/returns)
+// ══════════════════════════════════════════════════════════════════════════════
+
 
 // ══════════════════════════════════════════════════════════════════════════════
 // PROJECTS LIST VIEW (/projects)
@@ -749,7 +890,20 @@ function TickerView() {
   const [showCreateProjectModal, setShowCreateProjectModal] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [warningExpanded, setWarningExpanded] = useState(false);
-  const [activeSection, setActiveSection] = useState("all");
+  const [activeSection, setActiveSectionRaw] = useState("all");
+
+  // Broadcast activeSection changes so App-level session tracker can pick them up
+  const setActiveSection = useCallback((section: string) => {
+    setActiveSectionRaw(section);
+    window.dispatchEvent(new CustomEvent("hf:section-change", { detail: section }));
+  }, []);
+
+  // Listen for "open memo" events from the assistant overlay
+  useEffect(() => {
+    const handler = () => setShowMemoModal(true);
+    window.addEventListener("hf:open-memo", handler);
+    return () => window.removeEventListener("hf:open-memo", handler);
+  }, []);
 
   // Check if we came from a project (for return button)
   const returnProjectId = sessionStorage.getItem("hf_return_project");
@@ -1259,13 +1413,17 @@ function TickerView() {
           {showSection("valuation") && (
             <Suspense fallback={<div style={responsiveGrid}><CardSkeleton /><CardSkeleton /></div>}>
               <div style={responsiveGrid}>
-                <DCFCard
-                  key={`dcf-${ticker}`}
-                  ticker={ticker}
-                  onStateChange={handleDCFStateChange}
-                  initialData={valuationData}
-                />
-                <RiskCard key={`risk-${ticker}`} ticker={ticker} initialData={riskData} />
+                <div id="dcf-card">
+                  <DCFCard
+                    key={`dcf-${ticker}`}
+                    ticker={ticker}
+                    onStateChange={handleDCFStateChange}
+                    initialData={valuationData}
+                  />
+                </div>
+                <div id="risk-card">
+                  <RiskCard key={`risk-${ticker}`} ticker={ticker} initialData={riskData} />
+                </div>
               </div>
             </Suspense>
           )}

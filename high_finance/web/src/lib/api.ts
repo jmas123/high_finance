@@ -41,6 +41,10 @@ import type {
   AISuggestion,
   AIRiskAssessment,
   EarningsAnalysisResponse,
+  ForwardReturnsResponse,
+  EventStatsResponse,
+  EventSummaryResponse,
+  SignalRankingResponse,
 } from "./types";
 import type {
   CalendarEventsRequest,
@@ -65,9 +69,18 @@ export function fetchWithTimeout(
   url: string,
   init?: RequestInit,
   timeoutMs = DEFAULT_TIMEOUT_MS,
+  externalSignal?: AbortSignal,
 ): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  // If an external signal is provided, abort our controller when it fires
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      controller.abort();
+    } else {
+      externalSignal.addEventListener("abort", () => controller.abort(), { once: true });
+    }
+  }
   return fetch(url, { ...init, signal: controller.signal }).finally(() =>
     clearTimeout(timer),
   );
@@ -80,8 +93,8 @@ function handleResponseError(res: Response): void {
   }
 }
 
-async function getJSON<T>(path: string, timeoutMs?: number): Promise<T> {
-  const res = await fetchWithTimeout(path, { headers: getAuthHeaders() }, timeoutMs);
+async function getJSON<T>(path: string, timeoutMs?: number, signal?: AbortSignal): Promise<T> {
+  const res = await fetchWithTimeout(path, { headers: getAuthHeaders() }, timeoutMs, signal);
   if (!res.ok) {
     handleResponseError(res);
     let message: string;
@@ -970,6 +983,128 @@ valuationAISuggest: (ticker: string) =>
   },
 
   // ═══════════════════════════════════════════════════════════════════════════════
+  // AI RESEARCH ASSISTANT API
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Check if the AI assistant is available (has API key configured).
+   */
+  assistantStatus: () =>
+    getJSON<{ available: boolean }>(`${BASE}/assistant/status`),
+
+  /**
+   * Send a query to the AI assistant via SSE streaming.
+   * Matches the generateMemo pattern: fetch + ReadableStream + SSE parsing.
+   * Returns an AbortController for cancellation.
+   */
+  /**
+   * Log a session event (fire-and-forget, never blocks UI).
+   */
+  sessionEvent: (sessionId: string, eventType: string, eventData: Record<string, unknown> = {}) => {
+    fetch(`${BASE}/session/event`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        session_id: sessionId,
+        event_type: eventType,
+        event_data: eventData,
+      }),
+    }).catch(() => {}); // fire-and-forget
+  },
+
+  assistantQuery: (
+    query: string,
+    currentTicker: string | null,
+    conversationHistory: Array<{ role: string; content: string }>,
+    onChunk: (text: string) => void,
+    onDone: () => void,
+    onError: (error: string) => void,
+    sessionId?: string,
+    pageContext?: string,  // ← ADD
+
+  ): AbortController => {
+    const controller = new AbortController();
+
+    (async () => {
+      try {
+        const res = await fetch(`${BASE}/assistant/query`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...getAuthHeaders(),
+          },
+          body: JSON.stringify({
+            query,
+            current_ticker: currentTicker,
+            conversation_history: conversationHistory,
+            session_id: sessionId || null,
+            page_context: pageContext || null,  // ← ADD
+
+          }),
+          signal: controller.signal,
+        });
+
+        if (!res.ok) {
+          handleResponseError(res);
+          const body = await res.json().catch(() => ({ detail: "Assistant query failed" }));
+          onError(body.detail || body.message || `Error ${res.status}`);
+          return;
+        }
+
+        const reader = res.body?.getReader();
+        if (!reader) {
+          onError("No response stream");
+          return;
+        }
+
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+
+          const events = buffer.split("\n\n");
+          buffer = events.pop() || "";
+
+          for (const event of events) {
+            for (const line of event.split("\n")) {
+              if (!line.startsWith("data: ")) continue;
+              const payload = line.slice(6);
+
+              if (payload === "[DONE]") {
+                onDone();
+                return;
+              }
+              if (payload.startsWith("[ERROR]")) {
+                onError(payload.slice(8));
+                return;
+              }
+              try {
+                onChunk(JSON.parse(payload));
+              } catch {
+                onChunk(payload);
+              }
+            }
+          }
+        }
+
+        onDone();
+      } catch (e) {
+        if (e instanceof Error && e.name !== "AbortError") {
+          onError(e.message || "Connection lost");
+        } else if (!(e instanceof Error)) {
+          onError("Connection lost");
+        }
+      }
+    })();
+
+    return controller;
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════════
   // CONGRESS BACKTEST API
   // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -994,6 +1129,62 @@ valuationAISuggest: (ticker: string) =>
     q.set("hold_days", String(holdDays));
     if (sinceYear != null) q.set("since_year", String(sinceYear));
     return getJSON<BacktestResponse>(`${BASE}/politicians/${politicianId}/backtest?${q.toString()}`);
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // FORWARD RETURNS API
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  forwardReturns: (params: {
+    ticker?: string;
+    direction?: string;
+    actor_name?: string;
+    date_from?: string;
+    date_to?: string;
+    has_returns?: boolean;
+    sort_by?: string;
+    sort_dir?: string;
+    page?: number;
+    page_size?: number;
+  } = {}, signal?: AbortSignal) => {
+    const q = new URLSearchParams();
+    if (params.ticker) q.set("ticker", params.ticker);
+    if (params.direction) q.set("direction", params.direction);
+    if (params.actor_name) q.set("actor_name", params.actor_name);
+    if (params.date_from) q.set("date_from", params.date_from);
+    if (params.date_to) q.set("date_to", params.date_to);
+    if (params.has_returns != null) q.set("has_returns", String(params.has_returns));
+    if (params.sort_by) q.set("sort_by", params.sort_by);
+    if (params.sort_dir) q.set("sort_dir", params.sort_dir);
+    if (params.page != null) q.set("page", String(params.page));
+    if (params.page_size != null) q.set("page_size", String(params.page_size));
+    const qs = q.toString();
+    return getJSON<ForwardReturnsResponse>(`${BASE}/events/forward-returns${qs ? `?${qs}` : ""}`, undefined, signal);
+  },
+
+  eventStats: (params: { ticker?: string } = {}) => {
+    const q = new URLSearchParams();
+    if (params.ticker) q.set("ticker", params.ticker);
+    const qs = q.toString();
+    return getJSON<EventStatsResponse>(`${BASE}/events/stats${qs ? `?${qs}` : ""}`);
+  },
+
+  eventSummary: (params?: { window?: number; direction?: string; actor_id?: number; ticker?: string }, signal?: AbortSignal) => {
+    const q = new URLSearchParams();
+    if (params?.window != null) q.set("window", String(params.window));
+    if (params?.direction) q.set("direction", params.direction);
+    if (params?.actor_id != null) q.set("actor_id", String(params.actor_id));
+    if (params?.ticker) q.set("ticker", params.ticker);
+    const qs = q.toString();
+    return getJSON<EventSummaryResponse>(`${BASE}/events/summary${qs ? `?${qs}` : ""}`, undefined, signal);
+  },
+
+  signalRanking: (params?: { window?: number; since?: string }) => {
+    const q = new URLSearchParams();
+    if (params?.window != null) q.set("window", String(params.window));
+    if (params?.since) q.set("since", params.since);
+    const qs = q.toString();
+    return getJSON<SignalRankingResponse>(`${BASE}/signals/ranked${qs ? `?${qs}` : ""}`);
   },
 };
 

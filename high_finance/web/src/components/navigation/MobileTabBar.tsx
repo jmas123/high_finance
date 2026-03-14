@@ -10,6 +10,7 @@ const PRIMARY_TABS = [
 
 const OVERFLOW_TABS = [
   { path: "/congress", label: "Congress", emoji: "\uD83C\uDFDB\uFE0F" },
+  { path: "/returns", label: "Returns", emoji: "\uD83D\uDCC8" },
   { path: "/private", label: "Private", emoji: "\uD83D\uDD12" },
   { path: "/ai-history", label: "AI History", emoji: "\uD83E\uDD16" },
   { path: "/onboarding", label: "Guide", emoji: "\uD83D\uDCD6" },

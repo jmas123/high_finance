@@ -77,8 +77,10 @@ async def gather_memo_data(ticker: str, db: Session) -> Dict[str, Any]:
         finally:
             local_db.close()
 
+    from high_finance.services.prices import get_price_history
+
     await asyncio.gather(
-        fetch("fundamentals", get_company_fundamentals(ticker, db, fetch_peers=False)),
+        fetch("fundamentals", get_company_fundamentals(ticker, db, fetch_peers=True)),
         fetch("financials", get_financial_statements(ticker)),
         fetch("valuation", get_valuation_bundle(ticker)),
         fetch("risk", get_risk_bundle(ticker, period="1y", horizon_days=60, n_sims=500)),
@@ -86,6 +88,7 @@ async def gather_memo_data(ticker: str, db: Session) -> Dict[str, Any]:
         fetch("insider", get_insider_summary(ticker)),
         fetch("news", get_news_bundle(ticker, limit=10)),
         fetch("options", get_options_overview(ticker)),
+        fetch("price_history", get_price_history(ticker, period="1y")),
         asyncio.to_thread(fetch_politician_trades) if False else fetch_politician_trades(),
         return_exceptions=True,
     )
@@ -134,6 +137,98 @@ def _fmt_ratio(val: Any) -> str:
         return "N/A"
 
 
+def _compute_price_context(prices: List[Dict], fundamentals: Optional[Dict]) -> str:
+    """
+    Compute multi-period return summary from price history closes.
+    Returns a formatted markdown section string, or empty string if no data.
+    """
+    if not prices or len(prices) < 2:
+        return ""
+
+    closes = [p["close"] for p in prices]
+    current = closes[-1]
+    if current <= 0:
+        return ""
+
+    # Period returns: (label, lookback in trading days)
+    periods = [
+        ("1 Week", 5),
+        ("1 Month", 22),
+        ("3 Months", 63),
+        ("6 Months", 126),
+        ("1 Year", 252),
+    ]
+
+    def _ret(ref_idx: int) -> str:
+        if ref_idx >= len(closes):
+            return "—"
+        ref = closes[-(ref_idx + 1)]
+        if ref <= 0:
+            return "—"
+        pct = (current - ref) / ref * 100
+        return f"{pct:+.1f}%"
+
+    # YTD: find first close of current year
+    ytd_str = "—"
+    current_year = datetime.now().year
+    for p in prices:
+        d = p.get("date", "")
+        if d.startswith(str(current_year)):
+            ref = p["close"]
+            if ref > 0:
+                ytd_str = f"{(current - ref) / ref * 100:+.1f}%"
+            break
+
+    # 1-day return
+    day_ret = _ret(1)
+
+    # 52W high/low from fundamentals
+    hi_lo_line = ""
+    if fundamentals:
+        target = fundamentals.get("target", fundamentals) if isinstance(fundamentals.get("target"), dict) else fundamentals
+        hi = target.get("fifty_two_week_high")
+        if hi and float(hi) > 0:
+            off_high = (current - float(hi)) / float(hi) * 100
+            hi_lo_line = f"- vs 52W High: {off_high:+.1f}% (high: {_fmt_num(hi, '$')})\n"
+
+    # 200-day MA
+    ma_line = ""
+    if len(closes) >= 200:
+        ma200 = sum(closes[-200:]) / 200
+        if ma200 > 0:
+            pct_vs_ma = (current - ma200) / ma200 * 100
+            direction = "above" if pct_vs_ma >= 0 else "below"
+            ma_line = f"- vs 200-Day MA: {abs(pct_vs_ma):.1f}% {direction} ({_fmt_num(ma200, '$')})\n"
+
+    # Recent trend: count positive/negative days in last 5
+    recent_days = min(5, len(closes) - 1)
+    if recent_days > 0:
+        pos_days = sum(1 for i in range(-recent_days, 0) if closes[i] > closes[i - 1])
+        neg_days = recent_days - pos_days
+        if neg_days > pos_days:
+            trend_line = f"- Recent: {neg_days} of last {recent_days} days negative"
+        else:
+            trend_line = f"- Recent: {pos_days} of last {recent_days} days positive"
+    else:
+        trend_line = ""
+
+    # Build period returns line
+    period_parts = [f"{label}: {_ret(days)}" for label, days in periods[:3]]
+    period_parts2 = [f"{label}: {_ret(days)}" for label, days in periods[3:]]
+
+    section = (
+        f"## Price Performance\n"
+        f"- Current: {_fmt_num(current, '$')} ({day_ret} today)\n"
+        f"- {' | '.join(period_parts)}\n"
+        f"- {' | '.join(period_parts2)} | YTD: {ytd_str}\n"
+        f"{hi_lo_line}"
+        f"{ma_line}"
+        f"{trend_line}"
+    ).rstrip()
+
+    return section
+
+
 def build_memo_prompt(ticker: str, data: Dict[str, Any]) -> tuple[str, str]:
     """
     Build system + user prompt for the investment memo.
@@ -166,6 +261,47 @@ def build_memo_prompt(ticker: str, data: Dict[str, Any]) -> tuple[str, str]:
             f"- 52W Range: {_fmt_num(target.get('fifty_two_week_low'), '$')} – "
             f"{_fmt_num(target.get('fifty_two_week_high'), '$')}"
         )
+
+        # ── Peer Comparison (only if peers were fetched) ──────────────────
+        peers = f.get("peers", [])
+        stats = f.get("statistics", {})
+        implied = f.get("implied_prices", {})
+        if peers:
+            lines = [f"## Peer Comparison ({len(peers)} peers)"]
+            for p in peers[:6]:
+                name = p.get("name") or p.get("ticker", "?")
+                lines.append(
+                    f"  - {name}: P/E {_fmt_ratio(p.get('pe_ratio'))} | "
+                    f"Fwd P/E {_fmt_ratio(p.get('forward_pe'))} | "
+                    f"EV/EBITDA {_fmt_ratio(p.get('ev_to_ebitda'))} | "
+                    f"Margin {_fmt_pct(p.get('profit_margin'), 100)}"
+                )
+            # Peer median stats
+            pe_stats = stats.get("pe_ratio", {})
+            eveb_stats = stats.get("ev_to_ebitda", {})
+            if pe_stats.get("median") or eveb_stats.get("median"):
+                lines.append(
+                    f"- Peer Median: P/E {_fmt_ratio(pe_stats.get('median'))} | "
+                    f"EV/EBITDA {_fmt_ratio(eveb_stats.get('median'))}"
+                )
+            # Implied prices from peer multiples
+            imp_parts = []
+            for metric, label in [("pe_ratio", "P/E"), ("forward_pe", "Fwd P/E"),
+                                  ("ev_to_ebitda", "EV/EBITDA")]:
+                val = implied.get(metric)
+                if val:
+                    imp_parts.append(f"{label}: {_fmt_num(val, '$')}")
+            if imp_parts:
+                lines.append(f"- Implied Price (peer multiples): {' | '.join(imp_parts)}")
+            sections.append("\n".join(lines))
+
+    # ── Price Performance ─────────────────────────────────────────────────
+    price_history = data.get("price_history")
+    if price_history and isinstance(price_history, list):
+        price_section = _compute_price_context(price_history, f)
+        if price_section:
+            sections.append(price_section)
+
     # ── Financial Snapshot ───────────────────────────────────────────────
     fin = data.get("financials")
     if fin and isinstance(fin, dict):

@@ -460,7 +460,7 @@ async def suggest_risk_scenarios(ticker: str, db) -> Dict[str, Any]:
         financials_task = get_financial_statements(ticker)
         info_task = get_yf_info(ticker)
         institutional_task = get_institutional_flow(ticker)
-        news_task = get_news_bundle(db, ticker, limit=10)
+        news_task = get_news_bundle(ticker, limit=10)
         risk_task = get_risk_bundle(ticker)  # default params for baseline metrics
         earnings_task = get_earnings_history_with_moves(ticker)
 
