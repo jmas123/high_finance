@@ -41,6 +41,19 @@ def _fetch_yf_info_sync(ticker: str, max_retries: int = 2) -> Optional[dict]:
                     time.sleep(1.5 * (attempt + 1))
                     continue
                 return None
+            # Reject partial responses missing price data — Yahoo rate-limiting
+            # returns a truthy dict without price fields. Returning None here
+            # prevents get_or_compute() from caching the bad data.
+            has_price = info.get("currentPrice") or info.get("regularMarketPrice")
+            if not has_price:
+                logger.warning(
+                    "yfinance returned info without price for %s (attempt %d, keys: %s)",
+                    ticker, attempt + 1, list(info.keys())[:10],
+                )
+                if attempt < max_retries:
+                    time.sleep(1.5 * (attempt + 1))
+                    continue
+                return None
             return info
         except Exception as exc:
             if attempt < max_retries:

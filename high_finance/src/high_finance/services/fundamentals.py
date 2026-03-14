@@ -1,6 +1,9 @@
 import asyncio
+import logging
 import statistics
 from datetime import datetime, timezone
+
+logger = logging.getLogger(__name__)
 from sqlalchemy import func
 from high_finance.db.models import Company
 from high_finance.db.models.screener import ScreenerCache
@@ -169,6 +172,19 @@ async def get_company_fundamentals(
     # Price (needed for manual P/E)
     price = info.get("currentPrice") or info.get("regularMarketPrice")
     price = clamp(price, lo=0.01)
+
+    # Fallback: if yfinance returned no price, check screener_cache
+    # (populated by the background screener job, updated independently)
+    if price is None:
+        from sqlalchemy import text as sa_text
+        cached_row = db.execute(
+            sa_text("SELECT current_price FROM screener_cache WHERE ticker = :t"),
+            {"t": ticker},
+        ).fetchone()
+        if cached_row and cached_row.current_price:
+            price = float(cached_row.current_price)
+            logger.info("Using screener_cache price fallback for %s: %s", ticker, price)
+
     previous_close = clamp(info.get("regularMarketPreviousClose") or info.get("previousClose"), lo=0.01)
     price_change = None
     price_change_pct = None
