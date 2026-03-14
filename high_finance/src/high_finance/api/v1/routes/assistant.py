@@ -97,6 +97,7 @@ async def assistant_query(
                 accumulator=accumulator,
                 session_context=session_context,
                 page_context=body.page_context,
+                user_id=user.id,
             ):
                 yield f"data: {json.dumps(chunk)}\n\n"
         except Exception as e:

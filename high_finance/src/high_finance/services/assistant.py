@@ -162,6 +162,121 @@ async def gather_comparison_context(tickers: List[str], db: Session) -> str:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
+# A1. PORTFOLIO / WATCHLIST CONTEXT
+# ═════════════════════════════════════════════════════════════════════════════
+
+def _gather_portfolio_context_sync(user_id: str, db: Session) -> str:
+    """
+    Query portfolio_positions and watchlist_items for the authenticated user,
+    join against screener_cache for current prices, and return a markdown
+    section the LLM can reference when answering portfolio questions.
+    """
+    try:
+        # ── Portfolio positions ──
+        pos_rows = db.execute(
+            text("SELECT ticker, name, shares, avg_cost FROM portfolio_positions WHERE user_id = :uid"),
+            {"uid": user_id},
+        ).fetchall()
+
+        # ── Watchlist items ──
+        wl_rows = db.execute(
+            text("SELECT ticker, name FROM watchlist_items WHERE user_id = :uid"),
+            {"uid": user_id},
+        ).fetchall()
+
+        if not pos_rows and not wl_rows:
+            return ""
+
+        # ── Fetch current prices for all relevant tickers ──
+        all_tickers = list({r.ticker for r in pos_rows} | {r.ticker for r in wl_rows})
+        prices: Dict[str, float] = {}
+        names: Dict[str, str] = {}
+        if all_tickers:
+            placeholders = ", ".join(f":t{i}" for i in range(len(all_tickers)))
+            params = {f"t{i}": t for i, t in enumerate(all_tickers)}
+            price_rows = db.execute(
+                text(f"SELECT ticker, company_name, current_price FROM screener_cache WHERE ticker IN ({placeholders})"),
+                params,
+            ).fetchall()
+            for pr in price_rows:
+                if pr.current_price is not None:
+                    prices[pr.ticker] = float(pr.current_price)
+                if pr.company_name:
+                    names[pr.ticker] = pr.company_name
+
+        sections: List[str] = []
+
+        # ── Build portfolio table ──
+        if pos_rows:
+            total_value = 0.0
+            total_cost = 0.0
+            table_rows: List[str] = []
+
+            # First pass: compute total value for weight%
+            position_data = []
+            for row in pos_rows:
+                shares = float(row.shares)
+                avg_cost = float(row.avg_cost)
+                cost_basis = shares * avg_cost
+                cur_price = prices.get(row.ticker)
+                mkt_value = shares * cur_price if cur_price is not None else None
+                if mkt_value is not None:
+                    total_value += mkt_value
+                total_cost += cost_basis
+                display_name = names.get(row.ticker, row.name or row.ticker)
+                position_data.append((row.ticker, display_name, shares, avg_cost, cur_price, cost_basis, mkt_value))
+
+            headers = "| Ticker | Name | Shares | Avg Cost | Current | Mkt Value | P&L | P&L% | Weight |"
+            sep = "| --- | --- | --- | --- | --- | --- | --- | --- | --- |"
+            table_rows.append(headers)
+            table_rows.append(sep)
+
+            for ticker, name, shares, avg_cost, cur_price, cost_basis, mkt_value in position_data:
+                if cur_price is not None:
+                    pnl = mkt_value - cost_basis
+                    pnl_str = f"+${pnl:,.0f}" if pnl >= 0 else f"-${abs(pnl):,.0f}"
+                    pnl_pct = f"+{pnl/cost_basis*100:.1f}%" if cost_basis > 0 and pnl >= 0 else (
+                        f"{pnl/cost_basis*100:.1f}%" if cost_basis > 0 else "N/A"
+                    )
+                    weight = f"{mkt_value/total_value*100:.1f}%" if total_value > 0 else "N/A"
+                    table_rows.append(
+                        f"| {ticker} | {name} | {shares:.2f} | ${avg_cost:,.2f} | ${cur_price:,.2f} "
+                        f"| ${mkt_value:,.0f} | {pnl_str} | {pnl_pct} | {weight} |"
+                    )
+                else:
+                    table_rows.append(
+                        f"| {ticker} | {name} | {shares:.2f} | ${avg_cost:,.2f} | N/A | N/A | N/A | N/A | N/A |"
+                    )
+
+            total_pnl = total_value - total_cost
+            pnl_sign = "+" if total_pnl >= 0 else ""
+            pnl_pct_total = f" ({pnl_sign}{total_pnl/total_cost*100:.1f}%)" if total_cost > 0 else ""
+
+            sections.append(
+                "## User's Portfolio\n"
+                + "\n".join(table_rows)
+                + f"\n\n**Total value:** ${total_value:,.0f} | "
+                f"**Total P&L:** {pnl_sign}${abs(total_pnl):,.0f}{pnl_pct_total}"
+            )
+
+        # ── Build watchlist line ──
+        if wl_rows:
+            wl_tickers = ", ".join(r.ticker for r in wl_rows)
+            sections.append(f"## User's Watchlist\n{wl_tickers}")
+
+        return "\n\n".join(sections)
+
+    except Exception as e:
+        logger.warning("Failed to gather portfolio context: %s", e)
+        return ""
+
+
+async def gather_portfolio_context(user_id: str, db: Session) -> str:
+    """Async wrapper — runs the portfolio DB query in a thread."""
+    return await asyncio.to_thread(_gather_portfolio_context_sync, user_id, db)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
 # A. BUILD ASSISTANT SYSTEM PROMPT
 # ═════════════════════════════════════════════════════════════════════════════
 
@@ -170,7 +285,8 @@ def build_assistant_system_prompt(
     financial_context: str,
     session_context: Optional[str] = None,
     comparison_context: Optional[str] = None,
-    page_context: Optional[str] = None,  # ← ADD THIS
+    page_context: Optional[str] = None,
+    portfolio_context: Optional[str] = None,
 ) -> str:
     """
     Build the system prompt for the assistant.
@@ -219,6 +335,16 @@ def build_assistant_system_prompt(
             f"The user is currently viewing: **{page_context}**\n"
             f"When asked to explain this page or what they're looking at, describe "
             f"what this section shows and how to interpret it in the context of investment research.\n"
+        )
+
+    # ── Portfolio & watchlist data (injected for authenticated users) ──
+    if portfolio_context:
+        base += (
+            "\n" + portfolio_context + "\n\n"
+            "When the user asks about 'my portfolio', 'my holdings', or 'how am I doing', "
+            "use the portfolio data above. Reference specific positions, P&L figures, and "
+            "concentration. If a ticker shows N/A for price, note that current pricing is "
+            "unavailable for that position.\n"
         )
 
     if ticker and financial_context:
@@ -316,8 +442,8 @@ async def stream_assistant_response(
     db: Session,
     accumulator: list,
     session_context: Optional[str] = None,
-    page_context: Optional[str] = None,  # ← ADD THIS
-
+    page_context: Optional[str] = None,
+    user_id: Optional[str] = None,
 ) -> AsyncGenerator[str, None]:
     """
     Stream an assistant response for the given query.
@@ -340,19 +466,36 @@ async def stream_assistant_response(
         yield msg
         return
 
-    # Gather financial context if we have a ticker
-    financial_context = ""
-    if ticker:
-        financial_context = await gather_assistant_context(ticker, db)
+    # Gather financial context, comparison context, and portfolio context in parallel
+    coros = []
 
-    # Extract comparison tickers from the query and gather their data
-    comparison_context = ""
+    # Financial context (if ticker is set)
+    async def _get_financial():
+        if ticker:
+            return await gather_assistant_context(ticker, db)
+        return ""
+
+    # Comparison context (if query mentions other tickers)
     comp_tickers = extract_comparison_tickers(query, ticker)
-    if comp_tickers:
-        comparison_context = await gather_comparison_context(comp_tickers, db)
+
+    async def _get_comparison():
+        if comp_tickers:
+            return await gather_comparison_context(comp_tickers, db)
+        return ""
+
+    # Portfolio context (if user is authenticated)
+    async def _get_portfolio():
+        if user_id:
+            return await gather_portfolio_context(user_id, db)
+        return ""
+
+    financial_context, comparison_context, portfolio_context = await asyncio.gather(
+        _get_financial(), _get_comparison(), _get_portfolio()
+    )
 
     system_prompt = build_assistant_system_prompt(
-        ticker, financial_context, session_context, comparison_context, page_context
+        ticker, financial_context, session_context, comparison_context, page_context,
+        portfolio_context,
     )
 
     # Build messages: conversation history (capped) + current query
