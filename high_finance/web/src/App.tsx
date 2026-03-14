@@ -407,9 +407,7 @@ export default function App() {
             <Link to="/congress" style={getNavLinkStyle(activeTab === "congress")}>
               Congress<InfoTip text={NAV_TIPS.congress} />
             </Link>
-            {/* <Link to="/returns" style={getNavLinkStyle(activeTab === "returns")}>
-              Returns
-            </Link> */}
+           
             <Link to="/private" style={getNavLinkStyle(activeTab === "private")}>
               Private Companies
             </Link>
@@ -619,14 +617,7 @@ function CongressDetailView() {
 // ══════════════════════════════════════════════════════════════════════════════
 // RETURNS VIEW (/returns)
 // ══════════════════════════════════════════════════════════════════════════════
-function ReturnsView() {
-  return (
-    <Suspense fallback={<CardSkeleton />}>
-      <SignalRankingCard />
-      <ForwardReturnsCard />
-    </Suspense>
-  );
-}
+
 
 // ══════════════════════════════════════════════════════════════════════════════
 // PROJECTS LIST VIEW (/projects)
