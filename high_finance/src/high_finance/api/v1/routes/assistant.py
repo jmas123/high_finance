@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from high_finance.core.config import settings
-from high_finance.core.security import get_current_user_optional, User
+from high_finance.core.security import get_current_user, get_current_user_optional, User
 from high_finance.db.session import get_db
 from high_finance.services.assistant import stream_assistant_response
 
@@ -36,6 +36,7 @@ class AssistantQueryRequest(BaseModel):
     current_ticker: Optional[str] = None
     conversation_history: List[ConversationMessage] = Field(default_factory=list)
     session_id: Optional[str] = None
+    page_context: Optional[str] = None  # ← ADD THIS
 
 
 # ── GET /status – Check if assistant is available ─────────────────────────────
@@ -56,7 +57,7 @@ async def assistant_status():
 async def assistant_query(
     request: Request,
     body: AssistantQueryRequest,
-    user: Optional[User] = Depends(get_current_user_optional),
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Stream an AI assistant response as SSE."""
@@ -95,6 +96,7 @@ async def assistant_query(
                 db=db,
                 accumulator=accumulator,
                 session_context=session_context,
+                page_context=body.page_context,
             ):
                 yield f"data: {json.dumps(chunk)}\n\n"
         except Exception as e:

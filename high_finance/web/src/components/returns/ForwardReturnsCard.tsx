@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useSearchParams, Link } from "react-router-dom";
 import { api } from "../../lib/api";
 import type { ForwardReturnEvent, EventStatsResponse, EventSummaryResponse } from "../../lib/types";
@@ -125,32 +125,32 @@ export function ForwardReturnsCard() {
   }, [ticker, actorName, direction, sortBy, sortDir, page, setSearchParams]);
 
   // ── Fetch data ─────────────────────────────────────────────────────
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await api.forwardReturns({
-        ticker: ticker || undefined,
-        direction: direction || undefined,
-        actor_name: actorName || undefined,
-        date_from: "2020-01-01",
-        has_returns: true,
-        sort_by: sortBy,
-        sort_dir: sortDir,
-        page,
-        page_size: PAGE_SIZE,
-      });
-      setEvents(res.events);
-      setTotal(res.total);
-    } catch (e) {
-      console.error("Failed to fetch forward returns:", e);
-    } finally {
-      setLoading(false);
-    }
-  }, [ticker, actorName, direction, sortBy, sortDir, page]);
-
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    const controller = new AbortController();
+    setLoading(true);
+
+    api.forwardReturns({
+      ticker: ticker || undefined,
+      direction: direction || undefined,
+      actor_name: actorName || undefined,
+      date_from: "2020-01-01",
+      has_returns: true,
+      sort_by: sortBy,
+      sort_dir: sortDir,
+      page,
+      page_size: PAGE_SIZE,
+    }, controller.signal)
+      .then((res) => {
+        setEvents(res.events);
+        setTotal(res.total);
+      })
+      .catch((e) => {
+        if (e.name !== "AbortError") console.error("Failed to fetch forward returns:", e);
+      })
+      .finally(() => setLoading(false));
+
+    return () => controller.abort();
+  }, [ticker, actorName, direction, sortBy, sortDir, page]);
 
   // ── Fetch stats (once on mount) ────────────────────────────────────
   useEffect(() => {
@@ -159,16 +159,20 @@ export function ForwardReturnsCard() {
 
   // ── Fetch summary ─────────────────────────────────────────────────
   useEffect(() => {
+    const controller = new AbortController();
     setSummaryLoading(true);
     setSummaryError(null);
     api.eventSummary({
       window: summaryWindow,
       direction: direction || "all",
       ticker: ticker || undefined,
-    })
+    }, controller.signal)
       .then(setSummary)
-      .catch((e) => setSummaryError(e.message || "Failed to load summary"))
+      .catch((e) => {
+        if (e.name !== "AbortError") setSummaryError(e.message || "Failed to load summary");
+      })
       .finally(() => setSummaryLoading(false));
+    return () => controller.abort();
   }, [summaryWindow, direction, ticker]);
 
   // ── Debounced text filter handlers ─────────────────────────────────
@@ -542,7 +546,7 @@ export function ForwardReturnsCard() {
                   )}
                   <span style={{ marginLeft: 8, color: "#666" }}>{fmtAmount(e.amount_min, e.amount_max)}</span>
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr 1fr", gap: 6 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(60px, 1fr))", gap: 6 }}>
                   <MobileCardField label="7d" value={
                     <span style={{ color: returnColor(e.ret_7d), fontWeight: 600 }}>{fmtPct(e.ret_7d)}</span>
                   } />

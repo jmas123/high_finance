@@ -301,7 +301,7 @@ async def suggest_dcf_assumptions(ticker: str, db) -> Dict[str, Any]:
         valuation_task = get_valuation_bundle(ticker)
 
         # News needs db session
-        news_task = get_news_bundle(db, ticker, limit=10)
+        news_task = get_news_bundle(ticker, limit=10)
 
         financials, info, valuation, news = await asyncio.gather(
             financials_task, info_task, valuation_task, news_task,

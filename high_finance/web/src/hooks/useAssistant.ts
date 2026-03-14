@@ -15,7 +15,12 @@ interface UseAssistantReturn {
   isStreaming: boolean;
   error: string | null;
   isAvailable: boolean | null; // null = still checking
-  sendQuery: (query: string, currentTicker: string | null, sessionId?: string) => void;
+  sendQuery: (
+    query: string, 
+    currentTicker: string | null, 
+    sessionId?: string,
+    pageContext?: string,   // ← ADD THIS
+  ) => void;
   clearMessages: () => void;
 }
 
@@ -58,7 +63,7 @@ export function useAssistant(): UseAssistantReturn {
   }, []);
 
   const sendQuery = useCallback(
-    (query: string, currentTicker: string | null, sessionId?: string) => {
+    (query: string, currentTicker: string | null, sessionId?: string, pageContext?: string) => {
       if (!query.trim() || isStreaming) return;
 
       // Cancel any in-flight request
@@ -80,8 +85,9 @@ export function useAssistant(): UseAssistantReturn {
         query,
         currentTicker,
         history,
+        
         // onChunk — append to the last (assistant) message
-        (chunk) => {
+        (chunk: string) => {
           setMessages((prev) => {
             const updated = [...prev];
             const last = updated[updated.length - 1];
@@ -99,7 +105,7 @@ export function useAssistant(): UseAssistantReturn {
           setIsStreaming(false);
         },
         // onError
-        (err) => {
+        (err: string) => {
           setIsStreaming(false);
           setError(err);
           // Remove the empty assistant message on error
@@ -112,6 +118,7 @@ export function useAssistant(): UseAssistantReturn {
           });
         },
         sessionId,
+        pageContext,
       );
     },
     [isStreaming, messages],

@@ -27,6 +27,7 @@ from high_finance.core.cache import get_or_compute
 from high_finance.core.llm import get_anthropic_client, HAIKU_MODEL
 from high_finance.services.sec_sic import _load_ticker_map, SEC_HEADERS
 
+
 logger = logging.getLogger(__name__)
 
 # ── HTML stripper (stdlib only, no new deps) ────────────────────────────────
@@ -264,9 +265,32 @@ _USER_PROMPT_TEMPLATE = """Analyze this SEC 8-K Item 2.02 earnings press release
 {filing_text}
 ---"""
 
+def _extract_json(raw_text: str) -> str:
+    """
+    Robustly extract JSON from LLM output that may include markdown fences
+    or surrounding commentary.
+    """
+    # Strategy 1: extract content inside ```...``` fences
+    fence_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw_text, re.DOTALL)
+    if fence_match:
+        return fence_match.group(1).strip()
+
+    # Strategy 2: find the outermost { ... } block
+    start = raw_text.find("{")
+    if start != -1:
+        # Walk backwards from end to find matching closing brace
+        end = raw_text.rfind("}")
+        if end != -1 and end > start:
+            return raw_text[start : end + 1].strip()
+
+    return raw_text.strip()
+
+
+
+
+
 
 async def _analyze_with_llm(filing_text: str) -> dict:
-    """Send filing text to Haiku for structured extraction."""
     client = get_anthropic_client()
 
     response = await client.messages.create(
@@ -283,21 +307,18 @@ async def _analyze_with_llm(filing_text: str) -> dict:
     )
 
     raw_text = response.content[0].text
-
-    # Strip markdown fences if present
-    cleaned = raw_text.strip()
-    if cleaned.startswith("```"):
-        # Remove opening fence (```json or ```)
-        first_newline = cleaned.index("\n")
-        cleaned = cleaned[first_newline + 1 :]
-    if cleaned.endswith("```"):
-        cleaned = cleaned[:-3]
-    cleaned = cleaned.strip()
+    cleaned = _extract_json(raw_text)
 
     try:
         result = json.loads(cleaned)
-    except json.JSONDecodeError:
-        logger.warning("Haiku returned malformed JSON for earnings analysis")
+    except json.JSONDecodeError as e:
+        # Log the FULL raw response so you can see exactly what Haiku returned
+        logger.warning(
+            "Haiku returned malformed JSON for earnings analysis. "
+            "Parse error: %s. Raw response (first 1000 chars): %r",
+            e,
+            raw_text[:1000],
+        )
         result = {"error": "malformed_response", "raw": raw_text[:500]}
 
     return {

@@ -284,6 +284,7 @@ def _query_forward_returns(
             # At least one horizon must have a computed return
             (ForwardReturn.ret_7d.isnot(None))
             | (ForwardReturn.ret_30d.isnot(None))
+            | (ForwardReturn.ret_60d.isnot(None))
             | (ForwardReturn.ret_90d.isnot(None))
             | (ForwardReturn.ret_180d.isnot(None)),
         )
@@ -295,7 +296,8 @@ def _query_forward_returns(
     sort_col = _SORT_COLUMNS.get(sort_by, Event.event_date)
     order_fn = desc if sort_dir.lower() == "desc" else asc
     # NULLS LAST for return columns so NULL values don't dominate sorted results
-    query = query.order_by(order_fn(sort_col).nullslast())
+    # Secondary sort by Event.id for stable pagination with duplicate values
+    query = query.order_by(order_fn(sort_col).nullslast(), Event.id)
 
     # Paginate
     offset = (page - 1) * page_size
@@ -366,9 +368,6 @@ def _compute_stats(
     stats_q = (
         db.query(
             func.avg(ForwardReturn.ret_30d).label("avg_ret"),
-            func.count(
-                func.nullif(ForwardReturn.ret_30d < 0, True)
-            ).label("wins"),  # count where ret_30d >= 0
         )
         .join(Event, ForwardReturn.event_id == Event.id)
         .filter(ForwardReturn.ret_30d.isnot(None))
@@ -686,7 +685,7 @@ def _compute_regime_stats(
         if evt.direction == "buy":
             is_win = alpha > 0
         else:
-            is_win = spy_val - ret_val > 0
+            is_win = alpha < 0
 
         if vol <= median_vol:
             low_alphas.append(alpha)

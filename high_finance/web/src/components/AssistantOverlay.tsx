@@ -13,7 +13,7 @@ interface AssistantOverlayProps {
   error: string | null;
   currentTicker: string | null;
   currentSection: string;
-  onSend: (query: string) => void;
+  onSend: (query: string, pageContext?:string) => void;
   onClear: () => void;
   onRunDCF?: () => void;
   onRunMemo?: () => void;
@@ -70,7 +70,7 @@ export function AssistantOverlay({
     const q = input.trim();
     if (!q || isStreaming) return;
     setInput("");
-    onSend(q);
+    onSend(q, currentSection);
   }
 
   function handleAction(action: ActionType) {

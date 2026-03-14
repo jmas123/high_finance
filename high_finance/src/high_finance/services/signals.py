@@ -230,7 +230,6 @@ class SignalEngine:
     def evaluate_all(self) -> list[dict]:
         """Evaluate all signals, score, apply corrections, and return ranked."""
         results: list[SignalResult] = []
-        n_signals = len(SIGNAL_REGISTRY)
 
         for sig in SIGNAL_REGISTRY:
             result = self._evaluate_signal(sig)
@@ -238,7 +237,8 @@ class SignalEngine:
                 continue
             results.append(result)
 
-        # Apply Bonferroni correction
+        # Apply Bonferroni correction using actual number of evaluated signals
+        n_signals = len(results) if results else 1
         for r in results:
             r.adjusted_p = min(r.p_value * n_signals, 1.0)
             if r.adjusted_p < 0.05:
@@ -406,9 +406,12 @@ class SignalEngine:
             wins = int(np.sum(arr > 0))
         win_rate = wins / n
 
-        # Score = avg_alpha * sqrt(n) / max(std_alpha, epsilon)
-        # This is essentially the t-statistic — measures signal strength
-        score = avg_alpha * math.sqrt(n) / max(std_alpha, 1e-6)
+        # Score = avg_alpha * sqrt(n) / std_alpha (t-statistic)
+        # When std_alpha ≈ 0, the score is meaningless — set to 0
+        if std_alpha < 1e-6:
+            score = 0.0
+        else:
+            score = avg_alpha * math.sqrt(n) / std_alpha
 
         # One-sample t-test: is avg_alpha significantly different from 0?
         if n > 1 and std_alpha > 1e-6:

@@ -170,6 +170,7 @@ def build_assistant_system_prompt(
     financial_context: str,
     session_context: Optional[str] = None,
     comparison_context: Optional[str] = None,
+    page_context: Optional[str] = None,  # ← ADD THIS
 ) -> str:
     """
     Build the system prompt for the assistant.
@@ -205,10 +206,19 @@ def build_assistant_system_prompt(
         "asks to run, generate, or create one of these features.\n"
     )
 
+
     if session_context:
         base += (
             f"\nSession context (what the user has been doing):\n"
             f"{session_context}\n"
+        )
+
+    if page_context:
+        base += (
+            f"\n## Current Page\n"
+            f"The user is currently viewing: **{page_context}**\n"
+            f"When asked to explain this page or what they're looking at, describe "
+            f"what this section shows and how to interpret it in the context of investment research.\n"
         )
 
     if ticker and financial_context:
@@ -306,6 +316,8 @@ async def stream_assistant_response(
     db: Session,
     accumulator: list,
     session_context: Optional[str] = None,
+    page_context: Optional[str] = None,  # ← ADD THIS
+
 ) -> AsyncGenerator[str, None]:
     """
     Stream an assistant response for the given query.
@@ -340,7 +352,7 @@ async def stream_assistant_response(
         comparison_context = await gather_comparison_context(comp_tickers, db)
 
     system_prompt = build_assistant_system_prompt(
-        ticker, financial_context, session_context, comparison_context
+        ticker, financial_context, session_context, comparison_context, page_context
     )
 
     # Build messages: conversation history (capped) + current query

@@ -237,6 +237,9 @@ const getNavLinkStyle = (isActive: boolean) => ({
   textDecoration: "none",
 });
 
+
+
+
 // ── DCF state shape for snapshot wiring ──────────────────────────────────────
 type DCFState = {
   growth: number;
@@ -255,6 +258,7 @@ type DCFState = {
 export default function App() {
   const { user, isAuthenticated, isLoading: authLoading, logout, sessionExpired, clearSessionExpired } = useAuth();
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [congressPageContext, setCongressPageContext] = useState<string>("");
 
   // Auto-open auth modal when session expires
   useEffect(() => {
@@ -267,9 +271,17 @@ export default function App() {
   const isMobile = useIsMobile();
   const isLargeScreen = useIsLargeScreen();
 
+  // Clear congress context when navigating away from /signals
+  useEffect(() => {
+    if (!location.pathname.startsWith("/signals")) {
+      setCongressPageContext("");
+    }
+  }, [location.pathname]);
+
   // ── AI Research Assistant ─────────────────────────────────────────────────
   const assistant = useAssistant();
   const sessionTracker = useSessionTracker();
+
 
   // Listen for section changes from TickerView
   useEffect(() => {
@@ -395,9 +407,9 @@ export default function App() {
             <Link to="/congress" style={getNavLinkStyle(activeTab === "congress")}>
               Congress<InfoTip text={NAV_TIPS.congress} />
             </Link>
-            <Link to="/returns" style={getNavLinkStyle(activeTab === "returns")}>
+            {/* <Link to="/returns" style={getNavLinkStyle(activeTab === "returns")}>
               Returns
-            </Link>
+            </Link> */}
             <Link to="/private" style={getNavLinkStyle(activeTab === "private")}>
               Private Companies
             </Link>
@@ -419,10 +431,10 @@ export default function App() {
               <Route path="/screener" element={<ScreenerView />} />
               <Route path="/projects" element={<ProjectsListView />} />
               <Route path="/projects/:projectId" element={<ProjectView />} />
-              <Route path="/signals" element={<SignalsView />} />
+              <Route path="/signals" element={<SignalsView onPageContextChange={setCongressPageContext} />} />
               <Route path="/congress" element={<CongressView />} />
               <Route path="/congress/:politicianId" element={<CongressDetailView />} />
-              <Route path="/returns" element={<ReturnsView />} />
+              {/* <Route path="/returns" element={<ReturnsView />} /> */}
               <Route path="/ai-history" element={<AIHistoryView />} />
               <Route path="/private" element={<PrivateCompanyList />} />
               <Route path="/private/:slug" element={<PrivateCompanyProfileView />} />
@@ -440,8 +452,8 @@ export default function App() {
       {/* Auth Modal */}
       <AuthModal isOpen={showAuthModal} onClose={() => { setShowAuthModal(false); clearSessionExpired(); }} />
 
-      {/* AI Research Assistant Overlay */}
-      {assistant.isAvailable && (
+      {/* AI Research Assistant Overlay (auth-gated) */}
+      {assistant.isAvailable && isAuthenticated && (
         <AssistantOverlay
           isOpen={assistant.isOpen}
           onClose={assistant.close}
@@ -450,8 +462,10 @@ export default function App() {
           error={assistant.error}
           currentTicker={currentTicker}
           currentSection={sessionTracker.currentSection}
-          onSend={(query) => assistant.sendQuery(query, currentTicker, sessionTracker.sessionId)}
-          onClear={assistant.clearMessages}
+          onSend={(query, pageContext) => 
+            assistant.sendQuery(query, currentTicker, sessionTracker.sessionId, congressPageContext || pageContext)
+          }  
+        onClear={assistant.clearMessages}
           onRunDCF={() => {
             assistant.close();
             document.getElementById("dcf-card")?.scrollIntoView({ behavior: "smooth" });
@@ -479,8 +493,8 @@ export default function App() {
         />
       )}
 
-      {/* Cmd+K Floating Button (when assistant available + overlay closed) */}
-      {assistant.isAvailable && !assistant.isOpen && (
+      {/* Cmd+K Floating Button (when assistant available + overlay closed + signed in) */}
+      {assistant.isAvailable && isAuthenticated && !assistant.isOpen && (
         <button
           onClick={assistant.open}
           style={{
@@ -569,11 +583,12 @@ function ScreenerView() {
 // ══════════════════════════════════════════════════════════════════════════════
 // SIGNALS VIEW (/signals) - formerly "Notifications"
 // ══════════════════════════════════════════════════════════════════════════════
-function SignalsView() {
+// Update SignalsView to accept the prop
+function SignalsView({ onPageContextChange }: { onPageContextChange: (ctx: string) => void }) {
   return (
     <Suspense fallback={<CardSkeleton />}>
       <div style={{ marginBottom: 20 }}>
-        <NotificationsCard />
+        <NotificationsCard onPageContextChange={onPageContextChange} />
       </div>
     </Suspense>
   );

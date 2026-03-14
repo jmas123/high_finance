@@ -69,9 +69,18 @@ export function fetchWithTimeout(
   url: string,
   init?: RequestInit,
   timeoutMs = DEFAULT_TIMEOUT_MS,
+  externalSignal?: AbortSignal,
 ): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  // If an external signal is provided, abort our controller when it fires
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      controller.abort();
+    } else {
+      externalSignal.addEventListener("abort", () => controller.abort(), { once: true });
+    }
+  }
   return fetch(url, { ...init, signal: controller.signal }).finally(() =>
     clearTimeout(timer),
   );
@@ -84,8 +93,8 @@ function handleResponseError(res: Response): void {
   }
 }
 
-async function getJSON<T>(path: string, timeoutMs?: number): Promise<T> {
-  const res = await fetchWithTimeout(path, { headers: getAuthHeaders() }, timeoutMs);
+async function getJSON<T>(path: string, timeoutMs?: number, signal?: AbortSignal): Promise<T> {
+  const res = await fetchWithTimeout(path, { headers: getAuthHeaders() }, timeoutMs, signal);
   if (!res.ok) {
     handleResponseError(res);
     let message: string;
@@ -1011,6 +1020,8 @@ valuationAISuggest: (ticker: string) =>
     onDone: () => void,
     onError: (error: string) => void,
     sessionId?: string,
+    pageContext?: string,  // ← ADD
+
   ): AbortController => {
     const controller = new AbortController();
 
@@ -1027,6 +1038,8 @@ valuationAISuggest: (ticker: string) =>
             current_ticker: currentTicker,
             conversation_history: conversationHistory,
             session_id: sessionId || null,
+            page_context: pageContext || null,  // ← ADD
+
           }),
           signal: controller.signal,
         });
@@ -1133,7 +1146,7 @@ valuationAISuggest: (ticker: string) =>
     sort_dir?: string;
     page?: number;
     page_size?: number;
-  } = {}) => {
+  } = {}, signal?: AbortSignal) => {
     const q = new URLSearchParams();
     if (params.ticker) q.set("ticker", params.ticker);
     if (params.direction) q.set("direction", params.direction);
@@ -1146,7 +1159,7 @@ valuationAISuggest: (ticker: string) =>
     if (params.page != null) q.set("page", String(params.page));
     if (params.page_size != null) q.set("page_size", String(params.page_size));
     const qs = q.toString();
-    return getJSON<ForwardReturnsResponse>(`${BASE}/events/forward-returns${qs ? `?${qs}` : ""}`);
+    return getJSON<ForwardReturnsResponse>(`${BASE}/events/forward-returns${qs ? `?${qs}` : ""}`, undefined, signal);
   },
 
   eventStats: (params: { ticker?: string } = {}) => {
@@ -1156,14 +1169,14 @@ valuationAISuggest: (ticker: string) =>
     return getJSON<EventStatsResponse>(`${BASE}/events/stats${qs ? `?${qs}` : ""}`);
   },
 
-  eventSummary: (params?: { window?: number; direction?: string; actor_id?: number; ticker?: string }) => {
+  eventSummary: (params?: { window?: number; direction?: string; actor_id?: number; ticker?: string }, signal?: AbortSignal) => {
     const q = new URLSearchParams();
     if (params?.window != null) q.set("window", String(params.window));
     if (params?.direction) q.set("direction", params.direction);
     if (params?.actor_id != null) q.set("actor_id", String(params.actor_id));
     if (params?.ticker) q.set("ticker", params.ticker);
     const qs = q.toString();
-    return getJSON<EventSummaryResponse>(`${BASE}/events/summary${qs ? `?${qs}` : ""}`);
+    return getJSON<EventSummaryResponse>(`${BASE}/events/summary${qs ? `?${qs}` : ""}`, undefined, signal);
   },
 
   signalRanking: (params?: { window?: number; since?: string }) => {

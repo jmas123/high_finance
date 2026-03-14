@@ -225,8 +225,8 @@ def macro_ttl() -> int:
 
 
 def news_ttl() -> int:
-    """1 hr."""
-    return 3600
+    """4 hr — bumped from 1hr to reduce Haiku API calls."""
+    return 14400
 
 
 def options_ttl() -> int:

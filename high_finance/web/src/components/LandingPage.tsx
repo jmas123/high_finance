@@ -54,7 +54,7 @@ const FEATURES = [
   {
     emoji: "✨",
     title: "AI Insights",
-    desc: "Generate investment memos, earnings analysis, and AI-powered commentary with one click.",
+    desc: "Generate investment memos, earnings analysis, and AI-powered commentary. Sign in to unlock.",
   },
 ];
 
@@ -62,7 +62,7 @@ const STEPS = [
   {
     num: "1",
     title: "Search any ticker",
-    desc: "No sign-up required. Type a symbol and hit enter.",
+    desc: "Type any ticker symbol and hit enter. Browse as a guest or sign in for full access.",
   },
   {
     num: "2",
@@ -158,7 +158,7 @@ export function LandingPage({ onOpenAuth }: LandingPageProps) {
               cursor: "pointer",
             }}
           >
-            Create Account
+            Sign In
           </button>
         </div>
       </section>
@@ -311,7 +311,7 @@ export function LandingPage({ onOpenAuth }: LandingPageProps) {
               cursor: "pointer",
             }}
           >
-            Create Account
+            Sign In
           </button>
         </div>
       </section>

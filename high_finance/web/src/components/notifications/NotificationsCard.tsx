@@ -25,6 +25,8 @@ function hitRateColor(hitRate: number | null | undefined): string {
   return "#ef4444";                       // Red - bad
 }
 
+
+
 function Section({
   title,
   subtitle,
@@ -102,7 +104,12 @@ function CompanyNotifList({ items }: { items: CompanyNotification[] }) {
   );
 }
 
-export function NotificationsCard() {
+interface NotificationsCardProps {
+  onPageContextChange?: (context: string) => void;
+}
+
+
+export function NotificationsCard({ onPageContextChange }: NotificationsCardProps) {
   const [days, setDays] = useState(7);
   const [minAmount, setMinAmount] = useState(50000);
   const [limit, setLimit] = useState(100);
@@ -153,6 +160,8 @@ export function NotificationsCard() {
   setItems(pol);
 }
 
+
+
 async function loadWatchlist() {
   const watch = getWatchlist();
   const watchBundles = await Promise.allSettled(watch.map((w) => api.news(w.ticker)));
@@ -192,6 +201,32 @@ async function loadPortfolio() {
   })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
 }, [tab, days, limit, tab === "politicians" ? minAmount : null]);
+
+useEffect(() => {
+    if (!onPageContextChange || tab !== "politicians") return;
+    const summary = rows.slice(0, 200).map((x) => {
+      const p = x.politician;
+      const t = x.trade;
+      const ctx = x.context;
+      return [
+        `${p?.name ?? "Unknown"} (${p?.party === "Democrat" ? "D" : "R"}, ${p?.chamber})`,
+        `${(t?.transaction_type ?? "").toUpperCase()} ${t?.ticker_raw ?? ""}`,
+        `Amount: ${t?.amount_min != null ? `$${t.amount_min.toLocaleString()}` : ""}–${t?.amount_max != null ? `$${t.amount_max.toLocaleString()}` : ""}`,
+        `Why it matters: ${ctx?.relevance_label ?? ""} (${Math.round((ctx?.relevance_score ?? 0) * 100)}%)`,
+        ctx?.reasons?.slice(0, 2).map(r => `  - ${r.title}: ${r.detail}`).join("\n") ?? "",
+      ].filter(Boolean).join(" | ");
+    }).join("\n");
+
+    const MAX_CONTEXT_CHARS = 5000;
+    const header =
+      `Congressional trading notifications page.\n` +
+      `Filters: Min $${minAmount.toLocaleString()}, Type: ${tradeType}, Party: ${party}, Chamber: ${chamber}, Last ${days} days.\n` +
+      `Showing ${rows.length} trades:\n\n`;
+    const truncatedSummary = summary.length + header.length > MAX_CONTEXT_CHARS
+      ? summary.slice(0, MAX_CONTEXT_CHARS - header.length) + "\n...(truncated)"
+      : summary;
+    onPageContextChange(header + truncatedSummary);
+  }, [rows, tab, minAmount, tradeType, party, chamber, days, onPageContextChange]);
 
 
   return (

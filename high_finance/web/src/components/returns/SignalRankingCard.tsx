@@ -5,11 +5,13 @@ import { thBase, tdBase, right } from "../../lib/types";
 
 const WINDOWS = [7, 30, 60, 90, 180] as const;
 
-function fmtPct(val: number): string {
+function fmtPct(val: number | null | undefined): string {
+  if (val == null) return "—";
   return `${val > 0 ? "+" : ""}${(val * 100).toFixed(2)}%`;
 }
 
-function returnColor(val: number): string {
+function returnColor(val: number | null | undefined): string {
+  if (val == null) return "#888";
   return val > 0 ? "#22c55e" : val < 0 ? "#ef4444" : "#888";
 }
 
@@ -147,13 +149,13 @@ export function SignalRankingCard() {
                         {fmtPct(sig.avg_alpha)}
                       </td>
                       <td style={{ ...tdBase, ...right }}>
-                        {(sig.win_rate * 100).toFixed(1)}%
+                        {sig.win_rate != null ? `${(sig.win_rate * 100).toFixed(1)}%` : "—"}
                       </td>
                       <td style={{ ...tdBase, ...right, fontWeight: 600 }}>
-                        {sig.score.toFixed(2)}
+                        {sig.score != null ? sig.score.toFixed(2) : "—"}
                       </td>
                       <td style={{ ...tdBase, ...right, fontSize: 11 }}>
-                        {sig.adjusted_p < 0.001 ? "<0.001" : sig.adjusted_p.toFixed(3)}
+                        {sig.adjusted_p != null ? (sig.adjusted_p < 0.001 ? "<0.001" : sig.adjusted_p.toFixed(3)) : "—"}
                       </td>
                       <td style={{ ...tdBase, textAlign: "center" }}>
                         <span style={{
