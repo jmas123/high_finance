@@ -70,8 +70,12 @@ async def get_yf_info(ticker: str) -> dict:
                 asyncio.to_thread(_fetch_yf_info_sync, ticker),
                 timeout=15,
             )
-        except asyncio.TimeoutError:
-            logger.error("yfinance timed out for %s (15s limit)", ticker)
+        except (asyncio.TimeoutError, asyncio.CancelledError, Exception) as exc:
+            logger.error("yfinance failed for %s: %s", ticker, exc)
             return {}
 
-    return await get_or_compute(cache_key, fundamentals_ttl(), _compute)
+    try:
+        return await get_or_compute(cache_key, fundamentals_ttl(), _compute)
+    except Exception as exc:
+        logger.error("get_or_compute failed for yf_info:%s: %s", ticker, exc)
+        return {}
