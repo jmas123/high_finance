@@ -186,7 +186,12 @@ async def get_or_compute(
     # 3. We hold the lock — compute and cache
     try:
         result = await compute_fn()
-        await set_cached(key, result, ttl)
+        # Don't cache empty results (None, {}, []) — transient failures
+        # should not poison the cache for the full TTL
+        if result:
+            await set_cached(key, result, ttl)
+        else:
+            logger.info("Skipping cache write for key=%s (empty result)", key)
         return result
     finally:
         try:

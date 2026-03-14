@@ -14,6 +14,7 @@ Usage:
 import asyncio
 import logging
 import time
+from typing import Optional
 
 import yfinance as yf
 
@@ -22,20 +23,25 @@ from high_finance.core.cache import get_or_compute, fundamentals_ttl
 logger = logging.getLogger(__name__)
 
 
-def _fetch_yf_info_sync(ticker: str, max_retries: int = 2) -> dict:
+def _fetch_yf_info_sync(ticker: str, max_retries: int = 2) -> Optional[dict]:
     """Blocking yfinance call — runs in thread pool. Returns raw info dict.
 
     Retries on transient Yahoo 401 errors with a short back-off.
-    On persistent failure, returns {} for graceful degradation.
+    On persistent failure, returns None so the result is NOT cached
+    (get_or_compute skips caching falsy values).
     """
     for attempt in range(max_retries + 1):
         try:
             stock = yf.Ticker(ticker)
-            # Force shorter timeout on the underlying HTTP session
-            # to avoid curl_cffi's default 30s timeout blocking the thread
-            if hasattr(stock, '_session') and stock._session:
-                stock._session.timeout = 10
-            return stock.info or {}
+            info = stock.info
+            # yfinance returns {} or None on some failures — treat as miss
+            if not info:
+                logger.warning("yfinance returned empty info for %s (attempt %d)", ticker, attempt + 1)
+                if attempt < max_retries:
+                    time.sleep(1.5 * (attempt + 1))
+                    continue
+                return None
+            return info
         except Exception as exc:
             if attempt < max_retries:
                 wait = 1.5 * (attempt + 1)
@@ -49,10 +55,10 @@ def _fetch_yf_info_sync(ticker: str, max_retries: int = 2) -> dict:
                 "yfinance permanently failed for %s after %d attempts: %s",
                 ticker, max_retries + 1, exc,
             )
-            return {}
+            return None
 
 
-async def get_yf_info(ticker: str) -> dict:
+async def get_yf_info(ticker: str) -> Optional[dict]:
     """
     Get yfinance .info dict for a ticker, cached in Redis.
 
@@ -60,7 +66,8 @@ async def get_yf_info(ticker: str) -> dict:
     ensures only one worker fetches from Yahoo at a time; others wait and
     get the cached result.
 
-    Returns {} on timeout instead of raising — callers handle empty dicts.
+    Returns None on failure — callers should handle None gracefully.
+    None is NOT cached, so the next request retries immediately.
     """
     cache_key = f"hf:yf_info:{ticker}"
 
@@ -70,12 +77,15 @@ async def get_yf_info(ticker: str) -> dict:
                 asyncio.to_thread(_fetch_yf_info_sync, ticker),
                 timeout=15,
             )
-        except (asyncio.TimeoutError, asyncio.CancelledError, Exception) as exc:
+        except asyncio.TimeoutError:
+            logger.error("yfinance timed out for %s", ticker)
+            return None
+        except Exception as exc:
             logger.error("yfinance failed for %s: %s", ticker, exc)
-            return {}
+            return None
 
     try:
         return await get_or_compute(cache_key, fundamentals_ttl(), _compute)
     except Exception as exc:
         logger.error("get_or_compute failed for yf_info:%s: %s", ticker, exc)
-        return {}
+        return None

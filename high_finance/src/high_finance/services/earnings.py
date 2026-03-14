@@ -162,7 +162,7 @@ async def get_earnings_calendar(ticker: str) -> Dict[str, Any]:
     cache_key = f"hf:earnings:{ticker}"
 
     async def _compute():
-        info = await get_yf_info(ticker)
+        info = await get_yf_info(ticker) or {}
         return await asyncio.wait_for(
             asyncio.to_thread(_fetch_earnings_calendar_sync, ticker, info),
             timeout=15,

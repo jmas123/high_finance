@@ -149,7 +149,7 @@ async def get_company_fundamentals(
     fetch_peers: bool = False,
     peer_tickers: list[str] | None = None,
 ):
-    info = await get_yf_info(ticker)
+    info = await get_yf_info(ticker) or {}
 
     # ==========================================
     # ASSET TYPE DETECTION

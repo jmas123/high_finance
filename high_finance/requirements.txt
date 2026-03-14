@@ -18,7 +18,7 @@ alembic
 structlog
 sentry-sdk
 pydantic-settings
-yfinance>=0.2.50
+yfinance==0.2.50
 groq
 anthropic
 scikit-learn

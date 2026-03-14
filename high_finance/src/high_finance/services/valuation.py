@@ -996,6 +996,7 @@ async def _compute_bundle(
     info_task = get_yf_info(ticker)
     stmts_task = get_financial_statements(ticker)
     info, stmts = await asyncio.gather(info_task, stmts_task)
+    info = info or {}
 
     annual_is = stmts.get("annual", {}).get("income_statement", {})
     annual_bs = stmts.get("annual", {}).get("balance_sheet", {})

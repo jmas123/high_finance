@@ -309,7 +309,7 @@ async def get_iv_context(ticker: str) -> Dict[str, Any]:
     cache_key = f"hf:iv_context:{ticker}"
 
     async def _compute():
-        info = await get_yf_info(ticker)
+        info = await get_yf_info(ticker) or {}
         return await asyncio.wait_for(
             asyncio.to_thread(_fetch_iv_context_sync, ticker, info),
             timeout=15,
@@ -618,7 +618,7 @@ async def get_decay_simulation_for_contract(
     option_type: str = 'call'
 ) -> Dict[str, Any]:
     """Get decay simulation for a specific contract from the options chain."""
-    info = await get_yf_info(ticker)
+    info = await get_yf_info(ticker) or {}
     params = await asyncio.wait_for(
         asyncio.to_thread(_fetch_contract_for_decay_sync, ticker, expiry, strike, option_type, info),
         timeout=15,

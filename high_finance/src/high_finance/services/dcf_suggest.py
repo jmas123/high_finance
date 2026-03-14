@@ -312,7 +312,7 @@ async def suggest_dcf_assumptions(ticker: str, db) -> Dict[str, Any]:
         if isinstance(financials, Exception):
             logger.warning("DCF suggest: financials failed for %s: %s", ticker, financials)
             financials = {}
-        if isinstance(info, Exception):
+        if isinstance(info, Exception) or info is None:
             logger.warning("DCF suggest: info failed for %s: %s", ticker, info)
             info = {}
         if isinstance(valuation, Exception):

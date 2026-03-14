@@ -1,10 +1,13 @@
 import asyncio
+import logging
 
 import yfinance as yf
 import math
 from typing import List, Dict, Any, Optional
 
 from high_finance.core.cache import get_or_compute, price_ttl
+
+logger = logging.getLogger(__name__)
 
 
 def _fetch_price_history_sync(
@@ -77,9 +80,16 @@ async def get_price_history(
     cache_key = f"hf:prices:{ticker}:{period}:{start}:{end}"
 
     async def _compute():
-        return await asyncio.wait_for(
-            asyncio.to_thread(_fetch_price_history_sync, ticker, period, start, end),
-            timeout=15,
-        )
+        try:
+            return await asyncio.wait_for(
+                asyncio.to_thread(_fetch_price_history_sync, ticker, period, start, end),
+                timeout=15,
+            )
+        except asyncio.TimeoutError:
+            logger.error("Price history timed out for %s (period=%s)", ticker, period)
+            return []
+        except Exception as exc:
+            logger.error("Price history failed for %s: %s", ticker, exc)
+            return []
 
     return await get_or_compute(cache_key, price_ttl(), _compute)

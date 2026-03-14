@@ -96,7 +96,7 @@ async def get_earnings_events(
             if not earnings_rows:
                 continue
 
-            info = await get_yf_info(ticker)
+            info = await get_yf_info(ticker) or {}
             company_name = info.get("shortName") or info.get("longName") or ticker
 
             for row in earnings_rows:
@@ -143,7 +143,7 @@ async def get_dividend_events(
 
     for ticker in tickers:
         try:
-            info = await get_yf_info(ticker)
+            info = await get_yf_info(ticker) or {}
 
             ex_div_date = info.get("exDividendDate")
             if ex_div_date is None:

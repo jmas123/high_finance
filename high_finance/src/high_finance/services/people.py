@@ -12,7 +12,7 @@ async def get_leadership_data(ticker: str, db: Session) -> List[Dict[str, Any]]:
     Previously this called yf.Ticker(ticker) synchronously inside an async
     function, which blocked the event loop and froze all other gather tasks.
     """
-    info = await get_yf_info(ticker)
+    info = await get_yf_info(ticker) or {}
 
     officers = info.get('companyOfficers', [])
 

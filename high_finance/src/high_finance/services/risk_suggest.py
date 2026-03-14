@@ -474,7 +474,7 @@ async def suggest_risk_scenarios(ticker: str, db) -> Dict[str, Any]:
         if isinstance(financials, Exception):
             logger.warning("Risk suggest: financials failed for %s: %s", ticker, financials)
             financials = {}
-        if isinstance(info, Exception):
+        if isinstance(info, Exception) or info is None:
             logger.warning("Risk suggest: info failed for %s: %s", ticker, info)
             info = {}
         if isinstance(institutional, Exception):

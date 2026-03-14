@@ -95,7 +95,7 @@ async def get_options_overview(ticker: str) -> Dict[str, Any]:
     cache_key = f"hf:options:{ticker}"
 
     async def _compute():
-        info = await get_yf_info(ticker)
+        info = await get_yf_info(ticker) or {}
         return await asyncio.wait_for(
             asyncio.to_thread(_fetch_options_overview_sync, ticker, info),
             timeout=15,
