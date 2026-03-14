@@ -157,8 +157,8 @@ def _gather_comparison_context_sync(tickers: List[str], db: Session) -> str:
 
 
 async def gather_comparison_context(tickers: List[str], db: Session) -> str:
-    """Async wrapper — runs the DB query in a thread."""
-    return await asyncio.to_thread(_gather_comparison_context_sync, tickers, db)
+    """Fetch comparison data synchronously — query is fast and avoids cross-thread session issues."""
+    return _gather_comparison_context_sync(tickers, db)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -172,6 +172,7 @@ def _gather_portfolio_context_sync(user_id: str, db: Session) -> str:
     section the LLM can reference when answering portfolio questions.
     """
     try:
+        logger.info("Gathering portfolio context for user %s", user_id)
         # ── Portfolio positions ──
         pos_rows = db.execute(
             text("SELECT ticker, name, shares, avg_cost FROM portfolio_positions WHERE user_id = :uid"),
@@ -184,8 +185,11 @@ def _gather_portfolio_context_sync(user_id: str, db: Session) -> str:
             {"uid": user_id},
         ).fetchall()
 
+        logger.info("Portfolio context for user %s: %d positions, %d watchlist",
+                     user_id, len(pos_rows), len(wl_rows))
+
         if not pos_rows and not wl_rows:
-            return ""
+            return "## User's Portfolio\nThe user has not added any positions or watchlist items yet."
 
         # ── Fetch current prices for all relevant tickers ──
         all_tickers = list({r.ticker for r in pos_rows} | {r.ticker for r in wl_rows})
@@ -267,13 +271,13 @@ def _gather_portfolio_context_sync(user_id: str, db: Session) -> str:
         return "\n\n".join(sections)
 
     except Exception as e:
-        logger.warning("Failed to gather portfolio context: %s", e)
+        logger.exception("Failed to gather portfolio context for user %s", user_id)
         return ""
 
 
 async def gather_portfolio_context(user_id: str, db: Session) -> str:
-    """Async wrapper — runs the portfolio DB query in a thread."""
-    return await asyncio.to_thread(_gather_portfolio_context_sync, user_id, db)
+    """Fetch portfolio data synchronously — query is fast and avoids cross-thread session issues."""
+    return _gather_portfolio_context_sync(user_id, db)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -345,6 +349,8 @@ def build_assistant_system_prompt(
             "use the portfolio data above. Reference specific positions, P&L figures, and "
             "concentration. If a ticker shows N/A for price, note that current pricing is "
             "unavailable for that position.\n"
+            "If the user has no positions yet, tell them they can add holdings from the "
+            "Portfolio section on the dashboard. Do NOT ask them to paste holdings in chat.\n"
         )
 
     if ticker and financial_context:
