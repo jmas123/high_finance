@@ -81,12 +81,12 @@ const AIHistoryView = lazy(() =>
 const CongressLeaderboard = lazy(() =>
   import("./components/politicians/CongressLeaderboard").then(m => ({ default: m.CongressLeaderboard }))
 );
-const ForwardReturnsCard = lazy(() =>
-  import("./components/returns/ForwardReturnsCard").then(m => ({ default: m.ForwardReturnsCard }))
-);
-const SignalRankingCard = lazy(() =>
-  import("./components/returns/SignalRankingCard").then(m => ({ default: m.SignalRankingCard }))
-);
+// const ForwardReturnsCard = lazy(() =>
+//   import("./components/returns/ForwardReturnsCard").then(m => ({ default: m.ForwardReturnsCard }))
+// );
+// const SignalRankingCard = lazy(() =>
+//   import("./components/returns/SignalRankingCard").then(m => ({ default: m.SignalRankingCard }))
+// );
 const BacktestDetailCard = lazy(() =>
   import("./components/politicians/BacktestDetailCard").then(m => ({ default: m.BacktestDetailCard }))
 );
