@@ -68,7 +68,7 @@ export function ScreenerCard({ onSelectTicker }: Props) {
 
   // Listen for assistant screener-prefill events (when already on /screener)
   useEffect(() => {
-    const handler = (e: Event) => {
+    const handler = () => {
       try {
         const prefill = sessionStorage.getItem(PREFILL_KEY);
         if (prefill) {

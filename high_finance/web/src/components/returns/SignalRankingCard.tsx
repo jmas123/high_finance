@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { api } from "../../lib/api";
-import type { SignalRankingResponse, SignalResult } from "../../lib/types";
+import type { SignalRankingResponse } from "../../lib/types";
 import { thBase, tdBase, right } from "../../lib/types";
 
 const WINDOWS = [7, 30, 60, 90, 180] as const;
