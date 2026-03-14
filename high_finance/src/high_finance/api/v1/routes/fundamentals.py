@@ -17,7 +17,10 @@ async def read_company_fundamentals(request: Request, ticker: str, db: Session =
         fundamentals = await get_company_fundamentals(ticker, db)
     except Exception as e:
         logger.exception("Fundamentals failed for %s", ticker)
-        raise HTTPException(500, "Unable to load fundamentals")
+        raise HTTPException(
+            status_code=503,
+            detail="Market data temporarily unavailable. Please try again shortly.",
+        )
     if not fundamentals:
         raise HTTPException(status_code=404, detail="Company not found")
     return fundamentals

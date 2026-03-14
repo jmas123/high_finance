@@ -26,10 +26,15 @@ def _fetch_yf_info_sync(ticker: str, max_retries: int = 2) -> dict:
     """Blocking yfinance call — runs in thread pool. Returns raw info dict.
 
     Retries on transient Yahoo 401 errors with a short back-off.
+    On persistent failure, returns {} for graceful degradation.
     """
     for attempt in range(max_retries + 1):
         try:
             stock = yf.Ticker(ticker)
+            # Force shorter timeout on the underlying HTTP session
+            # to avoid curl_cffi's default 30s timeout blocking the thread
+            if hasattr(stock, '_session') and stock._session:
+                stock._session.timeout = 10
             return stock.info or {}
         except Exception as exc:
             if attempt < max_retries:
@@ -40,7 +45,11 @@ def _fetch_yf_info_sync(ticker: str, max_retries: int = 2) -> dict:
                 )
                 time.sleep(wait)
                 continue
-            raise
+            logger.error(
+                "yfinance permanently failed for %s after %d attempts: %s",
+                ticker, max_retries + 1, exc,
+            )
+            return {}
 
 
 async def get_yf_info(ticker: str) -> dict:
@@ -50,13 +59,19 @@ async def get_yf_info(ticker: str) -> dict:
     TTL = fundamentals_ttl() (15 min). The SETNX lock in get_or_compute()
     ensures only one worker fetches from Yahoo at a time; others wait and
     get the cached result.
+
+    Returns {} on timeout instead of raising — callers handle empty dicts.
     """
     cache_key = f"hf:yf_info:{ticker}"
 
     async def _compute():
-        return await asyncio.wait_for(
-            asyncio.to_thread(_fetch_yf_info_sync, ticker),
-            timeout=15,
-        )
+        try:
+            return await asyncio.wait_for(
+                asyncio.to_thread(_fetch_yf_info_sync, ticker),
+                timeout=15,
+            )
+        except asyncio.TimeoutError:
+            logger.error("yfinance timed out for %s (15s limit)", ticker)
+            return {}
 
     return await get_or_compute(cache_key, fundamentals_ttl(), _compute)
