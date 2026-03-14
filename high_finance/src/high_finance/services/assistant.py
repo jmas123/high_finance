@@ -199,7 +199,12 @@ def _gather_portfolio_context_sync(user_id: str, db: Session) -> str:
             placeholders = ", ".join(f":t{i}" for i in range(len(all_tickers)))
             params = {f"t{i}": t for i, t in enumerate(all_tickers)}
             price_rows = db.execute(
-                text(f"SELECT ticker, company_name, current_price FROM screener_cache WHERE ticker IN ({placeholders})"),
+                text(
+                    f"SELECT sc.ticker, su.company_name, sc.current_price "
+                    f"FROM screener_cache sc "
+                    f"LEFT JOIN screener_universe su ON sc.ticker = su.ticker "
+                    f"WHERE sc.ticker IN ({placeholders})"
+                ),
                 params,
             ).fetchall()
             for pr in price_rows:
