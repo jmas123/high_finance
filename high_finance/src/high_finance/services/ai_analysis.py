@@ -106,8 +106,12 @@ def _extract_years(financials: Dict[str, Any]) -> list[tuple[str, dict, dict, di
         balance = balance_data.get(date, {})
         cashflow = cashflow_data.get(date, {})
 
-        # Skip years with no income data (sparse columns)
+        # Skip years with no income data (sparse columns).
+        # yfinance sometimes returns a date column where the dict exists
+        # but every value is None (e.g. current fiscal year not yet reported).
         if not income:
+            continue
+        if get_field(income, REVENUE) is None:
             continue
 
         # Use fiscal year label from the date
@@ -243,14 +247,18 @@ def _build_prompt(
         for i in range(len(years) - 1):
             newer = _compute_ratios(*years[i][1:])
             older = _compute_ratios(*years[i + 1][1:])
+            # Skip pairs where either year lacks revenue data
+            if newer["_revenue"] is None or older["_revenue"] is None:
+                continue
             growth = safe_div(
-                (newer["_revenue"] or 0) - (older["_revenue"] or 0),
+                newer["_revenue"] - older["_revenue"],
                 older["_revenue"],
             )
             rev_trend_parts.append(
                 f"{years[i + 1][0]}→{years[i][0]}: {_pct(growth)}"
             )
-        sections.append(f"### Revenue Growth Trend\n" + " | ".join(rev_trend_parts))
+        if rev_trend_parts:
+            sections.append(f"### Revenue Growth Trend\n" + " | ".join(rev_trend_parts))
 
     data_block = "\n\n".join(sections)
 
