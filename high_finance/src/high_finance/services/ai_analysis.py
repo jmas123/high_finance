@@ -20,6 +20,7 @@ from high_finance.utils.yf_fields import (
     REVENUE, GROSS_PROFIT, OPERATING_INCOME, NET_INCOME, EBITDA,
     INTEREST_EXPENSE, TOTAL_ASSETS, TOTAL_DEBT, CASH, EQUITY,
     CURRENT_ASSETS, CURRENT_LIABILITIES, OPERATING_CF, FREE_CF, CAPEX,
+    LONG_TERM_DEBT, SHORT_TERM_DEBT, SHORT_TERM_INVESTMENTS, CASH_AND_STI,
     get_field,
 )
 
@@ -125,8 +126,29 @@ def _compute_ratios(income: dict, balance: dict, cashflow: dict) -> Dict[str, Op
     ebitda = get_field(income, EBITDA)
 
     total_assets = get_field(balance, TOTAL_ASSETS)
-    total_debt = get_field(balance, TOTAL_DEBT)
-    cash = get_field(balance, CASH)
+    # Debt: try aggregate first, fall back to components (same pattern as valuation.py)
+    _total_debt_agg = get_field(balance, TOTAL_DEBT)
+    long_term_debt = get_field(balance, LONG_TERM_DEBT)
+    short_term_debt = get_field(balance, SHORT_TERM_DEBT)
+
+    if _total_debt_agg is not None:
+        total_debt = _total_debt_agg
+    elif long_term_debt is not None or short_term_debt is not None:
+        total_debt = (long_term_debt or 0) + (short_term_debt or 0)
+    else:
+        total_debt = None
+
+    # Cash: try aggregate first, fall back to components
+    _cash_and_sti = get_field(balance, CASH_AND_STI)
+    _cash_equiv = get_field(balance, CASH)
+    _short_term_inv = get_field(balance, SHORT_TERM_INVESTMENTS)
+
+    if _cash_and_sti is not None:
+        cash = _cash_and_sti
+    elif _cash_equiv is not None:
+        cash = _cash_equiv + (_short_term_inv or 0)
+    else:
+        cash = None
     equity = get_field(balance, EQUITY)
     current_assets = get_field(balance, CURRENT_ASSETS)
     current_liabilities = get_field(balance, CURRENT_LIABILITIES)

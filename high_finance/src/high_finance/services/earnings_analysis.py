@@ -24,6 +24,7 @@ from html.parser import HTMLParser
 import httpx
 
 from high_finance.core.cache import get_or_compute
+from high_finance.core.config import settings
 from high_finance.core.llm import get_anthropic_client, HAIKU_MODEL
 from high_finance.services.sec_sic import _load_ticker_map, SEC_HEADERS
 
@@ -291,20 +292,48 @@ def _extract_json(raw_text: str) -> str:
 
 
 async def _analyze_with_llm(filing_text: str) -> dict:
+    if not settings.ANTHROPIC_API_KEY:
+        return {
+            "error": "llm_not_configured",
+            "detail": "AI analysis is not configured. Set ANTHROPIC_API_KEY in your environment.",
+        }
+
     client = get_anthropic_client()
 
-    response = await client.messages.create(
-        model=HAIKU_MODEL,
-        max_tokens=2000,
-        temperature=0.2,
-        system=_SYSTEM_PROMPT,
-        messages=[
-            {
-                "role": "user",
-                "content": _USER_PROMPT_TEMPLATE.format(filing_text=filing_text),
-            }
-        ],
-    )
+    try:
+        response = await client.messages.create(
+            model=HAIKU_MODEL,
+            max_tokens=4096,
+            temperature=0.2,
+            system=_SYSTEM_PROMPT,
+            messages=[
+                {
+                    "role": "user",
+                    "content": _USER_PROMPT_TEMPLATE.format(filing_text=filing_text),
+                }
+            ],
+        )
+    except Exception as e:
+        logger.exception("Anthropic API call failed for earnings analysis")
+        return {
+            "error": "llm_failed",
+            "detail": f"AI service error: {type(e).__name__}: {e}",
+        }
+
+    # Check if output was truncated (model hit max_tokens before finishing)
+    if response.stop_reason != "end_turn":
+        logger.warning(
+            "Haiku response truncated for earnings analysis "
+            "(stop_reason=%s, output_tokens=%d)",
+            response.stop_reason,
+            response.usage.output_tokens,
+        )
+        return {
+            "error": "llm_truncated",
+            "detail": "AI response was cut off mid-output, please retry.",
+            "model": HAIKU_MODEL,
+            "output_tokens": response.usage.output_tokens,
+        }
 
     raw_text = response.content[0].text
     cleaned = _extract_json(raw_text)
@@ -312,14 +341,17 @@ async def _analyze_with_llm(filing_text: str) -> dict:
     try:
         result = json.loads(cleaned)
     except json.JSONDecodeError as e:
-        # Log the FULL raw response so you can see exactly what Haiku returned
         logger.warning(
             "Haiku returned malformed JSON for earnings analysis. "
             "Parse error: %s. Raw response (first 1000 chars): %r",
             e,
             raw_text[:1000],
         )
-        result = {"error": "malformed_response", "raw": raw_text[:500]}
+        result = {
+            "error": "malformed_response",
+            "detail": "AI returned unparseable response, please retry.",
+            "raw": raw_text[:500],
+        }
 
     return {
         **result,
@@ -369,7 +401,7 @@ async def analyze_earnings_press_release(ticker: str) -> dict:
             return {"error": "filing_fetch_failed", "detail": str(e)}
 
         if len(text.strip()) < 100:
-            return {"error": "filing_empty", "ticker": ticker_upper}
+            return {"error": "filing_empty", "ticker": ticker_upper, "detail": "Filing text too short to analyze"}
 
         # 4. Run LLM extraction
         analysis = await _analyze_with_llm(text)
