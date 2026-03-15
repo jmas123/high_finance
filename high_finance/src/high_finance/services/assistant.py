@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 
 from high_finance.core.config import settings
 from high_finance.core.llm import get_anthropic_client, HAIKU_MODEL
+from high_finance.services.yf_cache import get_yf_info
 
 logger = logging.getLogger(__name__)
 
@@ -165,21 +166,48 @@ async def gather_comparison_context(tickers: List[str], db: Session) -> str:
 # A1. PORTFOLIO / WATCHLIST CONTEXT
 # ═════════════════════════════════════════════════════════════════════════════
 
-def _gather_portfolio_context_sync(user_id: str, db: Session) -> str:
+def _fetch_screener_prices(db: Session, tickers: List[str]) -> Dict[str, tuple]:
     """
-    Query portfolio_positions and watchlist_items for the authenticated user,
-    join against screener_cache for current prices, and return a markdown
-    section the LLM can reference when answering portfolio questions.
+    Fallback: fetch prices and names from screener_cache for tickers
+    where yfinance returned None. Returns {ticker: (price, name)}.
+    """
+    if not tickers:
+        return {}
+    placeholders = ", ".join(f":t{i}" for i in range(len(tickers)))
+    params = {f"t{i}": t for i, t in enumerate(tickers)}
+    rows = db.execute(
+        text(
+            f"SELECT sc.ticker, su.company_name, sc.current_price "
+            f"FROM screener_cache sc "
+            f"LEFT JOIN screener_universe su ON sc.ticker = su.ticker "
+            f"WHERE sc.ticker IN ({placeholders})"
+        ),
+        params,
+    ).fetchall()
+    result: Dict[str, tuple] = {}
+    for r in rows:
+        price = float(r.current_price) if r.current_price is not None else None
+        result[r.ticker] = (price, r.company_name)
+    return result
+
+
+async def gather_portfolio_context(user_id: str, db: Session) -> str:
+    """
+    Gather portfolio and watchlist data with live yfinance prices.
+
+    Uses get_yf_info() (15min Redis cache) for prices — same source as
+    the frontend's PortfolioCard. Falls back to screener_cache for any
+    tickers where yfinance returns None (e.g. private companies).
     """
     try:
         logger.info("Gathering portfolio context for user %s", user_id)
-        # ── Portfolio positions ──
+
+        # ── DB queries (sync, fast <1ms) ──
         pos_rows = db.execute(
             text("SELECT ticker, name, shares, avg_cost FROM portfolio_positions WHERE user_id = :uid"),
             {"uid": user_id},
         ).fetchall()
 
-        # ── Watchlist items ──
         wl_rows = db.execute(
             text("SELECT ticker, name FROM watchlist_items WHERE user_id = :uid"),
             {"uid": user_id},
@@ -191,27 +219,39 @@ def _gather_portfolio_context_sync(user_id: str, db: Session) -> str:
         if not pos_rows and not wl_rows:
             return "## User's Portfolio\nThe user has not added any positions or watchlist items yet."
 
-        # ── Fetch current prices for all relevant tickers ──
+        # ── Fetch live prices via yfinance (parallel, 15min Redis cache) ──
         all_tickers = list({r.ticker for r in pos_rows} | {r.ticker for r in wl_rows})
         prices: Dict[str, float] = {}
         names: Dict[str, str] = {}
+
         if all_tickers:
-            placeholders = ", ".join(f":t{i}" for i in range(len(all_tickers)))
-            params = {f"t{i}": t for i, t in enumerate(all_tickers)}
-            price_rows = db.execute(
-                text(
-                    f"SELECT sc.ticker, su.company_name, sc.current_price "
-                    f"FROM screener_cache sc "
-                    f"LEFT JOIN screener_universe su ON sc.ticker = su.ticker "
-                    f"WHERE sc.ticker IN ({placeholders})"
-                ),
-                params,
-            ).fetchall()
-            for pr in price_rows:
-                if pr.current_price is not None:
-                    prices[pr.ticker] = float(pr.current_price)
-                if pr.company_name:
-                    names[pr.ticker] = pr.company_name
+            yf_results = await asyncio.gather(
+                *[get_yf_info(t) for t in all_tickers]
+            )
+
+            # Extract prices and names from yfinance results
+            missing_tickers: List[str] = []
+            for ticker_str, info in zip(all_tickers, yf_results):
+                if info:
+                    price = info.get("currentPrice") or info.get("regularMarketPrice")
+                    if price is not None:
+                        prices[ticker_str] = float(price)
+                    name = info.get("longName") or info.get("shortName")
+                    if name:
+                        names[ticker_str] = name
+                else:
+                    missing_tickers.append(ticker_str)
+
+            # Fall back to screener_cache for tickers yfinance couldn't resolve
+            if missing_tickers:
+                logger.info("Falling back to screener_cache for %d tickers: %s",
+                            len(missing_tickers), missing_tickers)
+                fallback = _fetch_screener_prices(db, missing_tickers)
+                for t, (price, name) in fallback.items():
+                    if price is not None and t not in prices:
+                        prices[t] = price
+                    if name and t not in names:
+                        names[t] = name
 
         sections: List[str] = []
 
@@ -240,7 +280,7 @@ def _gather_portfolio_context_sync(user_id: str, db: Session) -> str:
             table_rows.append(headers)
             table_rows.append(sep)
 
-            for ticker, name, shares, avg_cost, cur_price, cost_basis, mkt_value in position_data:
+            for ticker_str, name, shares, avg_cost, cur_price, cost_basis, mkt_value in position_data:
                 if cur_price is not None:
                     pnl = mkt_value - cost_basis
                     pnl_str = f"+${pnl:,.0f}" if pnl >= 0 else f"-${abs(pnl):,.0f}"
@@ -249,12 +289,12 @@ def _gather_portfolio_context_sync(user_id: str, db: Session) -> str:
                     )
                     weight = f"{mkt_value/total_value*100:.1f}%" if total_value > 0 else "N/A"
                     table_rows.append(
-                        f"| {ticker} | {name} | {shares:.2f} | ${avg_cost:,.2f} | ${cur_price:,.2f} "
+                        f"| {ticker_str} | {name} | {shares:.2f} | ${avg_cost:,.2f} | ${cur_price:,.2f} "
                         f"| ${mkt_value:,.0f} | {pnl_str} | {pnl_pct} | {weight} |"
                     )
                 else:
                     table_rows.append(
-                        f"| {ticker} | {name} | {shares:.2f} | ${avg_cost:,.2f} | N/A | N/A | N/A | N/A | N/A |"
+                        f"| {ticker_str} | {name} | {shares:.2f} | ${avg_cost:,.2f} | N/A | N/A | N/A | N/A | N/A |"
                     )
 
             total_pnl = total_value - total_cost
@@ -278,11 +318,6 @@ def _gather_portfolio_context_sync(user_id: str, db: Session) -> str:
     except Exception as e:
         logger.exception("Failed to gather portfolio context for user %s", user_id)
         return ""
-
-
-async def gather_portfolio_context(user_id: str, db: Session) -> str:
-    """Fetch portfolio data synchronously — query is fast and avoids cross-thread session issues."""
-    return _gather_portfolio_context_sync(user_id, db)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
