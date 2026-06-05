@@ -33,13 +33,15 @@ USER appuser
 EXPOSE 8000
 
 # Production: use gunicorn with uvicorn workers
-CMD ["gunicorn", "main:app", \
-     "--bind", "0.0.0.0:8000", \
-     "--workers", "4", \
-     "--worker-class", "uvicorn.workers.UvicornWorker", \
-     "--timeout", "120", \
-     "--graceful-timeout", "30", \
-     "--keep-alive", "5", \
-     "--log-level", "info", \
-     "--access-logfile", "-", \
-     "--error-logfile", "-"]
+# Railway sets PORT dynamically — must use shell form so $PORT expands.
+# Exec form (JSON array) does NOT run a shell, so $PORT would stay literal → 502.
+CMD gunicorn main:app \
+    --bind "0.0.0.0:${PORT:-8000}" \
+    --workers 4 \
+    --worker-class uvicorn.workers.UvicornWorker \
+    --timeout 120 \
+    --graceful-timeout 30 \
+    --keep-alive 5 \
+    --log-level info \
+    --access-logfile - \
+    --error-logfile -
